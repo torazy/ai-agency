@@ -13,6 +13,9 @@ description: タスクログの承認履歴を分析し、繰り返し承認さ�
 カテゴリ別に「承認済回数」「却下/差し戻し回数」「直近の発生」を出す。
 （記録が薄い場合は `decisions.md` や会話の実績も補助的に参照する。）
 
+> 注：Antigravity IDE ではセッション終了フックが使えないため、外部操作の実行記録は秘書が会話中に
+> `memory-update` で task-log へ追記する（[AGENTS.md] §7）。この履歴がここでの集計対象。
+
 ## Step 2: 昇格候補を判定する
 昇格候補の条件（すべて満たすもの）：
 - 承認済が **5回以上**
@@ -40,7 +43,9 @@ description: タスクログの承認履歴を分析し、繰り返し承認さ�
 ユーザーが承認した項目だけ：
 1. `memory/delegation.md` の「自律実行OK（承認済み操作）」テーブルに行を追加（操作・範囲・承認日・条件）。
 2. `memory/guardrails.json` の `auto_approve.categories` に該当カテゴリを追加。
-3. 全体レベル（Level 1/2/3）の引き上げが妥当なら、その旨も提案する。
+3. **ターミナル系の操作なら**、IDE の **Allow List**（Ctrl+, → Agent → Terminal Execution policy →
+   Allow List Terminal Commands）への追加トークンをユーザーに提示する（実際の追加はGUIでユーザーが行う）。
+4. 全体レベル（Level 1/2/3）の引き上げが妥当なら、その旨も提案する。
 
 ## 哲学
 - **信頼は実績で積む**。回数と却下ゼロが根拠。

@@ -27,7 +27,8 @@ IDE の MCP ストア、または `~/.gemini/config/mcp_config.json` に設定�
 
 ### 4. Antigravity IDE でワークスペースを開く
 `ai-manager` を開くと、`AGENTS.md`（常時ルール）・`.agents/agents.md`（ペルソナ）・
-`.agents/skills/`（スキル）・`.agents/workflows/`（スラッシュコマンド）・`.agents/config.json`（フック）が認識される。
+`.agents/skills/`（スキル）・`.agents/workflows/`（スラッシュコマンド）が認識される。
+安全のため、続けて GUI の Deny List を設定する（下記「自律と安全の仕組み」参照）。
 
 ### 5. Chrome を Slack・Google Workspace にログインさせておく
 ブラウザ操作スキル（slack-via-bot, calendar-read, drive-search）の前提。
@@ -43,7 +44,6 @@ ai-manager/
 ├── PORTABILITY.md            # Claude Code 移行マップ
 ├── .agents/
 │   ├── agents.md             # 全ペルソナ（@chief + @generalist + 8専門家）
-│   ├── config.json           # フック（BeforeTool=ガードレール, SessionEnd=ログ）
 │   ├── workflows/            # スラッシュコマンド
 │   │   ├── consult.md            # /consult  専門家を並列召集して統合
 │   │   ├── intake.md             # /intake   情報ファイリング
@@ -64,8 +64,8 @@ ai-manager/
     ├── backlog-mcp/server.py
     ├── mcp_config.sample.json
     └── hooks/
-        ├── guardrail.py          # BeforeTool：deny操作を物理ブロック
-        └── task-log-writer.py    # SessionEnd：活動マーカー記録
+        ├── guardrail.py          # CLI/Claude Code用：deny操作を物理ブロック（IDEはGUI Deny Listを使用）
+        └── task-log-writer.py    # CLI/Claude Code用：セッション終了時に活動マーカー記録
 ```
 
 ---
@@ -101,8 +101,10 @@ IDE のチャットで `/schedule` に続けて自然言語で指示する：
 
 - **委任レベル**（`memory/delegation.md`）：現在 Level 1（全確認）。`/propose-delegation` が
   承認実績を見て「自動承認への昇格」を提案 → 承認で範囲を限定して広げる。＝「育てると承認だけ」。
-- **物理ガードレール**（`memory/guardrails.json` ＋ `tools/hooks/guardrail.py`）：
-  削除・本番デプロイ・社外送信・認証変更は、モデルの判断に関係なくフックで物理ブロック。
+- **物理ガードレール（IDEではGUI Deny Listが主）**：`Ctrl+,` → 左メニュー **Agent** → **Terminal Execution policy**
+  → **Deny List Terminal Commands** に、`memory/guardrails.json` の `gui_deny_tokens`（`rm -rf`・`terraform apply`・
+  `DROP TABLE` 等）を `+ Add` で登録する。部分文字列マッチでモデルの判断に関係なく物理ブロックされる。
+  （`tools/hooks/guardrail.py` は CLI／Claude Code 用の移植資産。IDEはスクリプトフックを読まないため未使用。）
 - **フィードバックループ**（`/review-decisions`）：決定の予測と実際を突き合わせ `insights.md` に学習。
 
 ---

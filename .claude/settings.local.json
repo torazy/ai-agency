@@ -17,7 +17,13 @@
       "Bash(python tools/hooks/task-log-writer.py)",
       "Bash(python -c \"import json,io,sys; sys.stdout.buffer.write\\(json.dumps\\({'session_id':'abc','task_summary':'テスト記録','operations':[{'category':'backlog-comment','target':'PROJ-12','approved':True}],'learned':'フック動作確認'},ensure_ascii=False\\).encode\\('utf-8'\\)\\)\")",
       "Bash(python -c \"from pathlib import Path; from datetime import datetime; p=Path\\('memory/task-log'\\)/\\(datetime.now\\(\\).strftime\\('%Y-%m'\\)+'.md'\\); print\\(p.read_text\\(encoding='utf-8'\\)\\)\")",
-      "Bash(python -c 'import json,sys; json.load\\(open\\('\\\\''__TRACKED_VAR__'\\\\'',encoding='\\\\''utf-8'\\\\''\\)\\); print\\('\\\\''OK  __TRACKED_VAR__'\\\\''\\)')"
+      "Bash(python -c 'import json,sys; json.load\\(open\\('\\\\''__TRACKED_VAR__'\\\\'',encoding='\\\\''utf-8'\\\\''\\)\\); print\\('\\\\''OK  __TRACKED_VAR__'\\\\''\\)')",
+      "Bash(git -c 'user.name=AI Manager' -c user.email=n.imaoka@gmail.com commit -q -m 'Restructure to Antigravity 2.0 conventions + autonomy engines *)",
+      "Bash(echo \"deny\\(terraform apply\\) exit=$? \\(期待:2\\)\")",
+      "Bash(echo \"allow\\(npm test\\) exit=$? \\(期待:0\\)\")",
+      "WebFetch(domain:gist.github.com)",
+      "Bash(python -c \"import json; json.load\\(open\\('memory/guardrails.json',encoding='utf-8'\\)\\); print\\('guardrails.json OK'\\)\")",
+      "Bash(git -c 'user.name=AI Manager' -c user.email=n.imaoka@gmail.com commit -q -m 'Fix guardrail/hook approach for Antigravity IDE \\(GUI\\) *)"
     ]
   }
 }

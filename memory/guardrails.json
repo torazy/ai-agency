@@ -1,6 +1,22 @@
 {
   "version": 1,
-  "description": "機械可読の物理ガードレール。tools/hooks/guardrail.py が BeforeTool フックで参照し、deny に一致する操作をモデルの判断に関係なく物理ブロックする。delegation.md の『禁止』を機械化したもの。ユーザーの明示承認なしに編集しない。",
+  "description": "物理ガードレールの正典リスト。【重要】Antigravity IDE はこのファイルを自動では読まない。IDE では下記 deny を GUI の Deny List（Ctrl+, → Agent → Terminal Execution policy → Deny List Terminal Commands）に転記して有効化する。マッチは部分文字列。gui_deny_tokens がそのまま転記用の値。CLI/Claude Code では tools/hooks/guardrail.py がこの patterns(正規表現) を読んで BeforeTool 相当で物理ブロックする。ユーザーの明示承認なしに編集しない。",
+  "gui_deny_tokens": [
+    "rm -rf",
+    "git push --force",
+    "git reset --hard",
+    "DROP TABLE",
+    "DELETE FROM",
+    "TRUNCATE",
+    "| sh",
+    "| bash",
+    "terraform apply",
+    "kubectl delete",
+    "Remove-Item -Recurse",
+    "firebase deploy",
+    "serverless deploy",
+    "passwd"
+  ],
   "deny": [
     {
       "id": "data-destruction",

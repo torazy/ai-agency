@@ -18,16 +18,32 @@
 | ペルソナ／専門家 | `.agents/agents.md`（1ファイルに全員） | `.claude/agents/{handle}.md`（サブエージェントごとに1ファイル） |
 | スキル | `.agents/skills/{name}/SKILL.md` | `.claude/skills/{name}/SKILL.md`（同じSKILL.md標準） |
 | スラッシュコマンド | `.agents/workflows/{name}.md` | `.claude/commands/{name}.md` |
-| フック | `.agents/config.json`（`BeforeTool`/`SessionEnd`） | `.claude/settings.json`（`PreToolUse`/`Stop`） |
-| 物理ガードレール | フック＋`guardrails.json` | `settings.json` の `permissions.deny` ＋同フック |
+| 物理ガードレール（主） | **IDE GUI の Deny List**（Ctrl+, → Agent → Terminal Execution policy）。`guardrails.json` の `gui_deny_tokens` を転記 | `.claude/settings.json` の `permissions.deny` |
+| フック（スクリプト・副） | **IDE は非対応**。CLI は `.gemini/settings.json` の `hooks`（`BeforeTool`/`SessionEnd`） | `.claude/settings.json` の `hooks`（`PreToolUse`/`Stop`） |
+| 活動ログ | IDE: エージェントが会話中に task-log へ追記（memory-update）。CLI: `SessionEnd` フックで task-log-writer.py | `Stop` フックで task-log-writer.py |
 | サブエージェント召集 | 動的サブエージェント（自動）を `/consult` が指示 | `Task`/サブエージェント機構を `/consult` が指示 |
 | 定期実行 | `/schedule`・`agy` cron | cron／`/loop`／scheduled routines |
 | MCP | IDE MCPストア／`~/.gemini/config/mcp_config.json` | `.mcp.json`／`~/.claude.json` |
 
+> **重要（実機検証で判明）**：Antigravity **IDE(GUI)** はプロジェクト内のスクリプトフック（`.agents/config.json` 等）を
+> 読まない。IDE の安全は**ネイティブ Deny List（GUI）**で担保する。`tools/hooks/*.py` と `guardrails.json` は
+> CLI／Claude Code 用の移植資産として保持する。
+
+## CLI / Claude Code でフックを使う場合の設定例（参考・現在は未使用）
+
+Gemini/Antigravity **CLI** ── `.gemini/settings.json`：
+```json
+{ "hooks": { "BeforeTool": [ { "matcher": ".*", "hooks": [
+  { "type": "command", "command": "python tools/hooks/guardrail.py", "timeout": 15000 } ] } ],
+  "SessionEnd": [ { "hooks": [
+  { "type": "command", "command": "python tools/hooks/task-log-writer.py", "timeout": 15000 } ] } ] } }
+```
+**Claude Code** ── `.claude/settings.json`：同様に `hooks.PreToolUse` / `hooks.Stop` へ。
+
 ## 移行時の作業（概要）
 1. `.agents/agents.md` の各 `## The X (@handle)` を `.claude/agents/{handle}.md`（frontmatter付き）へ分割。
 2. `.agents/workflows/*.md` を `.claude/commands/*.md` へコピー（中身はほぼそのまま）。
-3. `.agents/config.json` のフックを `.claude/settings.json` の `hooks` へ移植（イベント名を読み替え）。
-4. フックスクリプト（`tools/hooks/*.py`）は入力キーに頑健なのでそのまま流用可。
+3. 上記のフック設定例を `.claude/settings.json` に置く。フックスクリプトは入力キーに頑健なのでそのまま流用可。
+4. ガードレールは GUI Deny List → `permissions.deny` へ（`gui_deny_tokens` を流用）。
 5. MCP 設定を `.mcp.json` へ移す。
 6. `AGENTS.md`・`memory/`・`.agents/skills/` は無変更で動く。

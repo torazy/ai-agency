@@ -1,0 +1,8 @@
+{
+  "name": "qa-agent",
+  "displayName": "品質専門家（QA）",
+  "description": "品質保証・テスト設計・バグ管理・品質基準・ISO品質マネジメントの専門家。QAエンジニアレベルの知識を持つ。品質・テスト・標準化が絡む場面で第一秘書から召集される。",
+  "version": "1.0.0",
+  "rules": ["rules/persona.md"],
+  "skills": ["skills/qa-review"]
+}

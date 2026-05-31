@@ -1,0 +1,8 @@
+{
+  "name": "accountant-agent",
+  "displayName": "経理専門家",
+  "description": "財務・経理・コスト管理・ROI分析・予算計画の専門家。コスト・予算・財務的な判断が必要な場面で第一秘書から召集される。",
+  "version": "1.0.0",
+  "rules": ["rules/persona.md"],
+  "skills": ["skills/financial-review"]
+}

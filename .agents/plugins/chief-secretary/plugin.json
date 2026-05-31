@@ -1,0 +1,12 @@
+{
+  "name": "chief-secretary",
+  "displayName": "第一秘書（Chief Secretary）",
+  "description": "秘書チームの総指揮。ユーザーの真意を読み解き、最適な専門家にタスクを分配し、各専門家の意見を統合してユーザーに届ける。",
+  "version": "1.0.0",
+  "rules": ["rules/chief-persona.md"],
+  "skills": [
+    "skills/task-dispatch",
+    "skills/cross-review",
+    "skills/recruit-expert"
+  ]
+}

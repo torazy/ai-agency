@@ -1,0 +1,8 @@
+{
+  "name": "hr-agent",
+  "displayName": "人事専門家",
+  "description": "採用・組織設計・人事評価・労務管理・チームビルディングの専門家。人に関する意思決定が必要な場面で第一秘書から召集される。",
+  "version": "1.0.0",
+  "rules": ["rules/persona.md"],
+  "skills": ["skills/hr-review"]
+}

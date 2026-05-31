@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "description": "機械可読の物理ガードレール。tools/hooks/guardrail.py が BeforeTool フックで参照し、deny に一致する操作をモデルの判断に関係なく物理ブロックする。delegation.md の『禁止』を機械化したもの。ユーザーの明示承認なしに編集しない。",
+  "deny": [
+    {
+      "id": "data-destruction",
+      "reason": "データ削除・破壊的操作は明示承認なしに禁止（delegation.md 禁止事項）",
+      "patterns": [
+        "rm\\s+-rf",
+        "\\bDROP\\s+(TABLE|DATABASE)\\b",
+        "\\bDELETE\\s+FROM\\b",
+        "\\bTRUNCATE\\b",
+        "git\\s+push\\s+.*--force",
+        "git\\s+reset\\s+--hard",
+        "Remove-Item\\s+.*-Recurse",
+        "del\\s+/[sq]"
+      ]
+    },
+    {
+      "id": "prod-deploy",
+      "reason": "本番環境へのデプロイは明示承認なしに禁止（delegation.md 禁止事項）",
+      "patterns": [
+        "deploy.*prod",
+        "kubectl\\s+.*\\bapply\\b.*prod",
+        "terraform\\s+apply",
+        "serverless\\s+deploy",
+        "firebase\\s+deploy"
+      ]
+    },
+    {
+      "id": "credential-change",
+      "reason": "認証情報の変更は明示承認なしに禁止（delegation.md 禁止事項）",
+      "patterns": [
+        "\\bpasswd\\b",
+        "rotate.*(secret|key|token|credential)",
+        "aws\\s+iam\\s+.*(create|update|delete).*(key|credential)"
+      ]
+    },
+    {
+      "id": "external-share",
+      "reason": "社外への情報共有・送信は明示承認なしに禁止（delegation.md 禁止事項）。許可された送信は require_confirm 経由で @chief が承認を取る。",
+      "patterns": [
+        "curl\\s+.*\\|\\s*(sh|bash)"
+      ]
+    }
+  ],
+  "auto_approve": {
+    "description": "delegation.md のレベルを上げると、ここに『確認不要』の操作カテゴリが追加される。/propose-delegation が承認履歴を見て昇格を提案し、ユーザー承認後に追記する。現状は空（Level 1＝全確認）。",
+    "categories": []
+  },
+  "note": "イベント名は Antigravity のバージョンにより BeforeTool（CamelCase）または before_tool_call（snake_case）。.agents/config.json 側のキー名を合わせること。ブロックは exit code 2 を主手段とするため、JSON スキーマ差異があっても機能する。"
+}

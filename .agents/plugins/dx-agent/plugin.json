@@ -1,8 +1,0 @@
-{
-  "name": "dx-agent",
-  "displayName": "DX専門家",
-  "description": "デジタルトランスフォーメーション・業務プロセス改善・自動化・システム化の専門家。業務効率化や変革推進が必要な場面で第一秘書から召集される。",
-  "version": "1.0.0",
-  "rules": ["rules/persona.md"],
-  "skills": ["skills/dx-review"]
-}

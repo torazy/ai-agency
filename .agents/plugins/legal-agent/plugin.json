@@ -1,8 +1,0 @@
-{
-  "name": "legal-agent",
-  "displayName": "法務専門家",
-  "description": "契約審査・NDA・利用規約・コンプライアンス・リスク特定の専門家。法的リスクの洗い出しと論点整理を行い、専門家への相談ポイントを明確にする。契約・法令・コンプライアンスが絡む場面で第一秘書から召集される。",
-  "version": "1.0.0",
-  "rules": ["rules/persona.md"],
-  "skills": ["skills/legal-review"]
-}

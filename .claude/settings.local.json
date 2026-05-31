@@ -8,7 +8,16 @@
       "WebFetch(domain:codelabs.developers.google.com)",
       "WebFetch(domain:www.braincuber.com)",
       "Bash(git init *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git rm *)",
+      "Bash(rm -rf .agents/plugins && echo \"removed empty dirs\" && find .agents -maxdepth 1 -type d | sort)",
+      "WebFetch(domain:geminicli.com)",
+      "Bash(python tools/hooks/guardrail.py)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(python tools/hooks/task-log-writer.py)",
+      "Bash(python -c \"import json,io,sys; sys.stdout.buffer.write\\(json.dumps\\({'session_id':'abc','task_summary':'テスト記録','operations':[{'category':'backlog-comment','target':'PROJ-12','approved':True}],'learned':'フック動作確認'},ensure_ascii=False\\).encode\\('utf-8'\\)\\)\")",
+      "Bash(python -c \"from pathlib import Path; from datetime import datetime; p=Path\\('memory/task-log'\\)/\\(datetime.now\\(\\).strftime\\('%Y-%m'\\)+'.md'\\); print\\(p.read_text\\(encoding='utf-8'\\)\\)\")",
+      "Bash(python -c 'import json,sys; json.load\\(open\\('\\\\''__TRACKED_VAR__'\\\\'',encoding='\\\\''utf-8'\\\\''\\)\\); print\\('\\\\''OK  __TRACKED_VAR__'\\\\''\\)')"
     ]
   }
 }

@@ -1,9 +1,0 @@
-{
-  "hooks": [
-    {
-      "event": "Stop",
-      "command": "python tools/hooks/task-log-writer.py",
-      "description": "会話終了時にタスクログを自動記録する"
-    }
-  ]
-}

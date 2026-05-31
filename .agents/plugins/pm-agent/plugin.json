@@ -1,8 +1,0 @@
-{
-  "name": "pm-agent",
-  "displayName": "PMO専門家（PMP）",
-  "description": "プロジェクト管理・スケジュール・リスク管理・ステークホルダー管理の専門家。PMP資格レベルの知識を持つ。進捗・計画・リスクが絡む場面で第一秘書から召集される。",
-  "version": "1.0.0",
-  "rules": ["rules/persona.md"],
-  "skills": ["skills/pm-review"]
-}

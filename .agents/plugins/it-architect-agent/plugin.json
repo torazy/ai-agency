@@ -1,8 +1,0 @@
-{
-  "name": "it-architect-agent",
-  "displayName": "ITアーキテクト",
-  "description": "システム設計・技術選定・クラウドアーキテクチャ・セキュリティ・スケーラビリティの専門家。技術的な意思決定・システム設計・インフラ選定が絡む場面で第一秘書から召集される。",
-  "version": "1.0.0",
-  "rules": ["rules/persona.md"],
-  "skills": ["skills/architecture-review"]
-}

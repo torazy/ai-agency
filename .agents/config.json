@@ -1,0 +1,33 @@
+{
+  "_comment": "Antigravity フック設定。イベント名はバージョンにより BeforeTool/SessionEnd（CamelCase, geminicli準拠）または before_tool_call/on_loop_stop（snake_case）。動かない場合はキー名を installed version に合わせて変更すること。コマンドはワークスペースルートからの相対パス。Windows で python が見つからない場合は 'py' に変更。",
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": ".*",
+        "sequential": true,
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python tools/hooks/guardrail.py",
+            "name": "guardrail",
+            "timeout": 15000,
+            "description": "memory/guardrails.json の deny に一致する破壊的/外部送信操作を物理ブロックする"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python tools/hooks/task-log-writer.py",
+            "name": "task-log-writer",
+            "timeout": 15000,
+            "description": "セッション終了時に memory/task-log/YYYY-MM.md へ活動マーカーを追記する"
+          }
+        ]
+      }
+    ]
+  }
+}

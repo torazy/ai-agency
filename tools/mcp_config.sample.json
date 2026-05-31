@@ -1,0 +1,27 @@
+{
+  "_comment": "MCP構成の記録用サンプル。Antigravity 2.0 では IDE の MCP ストア、または ~/.gemini/config/mcp_config.json に設定する（プロジェクト内には置かない）。このファイルは『どのMCPを使う構成か』を git で再現・共有するための控え。memory/filesystem MCP は意図的に除外：記憶の正典は memory/ の markdown、ファイルアクセスは IDE が直接行うため冗長で split-brain の原因になる。",
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      }
+    },
+    "backlog": {
+      "command": "python",
+      "args": ["tools/backlog-mcp/server.py"],
+      "env": {
+        "BACKLOG_API_KEY": "${BACKLOG_API_KEY}",
+        "BACKLOG_SPACE": "${BACKLOG_SPACE}"
+      }
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      }
+    }
+  }
+}

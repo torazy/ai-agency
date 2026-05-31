@@ -1,8 +1,17 @@
-# AI秘書 – 常時ロードコンテキスト
+# AI秘書 ── Antigravity 固有コンテキスト（常時ロード・最優先）
 
-> このファイルはすべての会話で自動ロードされます。
-> 秘書はここに書かれた情報を前提として動作します。
-> 情報が増えたら秘書に「GEMINI.mdを更新して」と指示してください。
+> 行動規範・記憶モデル・安全規則の本体は `AGENTS.md`（移植可能コア）にある。
+> このファイルは **Antigravity 固有の上書き** と **常時参照する稼働中サマリー** だけを薄く持つ。
+> 情報が増えたら「GEMINI.mdを更新して」と指示してください。
+
+---
+
+## Antigravity 運用メモ
+
+- ペルソナ定義は `.agents/agents.md`、スキルは `.agents/skills/`、スラッシュコマンドは `.agents/workflows/`。
+- 複合・専門タスクは `/consult`、情報ファイリングは `/intake` を使う。
+- 定期実行（朝のブリーフィング等）は `/schedule` で登録する（README の文例参照）。
+- フック設定は `.agents/config.json`。MCP は IDE の MCP ストア／`~/.gemini/config/mcp_config.json`（構成記録は `tools/mcp_config.sample.json`）。
 
 ---
 
@@ -11,48 +20,34 @@
 - **名前**: （未設定）
 - **役職・担当領域**: （未設定）
 - **主な責任範囲**: （未設定）
-
----
+- 詳細・観察した判断スタイルは `memory/user-profile.md`
 
 ## 判断基準・優先順位
 
-- （未設定 ── 例：「品質 > スピード > コスト」「顧客への影響を最優先」など）
+- （未設定 ── 例：「品質 > スピード > コスト」「顧客への影響を最優先」）
 
 ---
 
 ## 進行中プロジェクト一覧
 
-> 詳細は `memory/projects/{project-name}/overview.md` を参照。
+> 詳細は `memory/projects/{name}/overview.md`。プロジェクト名が会話に出たら自動ロードする。
 
 | プロジェクト名 | 状態 | 優先度 |
 |---|---|---|
 | （未登録） | | |
 
----
-
 ## よく使うサービス（グローバル）
 
-> プロジェクト固有の座標は各プロジェクトの overview.md に記録する。
+> プロジェクト固有の座標は各 overview.md に記録する。
 
 - **Backlog スペース**: （未設定 ── 例: yourcompany.backlog.jp）
 - **GitHub Organization**: （未設定）
 - **Slack ワークスペース**: （未設定）
 - **Google Drive マイドライブ**: https://drive.google.com/drive/my-drive
 
----
-
-## コミュニケーションスタイルの好み
-
-- 回答は簡潔に。長文より構造化された箇条書きを優先
-- 推奨案は1つに絞る（理由付きで）
-- 確認が必要な場合は実行前に必ず提示する
-- 完了報告には次のアクション候補を1つ添える
-
----
-
 ## 重要な人物
 
-> 詳細は `memory/people/{name}.md` を参照。
+> 詳細は `memory/people/{識別子}.md`。
 
 | 名前 | 関係 | 備考 |
 |---|---|---|
@@ -62,7 +57,6 @@
 
 ## 秘書への初期指示
 
-- `memory/service-capabilities.md` を参照して対応可能なサービスを把握すること
-- `memory/delegation.md` を参照して自律実行可能な範囲を確認すること
-- `memory/situation.md` を参照して現在の優先事項を把握すること
-- プロジェクト名が会話に出たら `memory/projects/{name}/` を自動ロードすること
+- `AGENTS.md` の行動規範に従うこと（常時ロード済み）
+- `memory/situation.md`（優先事項）・`memory/delegation.md`（委任範囲）・`memory/team/roster.md`（チーム）を参照
+- `memory/service-capabilities.md` で対応可能サービスを把握すること

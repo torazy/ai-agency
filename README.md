@@ -99,12 +99,19 @@ IDE のチャットで `/schedule` に続けて自然言語で指示する：
 
 ## 自律と安全の仕組み
 
-- **委任レベル**（`memory/delegation.md`）：現在 Level 1（全確認）。`/propose-delegation` が
-  承認実績を見て「自動承認への昇格」を提案 → 承認で範囲を限定して広げる。＝「育てると承認だけ」。
-- **物理ガードレール（IDEではGUI Deny Listが主）**：Settings（歯車アイコン or `Ctrl+,`）→ **Permissions** →
-  **Advanced** → **Deny List Terminal Commands** に、`memory/guardrails.json` の `gui_deny_tokens`（`rm -rf`・
-  `terraform apply`・`DROP TABLE` 等）を `+ Add` で登録する。部分文字列マッチで物理ブロック。反映に再起動が
-  必要な場合がある。Deny は Allow より優先。
+IDE の権限機構（Settings → **Permissions** → **Advanced**）と `delegation.md` を組み合わせて運用する。
+これは「育てると承認だけ」の昇格モデルにそのまま対応する：
+
+| 段階 | IDE設定 | 意味 |
+|---|---|---|
+| Lv1（出発点・現在） | **Strict Mode 推奨** | 全ターミナルコマンドで確認を求める。最も確実（リストのバグに依存しない） |
+| 昇格 | **Allow List Terminal Commands** | 実績を積んだ安全なコマンド（`ls`/`git status`/`npm test` 等）を自動承認に移す |
+| 常設ガード | **Deny List Terminal Commands** | `gui_deny_tokens`（`rm -rf`・`terraform apply`・`DROP TABLE` 等）。一致すると**実行前に必ず確認**を求める（Allowより優先） |
+
+- 設定変更後は **Antigravity を再起動**する（反映に必要）。Deny/Allow が効かない既知バグ報告があるため、
+  まず Strict Mode で確実に確認フローを確保し、信頼に応じて Allow List へ移すのが安全。
+- `/propose-delegation` が承認実績を見て「Allow List へ移す候補」を提案する。実際の追加はGUIで行う。
+- **物理ガードレール（CLI/Claude Code）**：`tools/hooks/guardrail.py` ＋ `memory/guardrails.json`（IDEは未使用）。
   （`tools/hooks/guardrail.py` は CLI／Claude Code 用の移植資産。IDEはスクリプトフックを読まないため未使用。）
 - **フィードバックループ**（`/review-decisions`）：決定の予測と実際を突き合わせ `insights.md` に学習。
 

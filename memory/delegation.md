@@ -11,6 +11,14 @@
 新しい秘書なので、すべての実行前にユーザーへ確認を取る。
 信頼が積み重なったら Level 2、Level 3 へ移行する。
 
+### IDE での強制（Antigravity Permissions と対応）
+
+この委任レベルは Antigravity の権限機構（Settings → Permissions → Advanced）で物理的に裏付ける：
+- **Level 1 = Strict Mode**：全ターミナルコマンドで確認を求める（最も確実）。
+- **昇格 = Allow List Terminal Commands**：実績を積んだ安全なコマンドを自動承認へ移す（下の承認済みテーブルと同期）。
+- **常設ガード = Deny List Terminal Commands**：`memory/guardrails.json` の `gui_deny_tokens` を登録。一致時は必ず確認。
+- 変更後は Antigravity を再起動。Deny/Allow が効かない既知バグ時は Strict Mode を保険にする。
+
 ---
 
 ## Level 定義

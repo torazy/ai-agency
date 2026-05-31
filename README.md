@@ -101,9 +101,10 @@ IDE のチャットで `/schedule` に続けて自然言語で指示する：
 
 - **委任レベル**（`memory/delegation.md`）：現在 Level 1（全確認）。`/propose-delegation` が
   承認実績を見て「自動承認への昇格」を提案 → 承認で範囲を限定して広げる。＝「育てると承認だけ」。
-- **物理ガードレール（IDEではGUI Deny Listが主）**：`Ctrl+,` → 左メニュー **Agent** → **Terminal Execution policy**
-  → **Deny List Terminal Commands** に、`memory/guardrails.json` の `gui_deny_tokens`（`rm -rf`・`terraform apply`・
-  `DROP TABLE` 等）を `+ Add` で登録する。部分文字列マッチでモデルの判断に関係なく物理ブロックされる。
+- **物理ガードレール（IDEではGUI Deny Listが主）**：Settings（歯車アイコン or `Ctrl+,`）→ **Permissions** →
+  **Advanced** → **Deny List Terminal Commands** に、`memory/guardrails.json` の `gui_deny_tokens`（`rm -rf`・
+  `terraform apply`・`DROP TABLE` 等）を `+ Add` で登録する。部分文字列マッチで物理ブロック。反映に再起動が
+  必要な場合がある。Deny は Allow より優先。
   （`tools/hooks/guardrail.py` は CLI／Claude Code 用の移植資産。IDEはスクリプトフックを読まないため未使用。）
 - **フィードバックループ**（`/review-decisions`）：決定の予測と実際を突き合わせ `insights.md` に学習。
 

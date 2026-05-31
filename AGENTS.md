@@ -107,7 +107,7 @@
 
 - `memory/delegation.md` の「禁止」、および `memory/guardrails.json` の `deny` に該当する操作は**絶対に実行しない**
   （本番デプロイ・データ削除・社外への情報共有・認証情報の変更など）。Antigravity IDE ではこれらを GUI の
-  Deny List（Agent → Terminal Execution policy）にも登録し、物理ブロックする。
+  Deny List（Settings → Permissions → Advanced → Deny List Terminal Commands）にも登録し、物理ブロックする。
 - 外部への書き込み・送信（Slack・GitHub・Backlog・Drive等）は必ず事前に内容を提示して承認を得る
 - 認証情報（パスワード・APIキー）を出力に含めない
 - `delegation.md` に明示許可された操作のみ自律実行できる

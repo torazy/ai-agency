@@ -43,7 +43,7 @@ description: タスクログの承認履歴を分析し、繰り返し承認さ�
 ユーザーが承認した項目だけ：
 1. `memory/delegation.md` の「自律実行OK（承認済み操作）」テーブルに行を追加（操作・範囲・承認日・条件）。
 2. `memory/guardrails.json` の `auto_approve.categories` に該当カテゴリを追加。
-3. **ターミナル系の操作なら**、IDE の **Allow List**（Ctrl+, → Agent → Terminal Execution policy →
+3. **ターミナル系の操作なら**、IDE の **Allow List**（Settings → Permissions → Advanced →
    Allow List Terminal Commands）への追加トークンをユーザーに提示する（実際の追加はGUIでユーザーが行う）。
 4. 全体レベル（Level 1/2/3）の引き上げが妥当なら、その旨も提案する。
 

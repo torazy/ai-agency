@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "物理ガードレールの正典リスト。【重要】Antigravity IDE はこのファイルを自動では読まない。IDE では下記 deny を GUI の Deny List（Ctrl+, → Agent → Terminal Execution policy → Deny List Terminal Commands）に転記して有効化する。マッチは部分文字列。gui_deny_tokens がそのまま転記用の値。CLI/Claude Code では tools/hooks/guardrail.py がこの patterns(正規表現) を読んで BeforeTool 相当で物理ブロックする。ユーザーの明示承認なしに編集しない。",
+  "description": "物理ガードレールの正典リスト。【重要】Antigravity IDE はこのファイルを自動では読まない。IDE では下記 gui_deny_tokens を GUI の Deny List（Settings → Permissions → Advanced → Deny List Terminal Commands）に転記して有効化する（反映に再起動が必要な場合あり）。マッチは部分文字列。CLI/Claude Code では tools/hooks/guardrail.py がこの patterns(正規表現) を読んで BeforeTool 相当で物理ブロックする。ユーザーの明示承認なしに編集しない。",
   "gui_deny_tokens": [
     "rm -rf",
     "git push --force",

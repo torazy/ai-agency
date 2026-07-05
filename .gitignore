@@ -18,3 +18,6 @@ memory/task-log/
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code ローカル設定（端末固有・権限承認のたびに変化）
+.claude/settings.local.json

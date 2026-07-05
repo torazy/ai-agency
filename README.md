@@ -84,6 +84,7 @@ ai-manager/
     ├── backlog-mcp/server.py
     ├── mcp_config.sample.json
     ├── hermes/                   # Hermes Agent 適応層（SETUP.md＋スキルインストーラ）
+    ├── sync/                     # 2台運用の片方向同期（export.sh / import.sh。OPERATIONS.md §6）
     └── hooks/
         ├── guardrail.py          # CLI/Claude Code用：deny操作を物理ブロック（IDEはGUI Deny Listを使用）
         └── task-log-writer.py    # CLI/Claude Code用：セッション終了時に活動マーカー記録

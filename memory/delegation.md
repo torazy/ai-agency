@@ -48,7 +48,7 @@
 - GitHub PR作成・コメント・レビュー
 - Google Drive ファイル作成・編集
 - Slack メッセージ送信（Slackbot問い合わせ含む）
-- `memory/projects/` `memory/delegation.md` `GEMINI.md` の更新
+- `memory/projects/` `memory/delegation.md` `memory/dashboard.md` の更新
 - 外部サービスへのいかなる書き込み操作
 
 ---

@@ -1,5 +1,5 @@
 {
-  "_comment": "MCP構成の記録用サンプル。Antigravity 2.0 では IDE の MCP ストア、または ~/.gemini/config/mcp_config.json に設定する（プロジェクト内には置かない）。このファイルは『どのMCPを使う構成か』を git で再現・共有するための控え。memory/filesystem MCP は意図的に除外：記憶の正典は memory/ の markdown、ファイルアクセスは IDE が直接行うため冗長で split-brain の原因になる。",
+  "_comment": "MCP構成の正典（どのMCPを使う構成かの控え）。mcpServers ブロック自体はツール共通の標準形式。置き場所だけがツール固有：Antigravity=IDE の MCP ストア or ~/.gemini/config/mcp_config.json（プロジェクト内不可）／Claude Code=リポジトリ直下の .mcp.json（設置済み・この内容と同期すること）／VS Code Copilot=.vscode/mcp.json（キー名が servers になる点のみ差異）。memory/filesystem MCP は意図的に除外：記憶の正典は memory/ の markdown、ファイルアクセスは各ツールが直接行うため冗長で split-brain の原因になる。",
   "mcpServers": {
     "github": {
       "command": "npx",

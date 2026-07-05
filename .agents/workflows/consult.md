@@ -19,8 +19,9 @@ description: 複合的・専門的な相談を受け、@chief が真意を分析
 追加情報が必須なら、ここで1問だけ確認して止まる。
 
 ## Step 2: 知識ベースをロードする
-`GEMINI.md` / `memory/situation.md` / 関連する `memory/projects/{name}/`（overview・decisions・issues）/
-関係者 `memory/people/` を読む。サービス座標が分かれば直接参照する。
+`memory/dashboard.md` / `memory/situation.md` / 関連プロジェクトの `overview.md`＋`status.md` を読む。
+`decisions.md`・`issues.md`・関係者 `memory/people/` は**相談テーマに関係する部分だけ**を検索して読む
+（AGENTS.md §6 の読み込み規律）。サービス座標が分かれば直接参照する。
 
 ## Step 3: チームを編成する
 `.agents/agents.md` と `memory/team/roster.md` を参照し、必要な専門家（@handle）を選ぶ。

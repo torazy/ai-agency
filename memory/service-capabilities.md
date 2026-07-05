@@ -8,16 +8,38 @@
 
 ## 稼働中
 
-| サービス | 手段 | スキル/MCP | 備考 |
+> **原則**：実データは各サービスが原本。ここ（memory/）には座標（URL・ID・キー・チャンネル名）と
+> 要点だけを記録し、座標から都度取得する。グローバル座標は `memory/dashboard.md`、
+> 案件固有の座標（Backlogプロジェクトキー・リポジトリ・Driveフォルダ・Slackチャンネル）は
+> 各 `memory/projects/{name}/overview.md` のサービス座標表。
+
+### 手段の解決順（ツール非依存の共通規則）
+
+どのツール・環境でも、サービスへのアクセスは**この順で解決**する。上位が使えなければ次に落ちる。
+使えるかどうかは思い込まず、**セッションで実際に利用可能なツール（MCP・ブラウザ操作）を確認して**判断する：
+
+1. **MCP／公式コネクタ**（最速・最確実）── 設定済みならこれ一択
+2. **ブラウザ操作**（実行環境が対応している場合のみ）── ログイン済みブラウザで座標のURLを直接開く
+3. **手動アシスト**（最後の砦・全環境で可能）── 座標からURLを組み立てて提示し、
+   「これを開いて内容を貼り付けてください」とユーザーに依頼する。取得後の整理・ファイリングは秘書が行う
+
+スキル（slack-via-bot / calendar-read / drive-search 等）の**手順の本体は手段非依存**
+（何を探し・どう整理するか）。手段だけ上記の順で読み替える。
+
+### サービス別の現状
+
+| サービス | 手段1: MCP/コネクタ | 手段2: ブラウザ | 手段3: 手動アシスト |
 |---|---|---|---|
-| GitHub | MCP | github-mcp（公式） | PAT認証 |
-| Backlog | MCP | backlog-mcp（カスタム） | APIキー認証 |
-| Web検索 | MCP | brave-search-mcp | APIキー認証 |
-| Memory | MCP | memory-mcp（公式） | ローカル |
-| Filesystem | MCP | filesystem-mcp（公式） | ローカル |
-| Slack | ブラウザ（Slackbot経由） | slack-via-bot | Chromeログイン済み前提 |
-| Google Calendar | ブラウザ | calendar-read | 読み取り専用・Chromeログイン済み |
-| Google Drive / Docs / Sheets | ブラウザ | drive-search | 読み取り専用・Chromeログイン済み |
+| GitHub | ✅ 設定済（Antigravity: MCPストア / Claude Code: `.mcp.json` / Copilot: `.vscode/mcp.json` 未設定） | 可 | 可 |
+| Backlog | ✅ 設定済（同上） | 可 | 可 |
+| Web検索 | ✅ brave-search（Claude Code は内蔵検索も） | 可 | 可 |
+| Slack | 未設定（公式コネクタ/MCPあり・拡張候補） | 環境による | 可 |
+| Google Calendar | 未設定（公式コネクタあり・拡張候補） | 環境による | 可 |
+| Google Drive / Docs / Sheets | 未設定（公式コネクタあり・拡張候補） | 環境による | 可 |
+
+**ブラウザ操作の可否の目安**：Antigravity=IDE内蔵ブラウザで可／Claude Code=Chrome拡張や
+コネクタが**環境にあれば**可（なければ手段3へ）／Copilot=不可（常に手段3へ）。
+ただしこれは目安であり、**その場で使えるツールを確認するのが正**。
 
 ---
 

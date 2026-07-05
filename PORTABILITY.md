@@ -1,29 +1,38 @@
-# 移植性メモ ── Antigravity ⇄ Claude Code
+# 移植性メモ ── マルチエージェント対応（Antigravity / Claude Code / GitHub Copilot）
 
-将来 Claude Code へ移行する可能性を見込み、**移植可能コア**と**薄いプラットフォーム適応層**を分離してある。
-移行時は適応層だけを差し替えればよい。
+**移植可能コア**と**薄いプラットフォーム適応層**を分離し、適応層は**3ツール分を並置済み**（2026-07-05 実装）。
+どのツールで開いても同じ秘書・同じ記憶で動く。
 
 ## 層の分離
 
 | 層 | 中身 | 役割 |
 |---|---|---|
-| **移植可能コア（共通）** | `AGENTS.md`、`.agents/skills/*/SKILL.md`、`memory/*.md`、`memory/guardrails.json`、`tools/`（MCP・フックスクリプト） | 行動規範・知識・スキル・記憶・ロジック。ツール非依存。 |
-| **適応層（差し替え対象）** | `.agents/agents.md`、`.agents/workflows/`、`.agents/config.json`、`/schedule` 登録、`GEMINI.md` | オーケストレーションとツール固有の起動方法。 |
+| **移植可能コア（唯一の正典）** | `AGENTS.md`、`.agents/agents.md`（ペルソナ）、`.agents/workflows/`（手順）、`.agents/skills/*/SKILL.md`、`memory/`、`tools/`（MCP・フックスクリプト） | 行動規範・ペルソナ・手順・知識・記憶・ロジック。ツール非依存。 |
+| **Antigravity 適応層** | `GEMINI.md`、`.agents/`（ネイティブ認識）、GUI Deny List、`/schedule` | 現行のメイン環境 |
+| **Claude Code 適応層** | `CLAUDE.md`（@import）、`.claude/agents/`・`.claude/commands/`・`.claude/skills/`（すべて正典へのポインタ）、`.claude/settings.json`（deny＋フック） | ほぼ完全対応（並列サブエージェント・フック・スキル自動起動が全部動く） |
+| **Copilot 適応層** | `.github/copilot-instructions.md`、`.github/prompts/*.prompt.md`（正典へのポインタ） | 部分対応（並列サブエージェント・フック・定期実行なし → 劣化モード明記） |
 
-## 対応表（移行時の読み替え）
+> **ドリフト対策の原則**：手順・ペルソナの本文は必ず正典（`.agents/`・`AGENTS.md`）側を編集する。
+> `.claude/`・`.github/` 配下は「正典を読んで実行せよ」というポインタなので、正典を直せば全ツールに反映される。
+> 例外は各ポインタの frontmatter（name/description＝起動トリガー）で、正典の description を変えたら転写する。
 
-| 機能 | Antigravity 2.0（現在） | Claude Code（移行先） |
-|---|---|---|
-| 常時ルール | `AGENTS.md`（＋`GEMINI.md`） | `AGENTS.md` / `CLAUDE.md`（どちらも読む） |
-| ペルソナ／専門家 | `.agents/agents.md`（1ファイルに全員） | `.claude/agents/{handle}.md`（サブエージェントごとに1ファイル） |
-| スキル | `.agents/skills/{name}/SKILL.md` | `.claude/skills/{name}/SKILL.md`（同じSKILL.md標準） |
-| スラッシュコマンド | `.agents/workflows/{name}.md` | `.claude/commands/{name}.md` |
-| 物理ガードレール（主） | **IDE GUI の Deny List**（Ctrl+, → Agent → Terminal Execution policy）。`guardrails.json` の `gui_deny_tokens` を転記 | `.claude/settings.json` の `permissions.deny` |
-| フック（スクリプト・副） | **IDE は非対応**。CLI は `.gemini/settings.json` の `hooks`（`BeforeTool`/`SessionEnd`） | `.claude/settings.json` の `hooks`（`PreToolUse`/`Stop`） |
-| 活動ログ | IDE: エージェントが会話中に task-log へ追記（memory-update）。CLI: `SessionEnd` フックで task-log-writer.py | `Stop` フックで task-log-writer.py |
-| サブエージェント召集 | 動的サブエージェント（自動）を `/consult` が指示 | `Task`/サブエージェント機構を `/consult` が指示 |
-| 定期実行 | `/schedule`・`agy` cron | cron／`/loop`／scheduled routines |
-| MCP | IDE MCPストア／`~/.gemini/config/mcp_config.json` | `.mcp.json`／`~/.claude.json` |
+## 対応表（実装済み）
+
+| 機能 | Antigravity 2.0 | Claude Code | GitHub Copilot (VS Code) |
+|---|---|---|---|
+| 常時ルール | `AGENTS.md`＋`GEMINI.md` | `CLAUDE.md`（`@AGENTS.md`・`@memory/dashboard.md` をインポート） | `AGENTS.md`（ネイティブ）＋`.github/copilot-instructions.md` |
+| 稼働サマリー | `memory/dashboard.md`（ツール中立・GEMINI.md が参照指示） | 同左（CLAUDE.md がインポート） | 同左（instructions が参照指示） |
+| ペルソナ／専門家 | `.agents/agents.md`（正典） | `.claude/agents/{handle}.md` ×8（正典へのポインタ） | ✕ 単一コンテキストの節分割で代替（劣化モード） |
+| スキル | `.agents/skills/{name}/SKILL.md`（正典） | `.claude/skills/{name}/SKILL.md`（ポインタ・自動起動有効） | 手動参照（instructions で誘導） |
+| スラッシュコマンド | `.agents/workflows/{name}.md`（正典） | `.claude/commands/{name}.md`（ポインタ） | `.github/prompts/{name}.prompt.md`（ポインタ） |
+| 物理ガードレール | **GUI Deny List**（`gui_deny_tokens` を転記） | `.claude/settings.json` の `permissions.deny` ＋ PreToolUse フック（guardrail.py） | ✕ 機械的ブロックなし（instructions の自制のみ） |
+| 活動ログ | 会話中に秘書が追記 | `Stop` フックで task-log-writer.py 自動記録 | 会話中に追記（instructions で指示） |
+| サブエージェント召集 | 動的サブエージェント | `Task` ツール（本物の並列・独立） | ✕ |
+| 定期実行 | `/schedule` | cron／`/loop`／scheduled routines | ✕（GitHub Actions で代替可） |
+| MCP | IDE MCPストア／`~/.gemini/config/mcp_config.json` | `.mcp.json`（**設置済み**・github/backlog/brave-search） | `.vscode/mcp.json`（キー名 `servers`・未設置） |
+
+**対応度の目安**：Antigravity＝フル ／ Claude Code＝フル同等（ガードレールはむしろ強い） ／
+Copilot＝閲覧・ファイリング・簡易相談まで（重要判断は他2ツールへ誘導）。
 
 > **重要（実機検証で判明）**：Antigravity **IDE(GUI)** はプロジェクト内のスクリプトフック（`.agents/config.json` 等）を
 > 読まない。IDE の安全は**ネイティブ Deny List（GUI）**で担保する。`tools/hooks/*.py` と `guardrails.json` は
@@ -40,10 +49,17 @@ Gemini/Antigravity **CLI** ── `.gemini/settings.json`：
 ```
 **Claude Code** ── `.claude/settings.json`：同様に `hooks.PreToolUse` / `hooks.Stop` へ。
 
-## 移行時の作業（概要）
-1. `.agents/agents.md` の各 `## The X (@handle)` を `.claude/agents/{handle}.md`（frontmatter付き）へ分割。
-2. `.agents/workflows/*.md` を `.claude/commands/*.md` へコピー（中身はほぼそのまま）。
-3. 上記のフック設定例を `.claude/settings.json` に置く。フックスクリプトは入力キーに頑健なのでそのまま流用可。
-4. ガードレールは GUI Deny List → `permissions.deny` へ（`gui_deny_tokens` を流用）。
-5. MCP 設定を `.mcp.json` へ移す。
-6. `AGENTS.md`・`memory/`・`.agents/skills/` は無変更で動く。
+## 適応層のメンテナンス
+
+- **正典を変更したら**：`.claude/`・`.github/` のポインタは本文を読むだけなので基本追従する。
+  スキル・ワークフローを**追加/削除/改名**したときだけ、対応するポインタファイルを追加/削除する。
+  スキルのポインタは以下で一括再生成できる（bash）：
+  ```bash
+  for dir in .agents/skills/*/; do name=$(basename "$dir"); mkdir -p ".claude/skills/$name";
+    awk 'NR==1 && /^---/{fm=1; print; next} fm==1{print; if(/^---/){exit}}' "$dir/SKILL.md" > ".claude/skills/$name/SKILL.md";
+    printf '\n# %s（ポインタ）\n\nこのスキルの手順の正典は `.agents/skills/%s/SKILL.md` にある。\nそれを読み、記載された手順を忠実に実行すること。手順を編集する場合も正典側を直す。\n' "$name" "$name" >> ".claude/skills/$name/SKILL.md"; done
+  ```
+- **ガードレールを変更したら**：`memory/guardrails.json`（正典）→ ①GUI Deny List ②`.claude/settings.json` の
+  `permissions.deny` の両方に転記する。フックスクリプト（guardrail.py）は正典を直接読むため転記不要。
+- 他ツール（Cursor / Codex 等）への追加対応：`AGENTS.md`＋`memory/` はそのまま効くため、
+  必要ならスラッシュコマンド相当のポインタ層だけ足せばよい。

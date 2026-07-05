@@ -9,9 +9,13 @@ description: 予定・Backlog・GitHub・Slack・未解決課題を横断スキ�
 @chief として、ユーザーが動く前に「今日の状況」を先回りで整える。**読み取りと下書きのみ。外部への送信・実行はしない。**
 
 ## Step 1: コンテキストをロード
-`GEMINI.md` / `memory/situation.md` / 進行中プロジェクトの `status.md`・`issues.md` を読む。
+`memory/dashboard.md` / `memory/situation.md` / `memory/commitments.md` /
+進行中プロジェクトの `status.md`・`issues.md` を読む。
 
 ## Step 2: 横断スキャン（座標があるものだけ・並列でよい）
+- **約束台帳**（commitments.md）：期限が今日〜3日以内・超過している行／フォロー日が到来した
+  「出した指示」（→催促の下書き候補）／`waiting` のまま7日以上の行。
+  表示は関連欄（`P:{案件}`）を添え、同じ案件のものは案件見出しでまとめる。
 - **カレンダー**：今日の予定（calendar-read）。準備が要る会議を特定。
 - **Backlog**：自分担当・期限が今日〜3日以内・更新のあったチケット（backlog-search）。
 - **GitHub**：レビュー待ち・自分宛のPR/レビュー指摘（github-review）。

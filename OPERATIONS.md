@@ -106,6 +106,15 @@ git merge upstream/main
 | ② 運搬 | 手動 | bundle ファイル1個を USB 等で受け側へ（**媒体は暗号化推奨**） |
 | ③ 受け側（PC1） | `bash tools/sync/import.sh <bundle>` | **全自動**：受け側の変更を先に自動コミット→取得→3-wayマージ（初回の独立履歴も自動統合） |
 
+**Windows（Git Bash なし・PowerShell 標準環境）**では同一ロジックの `.ps1` 版を使う（git.exe のみ必要）：
+
+```powershell
+# 送り側
+powershell -ExecutionPolicy Bypass -File tools\sync\export.ps1 [-OutDir E:\] [-GitHub]
+# 受け側
+powershell -ExecutionPolicy Bypass -File tools\sync\import.ps1 -Bundle <ファイル>   # または -GitHub
+```
+
 - コンフリクト時：スクリプトは上書きせず対象ファイルを列挙して終了する。
   秘書に「**同期のコンフリクトを解決して。送り側の内容は[提案]として統合して**」と依頼すれば解決される
 - 統合後の仕上げ（推奨）：秘書に「同期後の重複を整理して」（memory-maintenance）

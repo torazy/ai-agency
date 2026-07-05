@@ -28,5 +28,10 @@
       "WebFetch(domain:note.com)",
       "Bash(git -c 'user.name=AI Manager' -c user.email=n.imaoka@gmail.com commit -q -m 'Reframe safety model: deny=approval-gate, Strict Mode=Lv1, Allow List=graduation *)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "github",
+    "backlog",
+    "brave-search"
+  ]
 }

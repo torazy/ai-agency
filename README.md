@@ -4,8 +4,9 @@
 召集し、統合回答を返す。情報をプロジェクト別に蓄積し、定期実行で先回りし、信頼の蓄積に応じて
 自律範囲を広げていく。最終ゴールは「ユーザーは承認するだけ」。
 
-> **ツール非依存**。Antigravity 2.0・Claude Code（どちらもフル機能）・GitHub Copilot（部分対応）の
-> 適応層を並置済みで、どのツールで開いても同じ秘書・同じ記憶で動く（対応表は `PORTABILITY.md`）。
+> **ツール非依存**。Antigravity 2.0・Claude Code（どちらもフル機能）・Hermes Agent（ほぼフル＋
+> 常時稼働・モバイル）・GitHub Copilot（部分対応）の適応層を並置済みで、どのツールで開いても
+> 同じ秘書・同じ記憶で動く（対応表は `PORTABILITY.md`、Hermes は `tools/hermes/SETUP.md`）。
 
 > ⚠️ **このリポジトリは本体（テンプレート）。ここに個人の記憶を蓄積しない。**
 > 使う人ごとに GitHub Template から自分のプライベートリポジトリ（インスタンス）を作って運用する。
@@ -82,6 +83,7 @@ ai-manager/
 └── tools/
     ├── backlog-mcp/server.py
     ├── mcp_config.sample.json
+    ├── hermes/                   # Hermes Agent 適応層（SETUP.md＋スキルインストーラ）
     └── hooks/
         ├── guardrail.py          # CLI/Claude Code用：deny操作を物理ブロック（IDEはGUI Deny Listを使用）
         └── task-log-writer.py    # CLI/Claude Code用：セッション終了時に活動マーカー記録

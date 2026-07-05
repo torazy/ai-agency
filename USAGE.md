@@ -4,7 +4,8 @@ AI秘書チームの日常的な使い方を場面別にまとめたガイド。
 セットアップ手順は `README.md`、行動規範の詳細は `AGENTS.md` を参照。
 
 > **使えるツール**：Antigravity（フル）／ Claude Code（フル同等 ── 同じ `/consult` `/simulate` 等が使える）／
-> GitHub Copilot（簡易版 ── 閲覧・ファイリング・簡易相談向け。重要判断は他2ツールで）。
+> Hermes Agent（ほぼフル ── 常駐・cron・Slack/Telegram経由でスマホから話しかけ可。`tools/hermes/SETUP.md`）／
+> GitHub Copilot（簡易版 ── 閲覧・ファイリング・簡易相談向け。重要判断は他ツールで）。
 > どのツールで開いても記憶（`memory/`）は共通。詳細は `PORTABILITY.md`。
 
 ---

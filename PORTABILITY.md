@@ -11,6 +11,7 @@
 | **Antigravity 適応層** | `GEMINI.md`、`.agents/`（ネイティブ認識）、GUI Deny List、`/schedule` | 現行のメイン環境 |
 | **Claude Code 適応層** | `CLAUDE.md`（@import）、`.claude/agents/`・`.claude/commands/`・`.claude/skills/`（すべて正典へのポインタ）、`.claude/settings.json`（deny＋フック） | ほぼ完全対応（並列サブエージェント・フック・スキル自動起動が全部動く） |
 | **Copilot 適応層** | `.github/copilot-instructions.md`、`.github/prompts/*.prompt.md`（正典へのポインタ） | 部分対応（並列サブエージェント・フック・定期実行なし → 劣化モード明記） |
+| **Hermes Agent 適応層** | `tools/hermes/`（スキルインストーラ＋`SETUP.md`）。`AGENTS.md` はネイティブ認識 | ほぼフル対応（サブエージェント・MCP・内蔵cron可。**常駐＋メッセージング**で常時稼働とモバイルを補完。ガードレールは承認プロンプト依存） |
 
 > **ドリフト対策の原則**：手順・ペルソナの本文は必ず正典（`.agents/`・`AGENTS.md`）側を編集する。
 > `.claude/`・`.github/` 配下は「正典を読んで実行せよ」というポインタなので、正典を直せば全ツールに反映される。
@@ -32,7 +33,10 @@
 | MCP | IDE MCPストア／`~/.gemini/config/mcp_config.json` | `.mcp.json`（**設置済み**・github/backlog/brave-search） | `.vscode/mcp.json`（キー名 `servers`・未設置） |
 
 **対応度の目安**：Antigravity＝フル ／ Claude Code＝フル同等（ガードレールはむしろ強い） ／
-Copilot＝閲覧・ファイリング・簡易相談まで（重要判断は他2ツールへ誘導）。
+Copilot＝閲覧・ファイリング・簡易相談まで（重要判断は他ツールへ誘導） ／
+Hermes Agent＝ほぼフル＋常時稼働・モバイル（詳細は `tools/hermes/SETUP.md`。
+スキル＝agentskills.io 標準の SKILL.md 互換、ワークフローはチャットで「consult: …」と依頼、
+**メモリ二重管理の禁止ルール必須**＝Hermes の MEMORY.md には正典へのポインタのみ置く）。
 
 > **重要（実機検証で判明）**：Antigravity **IDE(GUI)** はプロジェクト内のスクリプトフック（`.agents/config.json` 等）を
 > 読まない。IDE の安全は**ネイティブ Deny List（GUI）**で担保する。`tools/hooks/*.py` と `guardrails.json` は
@@ -61,5 +65,7 @@ Gemini/Antigravity **CLI** ── `.gemini/settings.json`：
   ```
 - **ガードレールを変更したら**：`memory/guardrails.json`（正典）→ ①GUI Deny List ②`.claude/settings.json` の
   `permissions.deny` の両方に転記する。フックスクリプト（guardrail.py）は正典を直接読むため転記不要。
+- **Hermes 利用者**：本体アップデート後に `bash tools/hermes/install-skills.sh` を再実行する
+  （`~/.hermes/skills/` のポインタを最新化）。
 - 他ツール（Cursor / Codex 等）への追加対応：`AGENTS.md`＋`memory/` はそのまま効くため、
   必要ならスラッシュコマンド相当のポインタ層だけ足せばよい。

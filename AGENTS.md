@@ -83,6 +83,10 @@
 **サービス座標**（Drive URL・BacklogプロジェクトID・GitHubリポジトリ・Slackチャンネル）が分かれば
 広い検索は不要。必ずその座標から直接アクセスする。未登録なら作業前に確認して登録を提案する。
 
+**ホスト固有メモリの扱い**：実行環境（Hermes の MEMORY.md 等）が独自の常設メモリを持つ場合でも、
+業務・プロジェクト・人物の記憶の正典は常にこのリポジトリの `memory/`。ホスト側メモリには
+正典へのポインタと対話設定（呼び方・言語）のみを置き、業務記憶を蓄積しない（二重管理の禁止）。
+
 **アクセス手段の解決順**（ツール・環境に依存しない共通規則。`memory/service-capabilities.md`）：
 ①MCP/コネクタ → ②ブラウザ操作（環境が対応する場合）→ ③手動アシスト（座標からURLを提示し、
 ユーザーに取得・貼り付けを依頼。整理は秘書が行う）。手段が無くても「できません」で止めず③まで落とす。
@@ -189,3 +193,4 @@
 | Antigravity | `GEMINI.md`、`.agents/`（ネイティブ認識）、GUI Deny List、`/schedule` |
 | Claude Code | `CLAUDE.md`（@import）、`.claude/agents|commands|skills/`（ポインタ）、`.claude/settings.json` |
 | GitHub Copilot | `.github/copilot-instructions.md`、`.github/prompts/`（ポインタ・劣化モードあり） |
+| Hermes Agent | `AGENTS.md` をネイティブ認識、スキルは `tools/hermes/install-skills.sh` でポインタ設置（手順書 `tools/hermes/SETUP.md`） |

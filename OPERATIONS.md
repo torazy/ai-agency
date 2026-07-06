@@ -4,10 +4,10 @@
 使う人はそれぞれ自分の **インスタンス（プライベートリポジトリ）** を作って運用する。
 
 ```
-ai-manager（本体・テンプレート）          ← ツールの進化はここで起きる
+ai-agency（本体・テンプレート）          ← ツールの進化はここで起きる
    │  GitHub Template として複製
-   ├── ai-manager-yamada（山田さんのインスタンス）← 山田さんの記憶が育つ
-   ├── ai-manager-suzuki（鈴木さんのインスタンス）
+   ├── ai-agency-yamada（山田さんのインスタンス）← 山田さんの記憶が育つ
+   ├── ai-agency-suzuki（鈴木さんのインスタンス）
    └── ...
 ```
 
@@ -36,10 +36,10 @@ ai-manager（本体・テンプレート）          ← ツールの進化は�
 1. **本体を clone して自分のインスタンスリポジトリを作る**（履歴を保持 ── 後の upstream merge が
    きれいに通る。この手順を推奨）：
    ```bash
-   git clone https://github.com/n-ima/ai-manager.git ai-manager-{name}
-   cd ai-manager-{name}
+   git clone https://github.com/n-ima/ai-agency.git ai-agency-{name}
+   cd ai-agency-{name}
    git remote rename origin upstream
-   gh repo create ai-manager-{name} --private --source . --remote origin --push
+   gh repo create ai-agency-{name} --private --source . --remote origin --push
    ```
    ※ GitHub の [Use this template] でも作れるが、履歴が切れるため初回だけ
    `git merge upstream/main --allow-unrelated-histories` が必要になる

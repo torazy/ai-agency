@@ -7,7 +7,7 @@
 #   3. bundle ファイルを作成（既定）または GitHub へ push（--github）
 #
 # 使い方:
-#   bash tools/sync/export.sh                # bundle を ../ai-manager-sync/ に作成
+#   bash tools/sync/export.sh                # bundle を ../ai-agency-sync/ に作成
 #   bash tools/sync/export.sh /path/to/usb   # bundle を指定先に作成
 #   bash tools/sync/export.sh --github       # origin へ push（GitHub が使える構成のとき）
 set -euo pipefail
@@ -16,7 +16,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 MODE="bundle"
-OUT_DIR="$(dirname "$REPO_ROOT")/ai-manager-sync"
+OUT_DIR="$(dirname "$REPO_ROOT")/ai-agency-sync"
 if [ "${1:-}" = "--github" ]; then
   MODE="github"
 elif [ -n "${1:-}" ]; then
@@ -29,7 +29,7 @@ if ! git rev-parse --git-dir >/dev/null 2>&1; then
   echo "[export] git リポジトリを初期化しました"
 fi
 # コミット者情報が未設定でも止まらないように（ローカル設定のみ）
-git config user.name  >/dev/null 2>&1 || git config user.name  "ai-manager-sync"
+git config user.name  >/dev/null 2>&1 || git config user.name  "ai-agency-sync"
 git config user.email >/dev/null 2>&1 || git config user.email "sync@local"
 
 # 2) ローカル変更を自動コミット
@@ -51,7 +51,7 @@ if [ "$MODE" = "github" ]; then
   echo "[export] 受け側では: bash tools/sync/import.sh --github"
 else
   mkdir -p "$OUT_DIR"
-  BUNDLE="$OUT_DIR/ai-manager-${HOST_TAG}-$(date +%Y%m%d-%H%M).bundle"
+  BUNDLE="$OUT_DIR/ai-agency-${HOST_TAG}-$(date +%Y%m%d-%H%M).bundle"
   git bundle create "$BUNDLE" "$BRANCH"
   git bundle verify "$BUNDLE" >/dev/null
   echo "[export] 作成: $BUNDLE"

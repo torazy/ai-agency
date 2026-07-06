@@ -2,7 +2,7 @@
 # bash 版（import.sh）と同一ロジック。単純上書きはしない（3-way マージ）。
 #
 # 使い方:
-#   powershell -ExecutionPolicy Bypass -File tools\sync\import.ps1 -Bundle E:\ai-manager-PC2-20260705.bundle
+#   powershell -ExecutionPolicy Bypass -File tools\sync\import.ps1 -Bundle E:\ai-agency-PC2-20260705.bundle
 #   powershell -ExecutionPolicy Bypass -File tools\sync\import.ps1 -GitHub [-Remote origin]
 param(
     [string]$Bundle = "",
@@ -26,7 +26,7 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "[import] エラー: 受け側は本体から clone したインスタンス（コミットのある git リポジトリ）で実行してください"
     exit 1
 }
-$n = cmd /c "git config user.name 2>nul";  if (-not $n) { git config user.name  "ai-manager-sync" }
+$n = cmd /c "git config user.name 2>nul";  if (-not $n) { git config user.name  "ai-agency-sync" }
 $e = cmd /c "git config user.email 2>nul"; if (-not $e) { git config user.email "sync@local" }
 
 # 1) 受け側のローカル変更を先にコミット（ダーティなままマージしない）

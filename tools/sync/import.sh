@@ -8,7 +8,7 @@
 #   4. コンフリクト時は上書きせず、対象ファイルを列挙して秘書/人間に引き継ぐ
 #
 # 使い方:
-#   bash tools/sync/import.sh /path/to/ai-manager-PC2-20260705-0930.bundle
+#   bash tools/sync/import.sh /path/to/ai-agency-PC2-20260705-0930.bundle
 #   bash tools/sync/import.sh --github            # origin から取得（受け側は push しない）
 set -euo pipefail
 
@@ -21,7 +21,7 @@ if ! git rev-parse --git-dir >/dev/null 2>&1 || ! git rev-parse HEAD >/dev/null 
   echo "[import] エラー: 受け側は本体から clone したインスタンス（コミットのある git リポジトリ）で実行してください" >&2
   exit 1
 fi
-git config user.name  >/dev/null 2>&1 || git config user.name  "ai-manager-sync"
+git config user.name  >/dev/null 2>&1 || git config user.name  "ai-agency-sync"
 git config user.email >/dev/null 2>&1 || git config user.email "sync@local"
 
 # 1) 受け側のローカル変更を先にコミット

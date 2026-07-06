@@ -20,7 +20,7 @@ bash tools/hermes/install-skills.sh
 - `.agents/skills/`（正典）から Hermes 標準（agentskills.io / SKILL.md）のポインタを
   `~/.hermes/skills/` に生成する（`HERMES_SKILLS_DIR` で変更可）
 - **本体アップデート後は再実行**する（冪等・上書き安全）
-- ポインタは ai-manager ワークスペース外では自己無効化する（誤発動防止の注記入り）
+- ポインタは ai-agency ワークスペース外では自己無効化する（誤発動防止の注記入り）
 
 ## 3. ワークフロー（/consult 等）
 
@@ -41,7 +41,7 @@ Hermes は独自の常設メモリ（`~/.hermes/memories/MEMORY.md`・`USER.md`�
 防ぐため、Hermes の memory ツールに以下を1度だけ登録しておく：
 
 ```
-業務・プロジェクト・人物に関する記憶の正典は、ai-manager ワークスペースの memory/ 配下の
+業務・プロジェクト・人物に関する記憶の正典は、ai-agency ワークスペースの memory/ 配下の
 markdown である。この MEMORY.md には業務記憶を蓄積せず、必要なら memory/ にファイリングする。
 ```
 

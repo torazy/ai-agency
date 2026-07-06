@@ -17,14 +17,14 @@ for dir in "$REPO_ROOT"/.agents/skills/*/; do
   awk 'NR==1 && /^---/{fm=1; print; next} fm==1{print; if(/^---/){exit}}' "$src" > "$DEST/$name/SKILL.md"
   cat >> "$DEST/$name/SKILL.md" <<EOF
 
-# $name（ポインタ / ai-manager 専用）
+# $name（ポインタ / ai-agency 専用）
 
-このスキルの手順の正典は、作業ディレクトリ（ai-manager インスタンスのルート）の
+このスキルの手順の正典は、作業ディレクトリ（ai-agency インスタンスのルート）の
 \`.agents/skills/$name/SKILL.md\` にある。それを読み、手順を忠実に実行すること。
 手順を編集する場合も正典側を直す。
 
 ⚠️ 作業ディレクトリに \`.agents/skills/$name/SKILL.md\` が存在しない場合、
-ここは ai-manager ワークスペースではないので、このスキルを適用しない。
+ここは ai-agency ワークスペースではないので、このスキルを適用しない。
 EOF
   count=$((count + 1))
 done

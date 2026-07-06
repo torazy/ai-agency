@@ -15,7 +15,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $RepoRoot
-if ($OutDir -eq "") { $OutDir = Join-Path (Split-Path $RepoRoot -Parent) "ai-manager-sync" }
+if ($OutDir -eq "") { $OutDir = Join-Path (Split-Path $RepoRoot -Parent) "ai-agency-sync" }
 
 # 1) git リポジトリでなければ初期化（ローカル利用のみだったインスタンスを救済）
 cmd /c "git rev-parse --git-dir >nul 2>nul"
@@ -24,7 +24,7 @@ if ($LASTEXITCODE -ne 0) {
     if ($LASTEXITCODE -ne 0) { cmd /c "git init >nul 2>nul"; cmd /c "git checkout -b main >nul 2>nul" }
     Write-Host "[export] git リポジトリを初期化しました"
 }
-$n = cmd /c "git config user.name 2>nul";  if (-not $n) { git config user.name  "ai-manager-sync" }
+$n = cmd /c "git config user.name 2>nul";  if (-not $n) { git config user.name  "ai-agency-sync" }
 $e = cmd /c "git config user.email 2>nul"; if (-not $e) { git config user.email "sync@local" }
 
 # 2) ローカル変更を自動コミット
@@ -49,7 +49,7 @@ if ($GitHub) {
     Write-Host "[export] 受け側では: powershell -ExecutionPolicy Bypass -File tools\sync\import.ps1 -GitHub"
 } else {
     if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Force $OutDir | Out-Null }
-    $Bundle = Join-Path $OutDir ("ai-manager-" + $HostTag + "-" + (Get-Date -Format "yyyyMMdd-HHmm") + ".bundle")
+    $Bundle = Join-Path $OutDir ("ai-agency-" + $HostTag + "-" + (Get-Date -Format "yyyyMMdd-HHmm") + ".bundle")
     cmd /c ('git bundle create "' + $Bundle + '" ' + $Branch + ' >nul 2>nul')
     if ($LASTEXITCODE -ne 0) { Write-Host "[export] エラー: bundle 作成に失敗しました"; exit 1 }
     cmd /c ('git bundle verify "' + $Bundle + '" >nul 2>nul')

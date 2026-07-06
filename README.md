@@ -31,7 +31,7 @@ IDE の MCP ストア、または `~/.gemini/config/mcp_config.json` に設定�
 構成の控えは `tools/mcp_config.sample.json`（github / backlog / brave-search）。
 
 ### 4. Antigravity IDE でワークスペースを開く
-`ai-manager` を開くと、`AGENTS.md`（常時ルール）・`.agents/agents.md`（ペルソナ）・
+`ai-agency` を開くと、`AGENTS.md`（常時ルール）・`.agents/agents.md`（ペルソナ）・
 `.agents/skills/`（スキル）・`.agents/workflows/`（スラッシュコマンド）が認識される。
 安全のため、続けて GUI の Deny List を設定する（下記「自律と安全の仕組み」参照）。
 
@@ -43,7 +43,7 @@ IDE の MCP ストア、または `~/.gemini/config/mcp_config.json` に設定�
 ## ファイル構造
 
 ```
-ai-manager/
+ai-agency/
 ├── AGENTS.md                 # 常時ルール（唯一の正典・全ツールが読む）
 ├── USAGE.md                  # 場面別の使い方ガイド（人間向け）
 ├── GEMINI.md                 # Antigravity適応層＋稼働中サマリー（薄い）

@@ -22,6 +22,7 @@ mem.py ── memory/ への「決定的な追記」CLI。
          --impact "..." --prediction "..." --verify-date 2026-12-01 [--status proposed|decided] [--revoke "..."]
   python tools/mem.py decision set-status kintai-saas "<タイトル>" decided
   python tools/mem.py check
+  python tools/mem.py migrate     # 旧雛形からの移行（本体アップデート後に1回。冪等）
 
 共通オプション：--root <path>（memory/ を含むリポジトリルート。既定は自身の位置から推定。テストに使う）
 出力は UTF-8。成功時は「📝 記録: ...」を1行。失敗は非ゼロ終了。
@@ -224,6 +225,25 @@ def ensure_id_column(lines: list[str], header_idx: int, end_idx: int) -> tuple[l
     return lines, end_idx
 
 
+def ensure_rel_column(lines: list[str], header_idx: int, end_idx: int) -> list[str]:
+    """旧雛形の「出した指示」表には関連列が無い。無ければ状態列の直前に挿入し、既存行には '-' を入れる。"""
+    hdr = cells(lines[header_idx])
+    if "関連" in hdr or "状態" not in hdr:
+        return lines
+    pos = hdr.index("状態")
+    hdr.insert(pos, "関連")
+    lines[header_idx] = "| " + " | ".join(hdr) + " |"
+    lines[header_idx + 1] = "|---" * len(hdr) + "|"
+    for i in range(header_idx + 2, end_idx):
+        c = cells(lines[i])
+        if PLACEHOLDER_RE.match(lines[i]):
+            lines[i] = "| （未登録） |" + " |" * (len(hdr) - 1)
+        elif len(c) == len(hdr) - 1:
+            c.insert(pos, "-")
+            lines[i] = "| " + " | ".join(c) + " |"
+    return lines
+
+
 def commitment_add(root: Path, a: argparse.Namespace) -> None:
     p = commitments_path(root)
     lines = read(p)
@@ -234,6 +254,7 @@ def commitment_add(root: Path, a: argparse.Namespace) -> None:
     if h < 0:
         fail(f"『{KIND_SECTION[a.kind]}』節に表が無い")
     lines, e = ensure_id_column(lines, h, e)
+    lines = ensure_rel_column(lines, h, e)
     cid = next_id(lines, "C")
     rel = a.rel or "-"
     state = a.state or "open"
@@ -420,6 +441,48 @@ def decision_set_status(root: Path, project: str, title: str, status: str) -> No
     fail(f"「{title}」が見つからない")
 
 
+# ---------------------------------------------------------------- migrate
+def migrate(root: Path) -> None:
+    """旧雛形からの移行：commitments.md の3表に ID 列を足し、既存行に ID を振る。inbox.md が無ければ作る。冪等。"""
+    changed = []
+    p = root / "memory" / "commitments.md"
+    if p.exists():
+        lines = read(p)
+        touched = False
+        for sec_name in KIND_SECTION.values():
+            sec = find_section(lines, sec_name)
+            if sec < 0:
+                continue
+            h, e = find_table(lines, sec)
+            if h < 0:
+                continue
+            before = lines[h]
+            lines, _ = ensure_id_column(lines, h, e)
+            lines = ensure_rel_column(lines, h, e)
+            touched |= lines[h] != before
+        if touched:
+            write(p, lines)
+            changed.append("commitments.md に ID 列を追加")
+    if not (root / "memory" / "inbox.md").exists():
+        inbox_path(root)
+        changed.append("inbox.md を作成")
+    # decisions.md の各項目に状態行が無ければ「決定」を補う（旧雛形は全て承認済みの決定として記録していた）
+    for d in sorted((root / "memory" / "projects").glob("*/decisions.md")) if (root / "memory" / "projects").exists() else []:
+        lines = read(d)
+        out, added = [], 0
+        for i, ln in enumerate(lines):
+            out.append(ln)
+            if ln.startswith("## ") and re.match(r"## \d{4}-\d{2}-\d{2}:", ln):
+                nxt = lines[i + 1] if i + 1 < len(lines) else ""
+                if not nxt.startswith("- **状態**:"):
+                    out.append("- **状態**: 決定（移行時に補完）")
+                    added += 1
+        if added:
+            write(d, out)
+            changed.append(f"{d.parent.name}/decisions.md に状態行を {added} 件補完")
+    print("📝 移行: " + ("、".join(changed) if changed else "変更なし（既に最新）"))
+
+
 # ---------------------------------------------------------------- check
 def check(root: Path) -> None:
     problems = 0
@@ -493,6 +556,7 @@ def main(argv: list[str] | None = None) -> None:
     s = de.add_parser("set-status"); s.add_argument("project"); s.add_argument("title"); s.add_argument("status")
 
     sub.add_parser("check")
+    sub.add_parser("migrate", help="旧雛形からの移行（commitments の ID 列・inbox.md・decisions の状態行）。冪等")
 
     a = ap.parse_args(argv)
     root = (a.root or default_root()).resolve()
@@ -516,6 +580,8 @@ def main(argv: list[str] | None = None) -> None:
          "set-status": lambda: decision_set_status(root, a.project, a.title, a.status)}[a.sub]()
     elif a.cmd == "check":
         check(root)
+    elif a.cmd == "migrate":
+        migrate(root)
 
 
 if __name__ == "__main__":

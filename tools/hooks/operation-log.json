@@ -17,7 +17,7 @@
     { "category": "mem:commitment",  "pattern": "\\bmem\\.py\\s+commitment\\s+(add|set-state)\\b" },
     { "category": "mem:person",      "pattern": "\\bmem\\.py\\s+person\\s+(observe|note|predict)\\b" },
     { "category": "mem:decision",    "pattern": "\\bmem\\.py\\s+decision\\s+(add|set-status)\\b" },
-    { "category": "memory-write(sh)", "pattern": "(>>?|\\btee\\b|\\bsed\\s+-i|write_text|Set-Content|Out-File|\\bcp\\b|\\bmv\\b)[^|;&]*\\bmemory/" },
+    { "category": "memory-write(sh)", "pattern": "((>>?|\\btee\\b|\\bsed\\s+-i|Set-Content|Out-File|\\bcp\\b|\\bmv\\b)[^|;&]*\\bmemory/)|(\\bmemory/[^|;&\\n]*\\.(write_text|write_bytes)\\b)|(open\\([^)]*memory/[^)]*['\"][wa])" },
     { "category": "git-push",        "pattern": "\\bgit\\b[^|;&]*\\bpush\\b" },
     { "category": "git-commit",      "pattern": "\\bgit\\b[^|;&]*\\bcommit\\b" },
     { "category": "gh-pr-create",    "pattern": "\\bgh\\s+pr\\s+create\\b" },

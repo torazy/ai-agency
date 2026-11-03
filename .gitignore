@@ -21,3 +21,6 @@ Thumbs.db
 
 # Claude Code ローカル設定（端末固有・権限承認のたびに変化）
 .claude/settings.local.json
+
+# 本体（テンプレート）リポジトリのマーカー（インスタンスには存在させない。tools/hooks/session-start.py が参照）
+.ai-agency-template

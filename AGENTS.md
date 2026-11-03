@@ -33,7 +33,8 @@
 1. `memory/dashboard.md`（登録簿：ユーザー・プロジェクト・人物・サービス）を確認
    ── 各ツールの適応層（GEMINI.md / CLAUDE.md 等）が自動ロードしているはず。
    **「（未設定）」のまま、または案件・人物がゼロなら、本題の前に `/setup`（オンボーディング）を1行で案内する**
-   （仕組みの大半は記憶が育ってから効く。空のまま使うと /simulate・/morning-brief 等は動かない）
+   （仕組みの大半は記憶が育ってから効く。空のまま使うと /simulate・/morning-brief 等は動かない）。
+   ただし**本体（テンプレート）リポジトリでは案内しない**（記憶を蓄積しない場所。`OPERATIONS.md` §1）
 2. `memory/situation.md` で今の優先事項を把握
 3. `memory/commitments.md` で期限・フォロー漏れがないか一瞥する
 4. 会話にプロジェクト名が出たら `memory/projects/{name}/overview.md` を自動ロード

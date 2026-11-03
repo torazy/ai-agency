@@ -37,6 +37,13 @@ def main() -> None:
     mem = root / "memory"
     lines = []
 
+    # 本体（テンプレート）リポジトリでは記憶を蓄積しないので /setup を案内しない。
+    # 判定はルートの gitignore 済みマーカーファイル `.ai-agency-template`（本体メンテナが1回作る。
+    # clone されないためインスタンスには存在しない。OPERATIONS.md §5）。
+    if (root / ".ai-agency-template").exists():
+        print("[記憶の状態] このリポジトリは本体（テンプレート）。記憶は蓄積せず /setup も案内しない（OPERATIONS.md §1）。")
+        sys.exit(0)
+
     dashboard = read(mem / "dashboard.md")
     profile_unset = "**名前**: （未設定）" in dashboard
     projects = [p for p in (mem / "projects").glob("*/overview.md")] if (mem / "projects").exists() else []

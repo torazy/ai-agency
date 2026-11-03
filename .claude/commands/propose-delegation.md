@@ -1,11 +1,63 @@
 ---
-description: 承認実績（task-log）を集計し、自動承認へ昇格できる操作カテゴリを提案する
+description: タスクログの承認履歴を分析し、繰り返し承認されている操作カテゴリを「自動承認」へ昇格する提案を出す。委任レベルを安全に上げ、最終的に「承認だけ」へ近づけるエンジン。/schedule で週次実行に登録できる。
 ---
 
-`.agents/workflows/propose-delegation.md` を読み、そのワークフローを忠実に実行せよ。
+# /propose-delegation ── 委任昇格エンジン（「育てると承認だけ」の実体）
 
-Claude Code での読み替え：昇格先は Antigravity の GUI Allow List ではなく
-`.claude/settings.json` の `permissions.allow`。提案が承認されたら追記案を提示する
+ユーザー入力：`/propose-delegation`（または Scheduled Task から週次起動）
+
+入力（引数）: $ARGUMENTS
+
+信頼の蓄積を可視化し、安全に自律範囲を広げる。**昇格は必ずユーザー承認を経る。勝手に広げない。**
+
+## Step 1: 承認履歴を集計する
+`memory/task-log/*.md` の「**操作**: [カテゴリ] 対象 ── 承認済/要確認」行を集計し、
+カテゴリ別に「承認済回数」「却下/差し戻し回数」「直近の発生」を出す。
+（記録が薄い場合は `decisions.md` や会話の実績も補助的に参照する。）
+
+> 注：Claude Code では PostToolUse フック（`tools/hooks/operation-logger.py`）が外部書き込み・送信を
+> 自動で `**操作**:` 行として記録する（カテゴリ＝`{server}:{tool}` / `git-push` / `memory-write` 等）。
+> 記録ゼロなら「まだ実績が無い」と報告して終える（/setup 未実施の可能性も案内）。
+
+## Step 2: 昇格候補を判定する
+昇格候補の条件（すべて満たすもの）：
+- 承認済が **5回以上**
+- 却下・差し戻しが **0回**
+- `memory/guardrails.json` の `deny` に該当しない（破壊的・社外送信は対象外）
+- 対象範囲が限定できる（例「特定プロジェクトのBacklogコメント追加」など、広すぎない）
+
+## Step 3: 提案を出す
+```
+## 委任レベル昇格の提案
+
+以下は繰り返し承認いただいており、自動承認に昇格してよさそうです：
+
+| 操作カテゴリ | 承認実績 | 提案する自動承認の範囲 | 却下歴 |
+|---|---|---|---|
+| {カテゴリ} | {n}回 | {限定された範囲} | 0 |
+
+**昇格すると**: 上記範囲は確認なしで実行し、事後報告します（範囲外・破壊的操作は引き続き確認）。
+**据え置き推奨**: {まだ実績不足 or リスクありのもの}
+
+▶ どれを自動承認に昇格しますか？（個別に選べます）
+```
+
+## Step 4: 承認後に反映する
+ユーザーが承認した項目だけ：
+1. `memory/delegation.md` の「自律実行OK（承認済み操作）」テーブルに行を追加（操作・範囲・承認日・条件）。
+2. `memory/guardrails.json` の `auto_approve.categories` に該当カテゴリを追加。
+3. **ターミナル系の操作なら**、IDE の **Allow List**（Settings → Permissions → Advanced →
+   Allow List Terminal Commands）への追加トークンをユーザーに提示する（実際の追加はGUIでユーザーが行う）。
+4. 全体レベル（Level 1/2/3）の引き上げが妥当なら、その旨も提案する。
+
+## 哲学
+- **信頼は実績で積む**。回数と却下ゼロが根拠。
+- **範囲を絞る**。「Backlog操作すべて」ではなく「プロジェクトXのコメント追加」のように限定する。
+- **退行も認める**。事後報告で問題が出たカテゴリは、ユーザー指示で要確認へ戻す。
+
+## Claude Code での実行メモ
+
+昇格先は `.claude/settings.json`（共有）または `.claude/settings.local.json`（個人）の `permissions.allow`。提案が承認されたら追記案を提示する
 （`permissions.deny` と `memory/guardrails.json` の deny は昇格対象外・常設）。
 
 補足指示: $ARGUMENTS

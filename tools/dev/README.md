@@ -10,7 +10,7 @@
 |---|---|---|
 | メンテ用 CLAUDE.md | `tools/dev/CLAUDE.local.md` | `CLAUDE.local.md`（ルート） |
 | 製品を止める設定 | `enable-maintenance.py` が生成 | `.claude/settings.local.json` に `claudeMdExcludes` / `disableAllHooks` / `skillOverrides` / `disabledMcpjsonServers` |
-| メンテ用スキル | `tools/dev/skills/maint-*/SKILL.md` | `.claude/skills/maint-*/`（コピー） |
+| メンテ用スキル | `tools/dev/skills/maint-*/SKILL.md`（maint-check-structure / maint-test-instance） | `.claude/skills/maint-*/`（コピー） |
 | メンテ用メモリ | `tools/dev/memory/*.md`（そのまま読む・コピーしない） | ─ |
 | 本体マーカー | ─ | `.ai-agency-template`（フック無効時は不要だが Gemini CLI 系フック向けに残す） |
 
@@ -38,12 +38,10 @@ python tools/dev/disable-maintenance.py
 
 | 製品の要素 | 止める手段 | 機械的か |
 |---|---|---|
-| CLAUDE.md → AGENTS.md → memory/dashboard.md | `claudeMdExcludes`（絶対パスの glob） | 機械的 |
+| CLAUDE.md → memory/dashboard.md | `claudeMdExcludes`（絶対パスの glob） | 機械的 |
 | フック（SessionStart / PreToolUse / PostToolUse） | `disableAllHooks: true` | 機械的 |
 | スキル・ワークフロー（コマンド） | `skillOverrides` で名前ごとに `"off"` | 機械的 |
 | `.mcp.json` の MCP サーバー | `disabledMcpjsonServers` | 機械的 |
 | `permissions.deny` | **外せない**（リストは層をまたいで合算）。削除は `git rm -r` か Python で | 残る |
 | `.claude/agents/`（専門家） | 残る。害なし | 残る |
 
-Antigravity・Copilot にはこのローカル上書き層がない。そちらで本体を編集するなら、
-本体フォルダを直接開かず、親フォルダから開く。

@@ -20,7 +20,7 @@ ai-agency（本体・テンプレート）          ← ツールの進化はこ
 
 | 領域 | パス | 所有者 | アップデート時 |
 |---|---|---|---|
-| **コア（本体領域）** | `AGENTS.md` `CLAUDE.md` `GEMINI.md` `README.md` `USAGE.md` `PORTABILITY.md` `OPERATIONS.md` `.agents/` `.claude/`（settings.local.json除く） `.github/` `.mcp.json` `tools/` | 本体 | 本体の変更で上書きされる。**インスタンスで直接編集しない** |
+| **コア（本体領域）** | `CLAUDE.md` `README.md` `USAGE.md` `PORTABILITY.md` `OPERATIONS.md` `.claude/`（settings.local.json・skills/maint-* 除く） `.mcp.json` `tools/` | 本体 | 本体の変更で上書きされる。**インスタンスで直接編集しない** |
 | **データ（インスタンス領域）** | `memory/`（全部） `deliverables/` `.env` `.claude/settings.local.json` | 各ユーザー | 本体は触らない。マージで衝突しない |
 
 例外：緊急でインスタンス側のコアを直した場合は、**必ず本体へ PR で還流**する（しないと次の
@@ -44,8 +44,9 @@ ai-agency（本体・テンプレート）          ← ツールの進化はこ
    ※ GitHub の [Use this template] でも作れるが、履歴が切れるため初回だけ
    `git merge upstream/main --allow-unrelated-histories` が必要になる
 2. `.env` を作成（`.env.template` 参照。Backlog/GitHub/Brave の各キー）
-3. MCP を登録（`tools/mcp_config.sample.json` 参照。ツールごとの置き場所はコメントに記載）
-4. 好きなエージェント（Antigravity / Claude Code / Copilot）でフォルダを開き、**`/setup`** を実行する
+3. MCP は `.mcp.json` に同梱済み（github / backlog / brave-search。`.env` のキーを参照する）。
+   Slack・Google Workspace・Notion 等は claude.ai のコネクタを接続しておく（無ければ手動アシストに落ちる）
+4. Claude Code でフォルダを開き、**`/setup`** を実行する
    （対話でプロフィール・案件・人物・優先事項を登録し、使えるツールを棚卸しする。約15分・再実行可）
 5. 定期実行を登録（README の `/schedule` 文例）
 6. upstream の確認（手順1の clone 方式なら登録済み）：
@@ -91,13 +92,12 @@ git merge upstream/main
 - **本体で `/setup` や `/intake` を実行しない**。動作確認は使い捨てのテストインスタンスで行う
   （`maint-test-instance` スキル：`git clone . ../ai-agency-test`。push しない。削除は手動）。
 - `permissions.deny` は局所設定で外せないため本体でも効く。ディレクトリ削除は `git rm -r` か Python で行う。
-- Antigravity・Copilot にはローカル上書き層が無い。そちらで本体を編集するなら本体フォルダを直接開かず親フォルダから開く。
 
 - `memory/` 配下のファイルは**初期化用の雛形**。リリース後に雛形の構造を変える場合は、
   上書きでなく **移行手順** をコミットメッセージと `PORTABILITY.md` に明記する
   （例：「commitments.md に関連欄を追加 → 既存インスタンスは列を手動追加 or 秘書に依頼」）
-- コアの変更は必ず正典（`.agents/`）側で行い、ポインタ（`.claude/` `.github/`）を同期する
-  （`PORTABILITY.md` の再生成スクリプト参照）
+- 正典は `CLAUDE.md`（常時ルール）・`.claude/agents/`（人格）・`.claude/skills/`（手順）・`.claude/commands/`（コマンド）。
+  構造の整合は `maint-check-structure` スキルで検査する
 - 破壊的変更（ファイル名変更・ワークフロー削除）は README のリリースノートに明記する
 
 ---
@@ -153,6 +153,6 @@ powershell -ExecutionPolicy Bypass -File tools\sync\import.ps1 -Bundle <ファ�
 ## 7. なぜこの方式か（設計判断の記録）
 
 - **単一リポジトリに記憶を蓄積すると本体の更新が不可能になる**（git 履歴も個人情報で汚染される）
-- サブモジュール方式は不採用：スキル・ワークフローは各エージェントがリポジトリ直下の
-  規約パス（`.agents/` 等）に要求するため、コアを別リポジトリに切り出せない
+- サブモジュール方式は不採用：スキル・コマンドは Claude Code がリポジトリ直下の規約パス（`.claude/` 等）に
+  要求するため、コアを別リポジトリに切り出せない
 - テンプレート＋upstream merge 方式は、境界規律（§1）さえ守れば git 標準機能だけで回る

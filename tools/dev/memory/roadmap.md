@@ -22,6 +22,36 @@
 | 3 | 専門家の周辺スキル：anthropics/knowledge-work-plugins の legal / finance / product-management / human-resources を @legal / @accountant / @pm / @hr に紐付け。リポジトリ内の research-report・deliverable-create はホストに同等スキル（deep-research・docs・pptx 等）があれば委譲する形に | 🔲 未着手 |
 | 4 | `/morning-brief` を定期実行に乗せ、Claude Duet 的な「本人がいない間も動く」体験に。承認ゲートは delegation.md のまま | 🔲 未着手 |
 
+## 方針転換（2026-11-04）：Claude Code 専用でよい
+
+ユーザー決定：「Claude Code 専用にしてよい。他のエージェントは必要になったら対応させる」。
+→ 4ツール分の適応層（ポインタ方式）の維持は必須でなくなった。正典（手順・人格・記憶）とツール固有の配線は
+分けたまま、Claude Code の機能（サブエージェント・agent teams・hooks・skills frontmatter・preview・
+scheduled task）を前提に設計する。他ツール向けファイルは削除せず「凍結」と明記する。
+
+## 新規要件（2026-11-04・ユーザーから）
+
+| 要件 | 内容 | 設計メモ |
+|---|---|---|
+| **記録の確実性** | 人物・案件の記録を文脈から正しく判断できるか。曖昧なら確認する。「覚えておいて」は確実に覚え、分類して記録する | capture-first（`memory/inbox.md` に即時保存＝取りこぼしゼロ）→ classify-second（確信あり＝記録して事後報告／迷い＝記録先を1行提示して事前確認）。確認が要る典型：新規人物の作成、案件が複数あり本文に名前が無い、決定か案か不明、発言者不明。表の直接編集をやめ `tools/mem.py` 経由で追記（モデルの表崩しを防ぐ・ボードと共用） |
+| **ボード** | タスク・案件・人物を画面で確認し、入力・操作もできる | `tools/board/`：Python のローカルサーバー＋単一ページ。memory/ の markdown を読み、書き込みは `tools/mem.py` と同じ経路（markdown が正典のまま。二重ストアにしない）。Claude Code の preview で開く。inbox の仕分け・約束の状態変更・人物の判断事例追加を最初の操作対象に。段階：読み取り専用 → inbox 仕分け → 編集 |
+| **ディスカッション** | 人（人物モデル）や既定エージェント（専門家）をアサインし、テーマを与えて議論させる | `/discuss` ワークフロー：参加者＝専門家ペルソナ＋人物モデル（Lv1 以上）の混成可。@chief が司会。ラウンド制（①各自の意見を並列 → ②他者の意見を見て反論・修正 → ③収束と残論点）。実装は Agent ツール＋SendMessage で同じサブエージェントを継続（1セッション内）。ユーザーが途中で口を挟みたい用途は agent teams（複数セッション）を検討。専門家は「正しい答え」、人物モデルは「予測される反応」とラベルを分けて混ぜない。記録：decisions（予測・検証日）／人物の検証テーブル／insights |
+
+**専門家の実行形態の指針**：結論を1つに統合して返す用途（/consult・/discuss の通常形）→ **サブエージェント**
+（同期・並列・安価・文脈は chief が注入）。長時間の自律作業（@generalist のリサーチ・一括 intake）や
+ユーザーが途中参加する議論 → **セッション／agent teams**。memory/ への同時書き込みは1人（chief）に限定する。
+
+## 改訂した段階（2026-11-04）
+
+| 段階 | 内容 | 状態 |
+|---|---|---|
+| 2a | **Claude Code 専用化**：`.agents/skills` を `.claude/skills` に正典として移す（ポインタ廃止）、ワークフローを `.claude/commands` に統合、専門家の人格を `.claude/agents/*.md` 本体に（`skills:` で担当スキルを事前読込）、CLAUDE.md を正典に。/consult のブリーフを「事実と座標のみ・思考は渡さない」に明文化。他ツール層（AGENTS.md・GEMINI.md・.agents/・.github/・tools/hermes）は削除し、復元経路を PORTABILITY.md に記載 | ✅ 2026-11-04 |
+| 2b | **記録の確実性**：inbox・確認規則・`tools/mem.py`（約束/人物事例/決定の追記 CLI） | 🔲 |
+| 2c | **/discuss** | 🔲 |
+| 2d | **ボード**（2b の CLI とデータ形式に依存） | 🔲 |
+| 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | 🔲 |
+| 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | 🔲 |
+
 ## 参照（外部）
 
 - Claude Duet（2026-10-21 研究プレビュー）：朝ブリーフ＋接続アプリの常時監視＋送信前承認。記憶は不透明。

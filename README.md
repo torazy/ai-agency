@@ -1,23 +1,22 @@
-# AI秘書エージェント（Antigravity 2.0）
+# AI秘書チーム ai-agency（Claude Code）
 
 自律成長型のAI秘書「チーム」。第一秘書（@chief）が真意を読み、専門家集団を独立サブエージェントとして
 召集し、統合回答を返す。情報をプロジェクト別に蓄積し、定期実行で先回りし、信頼の蓄積に応じて
 自律範囲を広げていく。最終ゴールは「ユーザーは承認するだけ」。
 
-> **ツール非依存**。Antigravity 2.0・Claude Code（どちらもフル機能）・Hermes Agent（ほぼフル＋
-> 常時稼働・モバイル）・GitHub Copilot（部分対応）の適応層を並置済みで、どのツールで開いても
-> 同じ秘書・同じ記憶で動く（対応表は `PORTABILITY.md`、Hermes は `tools/hermes/SETUP.md`）。
+> **Claude Code 専用**（デスクトップアプリ / CLI / IDE 拡張）。他ツールへの対応は 2026-11-04 に凍結
+> （復元の手がかりは `PORTABILITY.md`）。記憶の正典は `memory/` の markdown で、ツールに依存しない。
 
 > ⚠️ **このリポジトリは本体（テンプレート）。ここに個人の記憶を蓄積しない。**
-> 使う人ごとに GitHub Template から自分のプライベートリポジトリ（インスタンス）を作って運用する。
+> 使う人ごとに自分のプライベートリポジトリ（インスタンス）を作って運用する。
 > セットアップ・本体アップデートの取り込み・改善の還流は **`OPERATIONS.md`** 参照。
 
-## セットアップ
+## セットアップ（インスタンス側）
 
 ### 1. 環境変数
 ```powershell
 Copy-Item .env.template .env
-# .env を開いて各値を設定する
+# .env を開いて各値を設定する（Backlog / GitHub / Brave）
 ```
 
 ### 2. Backlog MCP の依存ライブラリ
@@ -26,17 +25,14 @@ cd tools/backlog-mcp
 pip install -r requirements.txt
 ```
 
-### 3. MCP サーバーを登録する
-IDE の MCP ストア、または `~/.gemini/config/mcp_config.json` に設定する。
-構成の控えは `tools/mcp_config.sample.json`（github / backlog / brave-search）。
+### 3. Claude Code でフォルダを開く
+`.mcp.json`（github / backlog / brave-search）、`.claude/settings.json`（ガードレール・フック）、
+`.claude/agents|skills|commands` が自動で認識される。Slack・Google Workspace などは claude.ai のコネクタを
+接続しておくと MCP として使える（無ければ手動アシストに落ちる）。
 
-### 4. Antigravity IDE でワークスペースを開く
-`ai-agency` を開くと、`AGENTS.md`（常時ルール）・`.agents/agents.md`（ペルソナ）・
-`.agents/skills/`（スキル）・`.agents/workflows/`（スラッシュコマンド）が認識される。
-安全のため、続けて GUI の Deny List を設定する（下記「自律と安全の仕組み」参照）。
-
-### 5. Chrome を Slack・Google Workspace にログインさせておく
-ブラウザ操作スキル（slack-via-bot, calendar-read, drive-search）の前提。
+### 4. `/setup` を実行する
+対話でプロフィール・案件・人物・優先事項を登録し、使えるツールを棚卸しする（約15分・再実行可）。
+これをしないと `/simulate`・`/morning-brief`・`/propose-delegation` は素材が無く動かない。
 
 ---
 
@@ -44,34 +40,18 @@ IDE の MCP ストア、または `~/.gemini/config/mcp_config.json` に設定�
 
 ```
 ai-agency/
-├── AGENTS.md                 # 常時ルール（唯一の正典・全ツールが読む）
+├── CLAUDE.md                 # 常時ルール（唯一の正典。@chief の人格・記憶モデル・安全規則）
 ├── USAGE.md                  # 場面別の使い方ガイド（人間向け）
-├── GEMINI.md                 # Antigravity適応層＋稼働中サマリー（薄い）
-├── CLAUDE.md                 # Claude Code適応層（@AGENTS.md をインポート・薄い）
-├── .mcp.json                 # Claude Code用MCP設定（tools/mcp_config.sample.json と同期）
-├── PORTABILITY.md            # Claude Code 移行マップ
-├── .agents/
-│   ├── agents.md             # 全ペルソナ（@chief + @generalist + 8専門家）
-│   ├── workflows/            # スラッシュコマンド
-│   │   ├── setup.md              # /setup    オンボーディング（プロフィール・案件・人物・ツール棚卸し）
-│   │   ├── consult.md            # /consult  専門家を並列召集して統合
-│   │   ├── intake.md             # /intake   情報ファイリング
-│   │   ├── simulate.md           # /simulate 実在人物の反応を事前予測（リハーサル）
-│   │   ├── incident.md           # /incident 障害対応（時系列ログ・連絡下書き・振り返り）
-│   │   ├── morning-brief.md      # /morning-brief 朝の横断ブリーフィング（約束台帳もスキャン）
-│   │   ├── review-decisions.md   # /review-decisions 予測vs実際の検証（人物予測も対象）
-│   │   └── propose-delegation.md # /propose-delegation 委任昇格の提案
-│   └── skills/               # 28スキル（intake-and-file, commitment-track, deliverable-create 等）
-├── .claude/                  # Claude Code 適応層（すべて .agents/ へのポインタ）
-│   ├── agents/               # 専門家サブエージェント×8（Taskツールで並列召集）
-│   ├── commands/             # /setup /consult /simulate 等×8
-│   ├── skills/               # スキルポインタ×28（自動起動用）
+├── OPERATIONS.md             # 本体とインスタンスの分離・メンテナンス層・2台運用
+├── PORTABILITY.md            # 他ツール対応の凍結メモ（復元の手がかり）
+├── .mcp.json                 # MCP 設定（github / backlog / brave-search）
+├── .claude/
+│   ├── agents/               # 専門家×7＋汎用秘書（人格本体。/consult が Agent ツールで並列召集）
+│   ├── commands/             # /setup /intake /consult /simulate /incident /morning-brief /review-decisions /propose-delegation
+│   ├── skills/               # 28スキル（intake-and-file, commitment-track, person-model-update, *-review 等）
 │   └── settings.json         # permissions.deny＋SessionStart/PreToolUse/PostToolUse フック
-├── .github/                  # GitHub Copilot 適応層（部分対応・劣化モード明記）
-│   ├── copilot-instructions.md
-│   └── prompts/              # /setup /consult 等×8（prompt.md）
 ├── memory/
-│   ├── dashboard.md          # 稼働登録簿（全ツールが会話開始時にロード・100行上限）
+│   ├── dashboard.md          # 稼働登録簿（CLAUDE.md がインポート・100行上限）
 │   ├── situation.md          # 優先事項ダッシュボード
 │   ├── commitments.md        # 約束台帳（細かなタスク・受けた指示・出した指示のフォロー）
 │   ├── delegation.md         # 委任レベル（人間可読）
@@ -80,18 +60,16 @@ ai-agency/
 │   ├── team/roster.md        # チーム名簿
 │   ├── projects/{name}/      # プロジェクト別ナレッジ
 │   ├── people/               # 人物情報＋人物モデル（判断事例ログ・反応予測の検証）
-│   └── task-log/             # 活動ログ（gitignore・個人情報を含みうる）
+│   └── task-log/             # 操作実績（gitignore・フックが自動記録）
 └── tools/
     ├── backlog-mcp/server.py
-    ├── mcp_config.sample.json
-    ├── hermes/                   # Hermes Agent 適応層（SETUP.md＋スキルインストーラ）
-    ├── sync/                     # 2台運用の片方向同期（export.sh / import.sh。OPERATIONS.md §6）
+    ├── dev/                      # 本体メンテナンス層（雛形。本体フォルダでだけ有効化する）
+    ├── sync/                     # 2台運用の片方向同期（export / import。OPERATIONS.md §6）
     └── hooks/
-        ├── guardrail.py          # PreToolUse：deny操作を物理ブロック（IDEはGUI Deny Listを使用）
+        ├── guardrail.py          # PreToolUse：deny 操作を物理ブロック
         ├── session-start.py      # SessionStart：記憶の育成状態（未初期化・期限超過）を会話冒頭に注入
         ├── operation-logger.py   # PostToolUse：外部書き込み・送信を task-log に自動記録（/propose-delegation の素材）
-        ├── operation-log.json    # ↑の分類設定（書き込み動詞・Bashパターン・コネクタIDの別名）
-        └── task-log-writer.py    # SessionEnd 用の活動マーカー（Gemini CLI 向け・任意）
+        └── operation-log.json    # ↑の分類設定（書き込み動詞・Bash パターン・コネクタ ID の別名）
 ```
 
 ---
@@ -106,7 +84,7 @@ ai-agency/
 | 複合・専門的な判断を仰ぐ | `/consult このツール導入をコスト・法務・セキュリティで評価して` |
 | 報告・指示のリハーサル | `/simulate 田中部長 来期予算の増額案を報告したい` |
 | 障害対応 | `/incident 本番APIがエラーを返している` |
-| 情報をファイリング | `/intake`（または会議メモ等を貼って「ファイリングして」） |
+| 情報をファイリング | `/intake`（または会議メモ等を貼って「ファイリングして」「覚えておいて」） |
 | タスク・指示を記録 | 「〇〇やっておく」「部長に△△を頼まれた」「鈴木さんに□□を依頼した」と言うだけ |
 | 今日の状況を把握 | `/morning-brief` |
 | 過去の決定を検証 | `/review-decisions` |
@@ -115,9 +93,9 @@ ai-agency/
 
 ---
 
-## 定期実行（Scheduled Tasks）の登録例
+## 定期実行の登録例
 
-IDE のチャットで `/schedule` に続けて自然言語で指示する：
+`/schedule` スキル（scheduled task）に自然言語で指示する：
 
 ```
 /schedule 毎朝8:30に /morning-brief を実行して結果を報告して
@@ -126,26 +104,20 @@ IDE のチャットで `/schedule` に続けて自然言語で指示する：
 /schedule 毎月1日9:00に memory-maintenance スキルでメモリを整理して
 ```
 
-エージェントはデスクトップを閉じていてもバックグラウンドで実行し、結果を後で確認できる。
-
 ---
 
 ## 自律と安全の仕組み
 
-IDE の権限機構（Settings → **Permissions** → **Advanced**）と `delegation.md` を組み合わせて運用する。
-これは「育てると承認だけ」の昇格モデルにそのまま対応する：
+Claude Code の権限機構と `memory/delegation.md` を組み合わせる。「育てると承認だけ」の昇格モデルにそのまま対応する：
 
-| 段階 | IDE設定 | 意味 |
+| 段階 | Claude Code 設定 | 意味 |
 |---|---|---|
-| Lv1（出発点・現在） | **Strict Mode 推奨** | 全ターミナルコマンドで確認を求める。最も確実（リストのバグに依存しない） |
-| 昇格 | **Allow List Terminal Commands** | 実績を積んだ安全なコマンド（`ls`/`git status`/`npm test` 等）を自動承認に移す |
-| 常設ガード | **Deny List Terminal Commands** | `gui_deny_tokens`（`rm -rf`・`terraform apply`・`DROP TABLE` 等）。一致すると**実行前に必ず確認**を求める（Allowより優先） |
+| Lv1（出発点・現在） | 既定の確認モード | 外部書き込み・シェル実行は毎回許可を求める。最も確実 |
+| 昇格 | `permissions.allow` | 実績を積んだ安全な操作を自動承認に移す。`/propose-delegation` が候補を提案する |
+| 常設ガード | `permissions.deny` ＋ PreToolUse フック | `memory/guardrails.json` の deny パターン（`rm -rf`・`terraform apply`・`DROP TABLE` 等）を機械的にブロック。allow より常に優先 |
 
-- 設定変更後は **Antigravity を再起動**する（反映に必要）。Deny/Allow が効かない既知バグ報告があるため、
-  まず Strict Mode で確実に確認フローを確保し、信頼に応じて Allow List へ移すのが安全。
-- `/propose-delegation` が承認実績を見て「Allow List へ移す候補」を提案する。実際の追加はGUIで行う。
-- **物理ガードレール（CLI/Claude Code）**：`tools/hooks/guardrail.py` ＋ `memory/guardrails.json`（IDEは未使用）。
-  （`tools/hooks/guardrail.py` は CLI／Claude Code 用の移植資産。IDEはスクリプトフックを読まないため未使用。）
+- **承認実績の自動記録**：PostToolUse フック（`tools/hooks/operation-logger.py`）が外部書き込み・送信を
+  `memory/task-log/` に記録し、`/propose-delegation` が集計する。秘書が手で書く必要はない。
 - **フィードバックループ**（`/review-decisions`）：決定の予測と実際を突き合わせ `insights.md` に学習。
 
 ---
@@ -168,7 +140,7 @@ AI専門家チーム（正しい答えを出す）とは独立した仕組み（
 
 ## 自己成長
 
-1. 新しいサービスが必要 → `capability-expansion` が Level 1（ブラウザ）/2（MCP）/3（カスタム）を判定。
-2. 専門分野が不足 → `recruit-expert` が `.agents/agents.md` に新ペルソナを追加提案。
+1. 新しいサービスが必要 → `capability-expansion` が Level 1（ブラウザ）/2（MCP・コネクタ）/3（カスタム）を判定。
+2. 専門分野が不足 → `recruit-expert` が `.claude/agents/` に新しい専門家を追加提案。
 3. 定型タスク反復 → `skill-improvement` がスキル化・改善を提案。
 4. 人物モデルの精度不足 → 観察のファイリングを促し、成熟度Lvの昇格で使える場面を広げる。

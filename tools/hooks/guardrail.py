@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-guardrail.py ── BeforeTool フックで起動する物理ガードレール。
+guardrail.py ── PreToolUse フック（Bash / PowerShell）で起動する物理ガードレール。
 
 memory/guardrails.json の deny パターンに一致するツール呼び出しを、モデルの判断に関係なく
 ブロックする。delegation.md の「禁止」を機械的に強制する最後の砦。
 
 ブロック手段は二重化：
-  1) exit code 2（＋ stderr に理由）── Antigravity/Gemini CLI で確実にブロックされる主手段
-  2) stdout に {"decision":"deny","reason":...} ── JSON 判定に対応するバージョン向け
+  1) exit code 2（＋ stderr に理由）── Claude Code が確実にブロックする主手段
+  2) stdout に {"decision":"deny","reason":...} ── JSON 判定向け（併用）
 
-stdin から BeforeTool イベントの JSON を受け取る（tool_name / tool_input を含む）。
+stdin から PreToolUse イベントの JSON を受け取る（tool_name / tool_input を含む）。
 入力キーの表記揺れ（snake_case / CamelCase）に頑健に作ってある。
 許可する場合は exit 0、stdout に空 or {"suppressOutput": true}。
 

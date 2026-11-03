@@ -4,7 +4,7 @@ enable-maintenance.py ── 本体（テンプレート）フォルダで「メ
 
 生成・更新するもの（すべて gitignore 済み＝インスタンスには届かない）：
   - .claude/settings.local.json   既存内容を保ったまま、製品を止めるキーを追加
-      claudeMdExcludes       : CLAUDE.md / AGENTS.md / GEMINI.md / memory/dashboard.md を読み込まない
+      claudeMdExcludes       : CLAUDE.md / memory/dashboard.md を読み込まない
       disableAllHooks        : 製品のフック（SessionStart / PreToolUse / PostToolUse）を止める
       skillOverrides         : 製品のスキル・ワークフロー（コマンド）を Claude から見えなくする
       disabledMcpjsonServers : .mcp.json の MCP サーバーを起動しない
@@ -26,7 +26,7 @@ DEV = ROOT / "tools" / "dev"
 LOCAL = ROOT / ".claude" / "settings.local.json"
 
 # claudeMdExcludes は絶対パスに対する glob。ドライブ文字の表記差を避け、フォルダ名で終わるパターンにする
-EXCLUDE_FILES = ["CLAUDE.md", "AGENTS.md", "GEMINI.md", "memory/dashboard.md"]
+EXCLUDE_FILES = ["CLAUDE.md", "memory/dashboard.md"]
 
 
 def load_json(path: Path) -> dict:
@@ -39,9 +39,7 @@ def load_json(path: Path) -> dict:
 
 
 def product_skill_names() -> list[str]:
-    names = {p.name for p in (ROOT / ".agents" / "skills").iterdir() if p.is_dir()}
-    names |= {p.stem for p in (ROOT / ".agents" / "workflows").glob("*.md")}
-    names |= {p.name for p in (ROOT / ".claude" / "skills").iterdir() if p.is_dir() and not p.name.startswith("maint-")}
+    names = {p.name for p in (ROOT / ".claude" / "skills").iterdir() if p.is_dir() and not p.name.startswith("maint-")}
     names |= {p.stem for p in (ROOT / ".claude" / "commands").glob("*.md")}
     return sorted(names)
 

@@ -2,6 +2,20 @@
 
 > 「なぜこうなっているか」を残す。変えるときはここを読んでから。
 
+## 2026-11-04: Claude Code 専用化（ポインタ層の廃止）
+
+- **判断**：ユーザー決定「Claude Code 専用にしてよい。他は必要になったら対応」を受け、正典を `CLAUDE.md`・
+  `.claude/agents`・`.claude/skills`・`.claude/commands` に一本化。AGENTS.md・GEMINI.md・`.agents/`・`.github/`・
+  `tools/hermes`・`tools/mcp_config.sample.json`・`task-log-writer.py` は削除（復元経路は PORTABILITY.md と git 履歴）
+- **理由**：ポインタ方式は正典→4層の同期コストが常にかかり、frontmatter 変更のたびに再生成が必要だった。
+  Claude Code 専用なら、人格はエージェント本体に書けて `skills:` で担当スキルを事前読込でき、二重読みも消える
+- **分割の指針**：人格（誰か）＝エージェント、手順（どうやるか）＝スキル、常時ルール＝CLAUDE.md。
+  エージェントは `memory:`（持続メモリ）や `tools` 制限の口を持つので残す。`memory: project` は今は付けない
+  （業務記憶の正典は memory/ という原則とぶつかるため。使うなら専門家の作業上の癖に限定）
+- **/consult のブリーフ**：情報は渡す・思考は渡さない。事実と座標（memory/ のパス）だけを全員に同じ内容で渡し、
+  専門家は memory/ を自分で読む。fork（会話全体の引き継ぎ）はアンカリングを招くので使わない
+- **残る制約**：CLAUDE.md が約230行（目安200行超）。手順的な節は後で skills や `.claude/rules/` へ移す候補
+
 ## 2026-11-04: 本体とインスタンスを「層」で分ける（フォルダではなく）
 
 - **判断**：本体フォルダでのメンテ時に製品を止める手段として、別フォルダから編集する方式ではなく、
@@ -20,7 +34,7 @@
 - **理由**：Stop は毎ターン発火し空エントリを量産していた。秘書に手で書かせる設計は実績ゼロだった
 - **分類**：MCP は書き込み動詞で判定、シェルは git push / gh pr 等のパターン、Write/Edit は memory/ 配下のみ。
   claude.ai コネクタのアカウント固有 ID は `operation-log.json` の `server_aliases` で別名化
-- **フックの無いホスト**（Antigravity IDE・Copilot）は従来通り秘書が追記する（AGENTS.md §7）
+- **フックの無いホスト**（Antigravity IDE・Copilot）は従来通り秘書が追記する（CLAUDE.md §7）
 
 ## 2026-11-04: 能力地図は「記録より現物が正」
 

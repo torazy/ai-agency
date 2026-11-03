@@ -15,7 +15,7 @@ description: 本体メンテ用。製品の動作（/setup・/intake・フック
 git clone . ../ai-agency-test
 ```
 - 本体のローカル履歴がそのまま入る（未コミットの変更は入らない。試したい変更は先にコミットする）
-- `../ai-agency-test` を Claude Code / Antigravity で**別フォルダとして開く**と製品が起動する
+- `../ai-agency-test` を Claude Code で**別フォルダとして開く**と製品が起動する
   （ここには `CLAUDE.local.md` も `settings.local.json` も無いので、インスタンスと同じ条件になる）
 - `.env` が必要な確認（Backlog MCP 等）は、本体の `.env` を手でコピーする（コミットされない）
 
@@ -25,7 +25,7 @@ git clone . ../ai-agency-test
 1. 新規セッションの冒頭に「[記憶の状態] memory/ は未初期化…」が注入されるか（SessionStart フック）
 2. `/setup` を通して memory/ が埋まるか、質問の粒度・順番が自然か
 3. 外部書き込み（例：memory/ への Write）で `memory/task-log/YYYY-MM.md` に `**操作**:` 行が付くか
-4. 気づいた改善点は**本体側のセッション**に戻って `.agents/` の正典を直す（テストインスタンスで正典を
+4. 気づいた改善点は**本体側のセッション**に戻って正典（`CLAUDE.md`・`.claude/`）を直す（テストインスタンスで
    直すと、本体に還流し忘れて消える）
 
 ## 更新する（本体の新しいコミットを取り込む）

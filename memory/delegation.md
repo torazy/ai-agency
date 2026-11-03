@@ -11,13 +11,16 @@
 新しい秘書なので、すべての実行前にユーザーへ確認を取る。
 信頼が積み重なったら Level 2、Level 3 へ移行する。
 
-### IDE での強制（Antigravity Permissions と対応）
+### Claude Code での強制（権限機構と対応）
 
-この委任レベルは Antigravity の権限機構（Settings → Permissions → Advanced）で物理的に裏付ける：
-- **Level 1 = Strict Mode**：全ターミナルコマンドで確認を求める（最も確実）。
-- **昇格 = Allow List Terminal Commands**：実績を積んだ安全なコマンドを自動承認へ移す（下の承認済みテーブルと同期）。
-- **常設ガード = Deny List Terminal Commands**：`memory/guardrails.json` の `gui_deny_tokens` を登録。一致時は必ず確認。
-- 変更後は Antigravity を再起動。Deny/Allow が効かない既知バグ時は Strict Mode を保険にする。
+この委任レベルは Claude Code の権限機構で物理的に裏付ける：
+- **Level 1 = 既定の確認モード**：外部書き込み・シェル実行は毎回許可を求める（最も確実）。
+- **昇格 = `permissions.allow`**：実績を積んだ安全な操作を `.claude/settings.local.json`（個人）または
+  `.claude/settings.json`（共有）の allow に追加し、自動承認へ移す（下の承認済みテーブルと同期）。
+- **常設ガード = `permissions.deny` ＋ PreToolUse フック**：`memory/guardrails.json` の `deny.patterns` を
+  `tools/hooks/guardrail.py` が照合してブロックする。deny は allow より常に優先される。
+- 承認実績は PostToolUse フック（`tools/hooks/operation-logger.py`）が `memory/task-log/` に自動記録し、
+  `/propose-delegation` がそれを集計して昇格を提案する。
 
 ---
 

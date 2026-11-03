@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 LOCAL = ROOT / ".claude" / "settings.local.json"
-EXCLUDE_FILES = ["CLAUDE.md", "AGENTS.md", "GEMINI.md", "memory/dashboard.md"]
+EXCLUDE_FILES = ["CLAUDE.md", "memory/dashboard.md"]
 
 
 def main() -> None:

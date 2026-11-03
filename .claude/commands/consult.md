@@ -58,7 +58,8 @@ legal / generalist）。人格・共通規則・担当スキルはエージェ�
 {この専門家に答えてほしい具体的な問い}
 
 ## 出力
-結論（Go / 条件付き / No-Go）・根拠・リスクと対策（高/中/低）・前提と不確かな点
+結論（Go / 条件付き / No-Go）・根拠・リスクと対策（高/中/低）・前提と不確かな点。
+**本文は 30 行以内**。計算過程・詳細な表・網羅的な観点リストは末尾の「## 付録」に分ける（@chief は本文だけで統合できること）
 ```
 
 **ブリーフの規律（独立性の担保）**：情報は渡す、思考は渡さない。@chief の仮説・推奨・他の専門家の意見・
@@ -103,6 +104,8 @@ legal / generalist）。人格・共通規則・担当スキルはエージェ�
 許可がなければ「▶ 実行してよいですか？」で締める。
 
 ## Step 7: 学習を記録する
-- 統合で下した判断・予測・検証日を関連 `decisions.md` に記録（後で `/review-decisions` が検証）
+- 統合で導いた推奨を `python tools/mem.py decision add --project {slug} --title … --prediction … --verify-date … --status proposed`
+  で **提案（未承認）** として記録する。ユーザーが採用したら `decision set-status {slug} "{title}" decided`
+  （/review-decisions が検証するのは決定だけ。ユーザーの承認前に「決定」と書かない）
 - 専門家間の対立パターン・どの観点が効いたかを `memory/insights.md` に記録
 

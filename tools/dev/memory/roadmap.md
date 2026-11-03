@@ -46,7 +46,7 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 段階 | 内容 | 状態 |
 |---|---|---|
 | 2a | **Claude Code 専用化**：`.agents/skills` を `.claude/skills` に正典として移す（ポインタ廃止）、ワークフローを `.claude/commands` に統合、専門家の人格を `.claude/agents/*.md` 本体に（`skills:` で担当スキルを事前読込）、CLAUDE.md を正典に。/consult のブリーフを「事実と座標のみ・思考は渡さない」に明文化。他ツール層（AGENTS.md・GEMINI.md・.agents/・.github/・tools/hermes）は削除し、復元経路を PORTABILITY.md に記載 | ✅ 2026-11-04 |
-| 2b | **記録の確実性**：inbox・確認規則・`tools/mem.py`（約束/人物事例/決定の追記 CLI） | 🔲 |
+| 2b | **記録の確実性**：`memory/inbox.md`（capture-first）、確認の二段階＋必ず確認する4場面（intake-and-file・CLAUDE.md §5）、`tools/mem.py`（inbox / commitment（ID 付き）/ person / decision / check）、decisions の 提案（未承認）→決定、専門家出力は本文30行＋付録、観測記録表の縦持ち、user-profile と dashboard の二重管理解消、status.md に期限付きタスクを書かない規則、operation-logger が permission_mode を見て「承認済」と「自動実行」を区別 | ✅ 2026-11-04 |
 | 2c | **/discuss** | 🔲 |
 | 2d | **ボード**（2b の CLI とデータ形式に依存） | 🔲 |
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | 🔲 |

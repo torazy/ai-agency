@@ -73,16 +73,16 @@ def main() -> None:
         except ValueError:
             pass
 
-    # commitments.md の期限超過：先頭セルが日付（＝台帳の実データ行）で、他の日付セルに今日より前があり、
-    # 状態が done でない行を数える（記法説明や雛形行は先頭セルが日付でないので対象外）
+    # commitments.md の期限超過：ID 列（C-nnn）で始まる実データ行のうち、追加日より後の日付セルに
+    # 今日より前があり、状態が done でない行を数える（記法説明や雛形行は対象外）
     commitments = read(mem / "commitments.md")
     overdue = 0
     today = date.today()
     for row in commitments.splitlines():
         cells = [c.strip() for c in row.strip().strip("|").split("|")] if row.startswith("|") else []
-        if len(cells) < 3 or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", cells[0]) or "done" in row:
+        if len(cells) < 4 or not re.fullmatch(r"C-\d{3,}", cells[0]) or cells[-1] == "done":
             continue
-        for d in re.findall(r"(\d{4}-\d{2}-\d{2})", " ".join(cells[1:])):
+        for d in re.findall(r"(\d{4}-\d{2}-\d{2})", " ".join(cells[2:])):
             try:
                 if datetime.strptime(d, "%Y-%m-%d").date() < today:
                     overdue += 1
@@ -90,7 +90,13 @@ def main() -> None:
             except ValueError:
                 continue
     if overdue:
-        lines.append(f"[約束台帳] 期限または追加日が過去日付の未完了行が {overdue} 行ある（要確認）。")
+        lines.append(f"[約束台帳] 期限またはフォロー日が過去の未完了行が {overdue} 行ある（要確認）。")
+
+    # inbox の未分類
+    inbox = read(mem / "inbox.md")
+    pending = sum(1 for ln in inbox.splitlines() if ln.startswith("- [ ] "))
+    if pending:
+        lines.append(f"[inbox] 未分類が {pending} 件ある（分類して `mem.py inbox resolve`）。")
 
     print("\n".join(lines)[:9000])
     sys.exit(0)

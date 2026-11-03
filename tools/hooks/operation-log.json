@@ -13,6 +13,10 @@
   ],
   "mcp_write_verbs": "^(create|update|delete|send|reply|forward|push|merge|comment|upload|trash|untrash|label|unlabel|move|restore|cancel|set_|post|write|add_|remove|rename|duplicate|share|respond|mark_|spawn|stop_|resolve|apply|run_|insert|append|edit|patch|convert|stage|archive|close|reopen|assign|transition|publish)",
   "bash_categories": [
+    { "category": "mem:inbox",       "pattern": "\\bmem\\.py\\s+inbox\\s+(add|resolve)\\b" },
+    { "category": "mem:commitment",  "pattern": "\\bmem\\.py\\s+commitment\\s+(add|set-state)\\b" },
+    { "category": "mem:person",      "pattern": "\\bmem\\.py\\s+person\\s+(observe|note|predict)\\b" },
+    { "category": "mem:decision",    "pattern": "\\bmem\\.py\\s+decision\\s+(add|set-status)\\b" },
     { "category": "git-push",        "pattern": "\\bgit\\s+push\\b" },
     { "category": "git-commit",      "pattern": "\\bgit\\s+commit\\b" },
     { "category": "gh-pr-create",    "pattern": "\\bgh\\s+pr\\s+create\\b" },

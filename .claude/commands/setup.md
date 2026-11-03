@@ -39,8 +39,8 @@ description: 初回オンボーディング。対話でユーザー・判断基�
    サーバーを識別）、ブラウザ操作の有無、ホスト固有の定期実行機能の有無
 2. 接続に失敗しているサーバー（例：`CONNECTION_CLOSED`）は**報告し**、`.env` と MCP 設定の確認を案内する
    （勝手に設定変更しない）
-3. `memory/service-capabilities.md` の「**観測記録**」表に、ホスト名・日付・サービス別の使えた手段を
-   1行で追記/更新する（同じホストの古い行は上書き）
+3. `memory/service-capabilities.md` の「**観測記録**」表に、**ホスト×サービスで1行ずつ**追記/更新する
+   （列：ホスト｜サービス｜手段｜観測日｜備考。同じホスト×サービスの古い行は上書き）
 
 出力例：
 ```
@@ -58,8 +58,8 @@ description: 初回オンボーディング。対話でユーザー・判断基�
 聞くこと：①名前と呼び方 ②役職・担当領域・主な責任範囲 ③判断基準の優先順位
 （例：「品質 > スピード > コスト」「顧客影響を最優先」）。余裕があれば返答の好み（長さ・言語・敬体）。
 
-→ `memory/dashboard.md`「ユーザープロファイル」「判断基準・優先順位」を更新、
-　`memory/user-profile.md` の基本情報・コミュニケーションの好みを更新。
+→ 名前・呼び方・役職・担当・判断基準は `memory/dashboard.md`（**正**）だけに書く。
+　`memory/user-profile.md` には dashboard に載せない詳細（在籍組織・立場の補足・返答の好み）だけを書く（二重管理しない）。
 
 ## Step 3: 進行中の案件（1件ずつ・3件まで）
 
@@ -86,7 +86,8 @@ GitHub リポジトリ / Drive フォルダ URL / Slack チャンネル）、主
 期限があるもの。
 
 → `memory/situation.md` を更新（最終更新日を必ず記入）、
-　`memory/commitments.md` に `commitment-track` の記法で追記（関連欄に `P:{slug}` を付ける）。
+　約束は `python tools/mem.py commitment add --kind received|given|task … --rel P:{slug}` で台帳に追記する
+　（表の手編集はしない）。status.md には期限付きタスクを書かず「台帳の `P:{slug}` を参照」とする。
 
 ## Step 6: 定期実行の登録を案内する
 

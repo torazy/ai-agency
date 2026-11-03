@@ -152,7 +152,15 @@ def main() -> None:
 
     category, target = classify(tool_name, tool_input, cfg, root)
     if category:
-        status = "失敗" if hook_event == "PostToolUseFailure" else "承認済"
+        # 「承認済」はユーザーが確認モードで通したもの。auto / acceptEdits / bypass で通ったものは
+        # 「自動実行」として区別する（/propose-delegation は承認済だけを昇格根拠に数える）
+        mode = str(event.get("permission_mode", "") or "")
+        if hook_event == "PostToolUseFailure":
+            status = "失敗"
+        elif mode in ("", "default", "plan"):
+            status = "承認済"
+        else:
+            status = f"自動実行[{mode}]"
         now = datetime.now()
         sid = str(event.get("session_id", ""))[:8]
         line = f"**操作**: [{category}] {target} ── {status}（{now.strftime('%H:%M')} {sid}）"

@@ -18,7 +18,9 @@ description: メモリ（memory/ 配下）の肥大化を防ぐ月次メンテ�
 |---|---|---|
 | 各 memory ファイルの行数 | 200行超 | アーカイブ提案 |
 | `memory/dashboard.md` | 100行超／完了プロジェクト・疎遠な人物が表に残存 | 表の整理提案 |
-| `memory/commitments.md` | `done` 行の滞留・30行超 | 月次アーカイブ |
+| `memory/commitments.md` | `done` 行の滞留・30行超 | 月次アーカイブ（`mem.py commitment list --state done` で抽出） |
+| `memory/inbox.md` | 未分類が残っている／分類済が30件超 | 未分類は仕分けを促す。分類済は archive へ |
+| `memory/projects/*/decisions.md` | `提案（未承認）` のまま30日超 | 承認か取り下げをユーザーに確認 |
 | `memory/situation.md` | 「最近完了」の肥大・最終更新が2週間以上前 | アーカイブ＋更新提案 |
 | `memory/projects/*/decisions.md` | 検証済み決定の滞留 | 年次アーカイブへ |
 | `memory/insights.md` | 同種の学びの重複 | 原則化して統合圧縮 |

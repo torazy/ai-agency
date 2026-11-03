@@ -42,9 +42,17 @@ description: 会話・会議メモ・Slack・メールに「自分がやるべ�
 → 受けた指示に追記：内容=課題Xの整理・報告資料化、期限=明日、関連=`P:project-a/issues#課題X`
 → さらに報告相手の人物モデルが Lv2 以上なら「/simulate で報告リハーサルしますか？」を添える
 
-### Step 3: 記録・更新する
+### Step 3: 記録・更新する（CLI 経由・表の手編集はしない）
 
-- 追記前に既存行を確認し、同じ約束の重複行を作らない（状態変化なら既存行を更新）
+```bash
+python tools/mem.py commitment add --kind task     --content "…" --due YYYY-MM-DD --rel P:{slug}
+python tools/mem.py commitment add --kind received --content "…" --who {依頼者} --due YYYY-MM-DD --rel P:{slug}
+python tools/mem.py commitment add --kind given    --content "…" --who {相手} --due YYYY-MM-DD --follow YYYY-MM-DD --rel P:{slug}
+python tools/mem.py commitment set-state C-012 done        # 状態変更（open / in-progress / waiting / done）
+python tools/mem.py commitment list --rel P:{slug}        # 案件視点の抽出（--json も可）
+```
+
+- 追記前に `commitment list` で既存行を確認し、同じ約束の重複行を作らない（状態変化なら `set-state`）
 - **台帳が唯一の置き場**：同じタスクをプロジェクト側のファイルに複製しない（案件視点の確認は
   関連欄のフィルタで行う）。ただし課題そのものの進展は `issues.md` に書く（役割分担：
   課題の事実は issues.md、「誰がいつまでに何をするか」は台帳）
@@ -59,8 +67,10 @@ description: 会話・会議メモ・Slack・メールに「自分がやるべ�
 ### Step 5: 簡潔に報告する
 
 ```
-📌 約束台帳を更新：{セクション} に「{内容}」（期限 {日付}・関連 {P:...}）
+📌 約束台帳を更新：{セクション} に {ID}「{内容}」（期限 {日付}・関連 {P:...}）
 ```
+
+迷ったときは記録前に1行で確認する（誰の指示か・どの案件か・期限が読めないとき）。
 
 ## morning-brief との連携（参照仕様）
 

@@ -20,6 +20,12 @@ description: 会話の中で重要な情報・決定・知見が生まれたと�
 
 ## 実行手順
 
+### Step 0: 「覚えておいて」は先に inbox へ
+
+ユーザーが「覚えておいて」「忘れないで」と言ったら、分類を考える前に
+`python tools/mem.py inbox add "要点" --source 会話` で保存し、「inbox {ID} に保存しました」と即答する。
+その後 Step 1〜2 で分類し、記録先が決まったら `inbox resolve {ID} --to {記録先}`。迷ったら記録先を1行提示して確認する。
+
 ### Step 1: 記録すべき情報を特定する
 
 会話全体を振り返り、記録価値がある情報を選別する：
@@ -31,7 +37,7 @@ description: 会話の中で重要な情報・決定・知見が生まれたと�
 
 | 情報の種類 | 記録先 | 操作 |
 |---|---|---|
-| プロジェクトの決定事項 | `memory/projects/{name}/decisions.md` | 追記 |
+| プロジェクトの決定事項 | `memory/projects/{name}/decisions.md` | `mem.py decision add`（未承認なら proposed） |
 | プロジェクトの現状変化 | `memory/projects/{name}/status.md` | 更新 |
 | ユーザーの好み・パターン | `memory/user-profile.md` | 追記 |
 | 業務上の学び・ドメイン知識 | `memory/insights.md` | 追記 |

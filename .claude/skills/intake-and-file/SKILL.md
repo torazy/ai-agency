@@ -24,7 +24,9 @@ description: ユーザーが外部情報（会議メモ、Slack会話、仕様�
   → `memory/commitments.md`。`commitment-track` スキルを併用する（Backlogチケット級なら起票提案）
 - **現状アップデート・進捗** → `status.md`（既存ファイルに上書き）
 - **サービス座標** → `overview.md`（サービス座標セクションに追記）
-- **生メモ・複数カテゴリ混在** → `memos/YYYY-MM-DD-{topic}.md`
+- **「覚えておいて」で分類が即決できないもの** → まず `python tools/mem.py inbox add "要点" --source {出所}`
+  （取りこぼしゼロ）。分類後に `inbox resolve` で記録先を残す
+- **生メモ・複数カテゴリ混在（長文）** → `memos/YYYY-MM-DD-{topic}.md`
 - **ドメイン知識・汎用情報** → `memory/insights.md`
 
 複数の種類が混在する場合は分割して複数ファイルに保存する。
@@ -39,9 +41,21 @@ description: ユーザーが外部情報（会議メモ、Slack会話、仕様�
 - 保存先は `memory/projects/{project-name}/`
 - `memory/projects/{project-name}/overview.md` が存在しなければ新規作成を提案する
 
-### Step 3: 既存ファイルを確認してから書く
+### Step 3: 既存ファイルを確認し、迷ったら確認してから書く
 
 重複・矛盾を避けるため、書き込み前に対象ファイルを読む。
+
+**確信の二段階**：
+- 確信あり → 記録して、事後に1行報告（📁 形式）
+- 迷い → 書く前に「→ {記録先}として記録します。よいですか？」と**1行で**提示して確認する
+
+**必ず事前確認するもの**（誤記録の影響が大きい）：
+1. 新しい人物ファイルを作るとき（同一人物の既存ファイルが無いか、識別子は何か）
+2. 案件が複数登録されていて、本文に案件名が無いとき（どの案件か）
+3. 「決定」か「案・検討中」か本文から判別できないとき（decisions.md は `提案（未承認）` と `決定` を区別する）
+4. 発言・判断の主体（誰が言ったか）が特定できないとき（人物モデルの素材は帰属が命）
+
+確認待ちの間も情報は失わない：先に `mem.py inbox add` で inbox に入れておく。
 
 - ファイルが存在する場合：既存の内容と照らし合わせて追記・更新
 - 既存の内容と矛盾する場合：ユーザーに確認してから上書き
@@ -73,9 +87,12 @@ description: ユーザーが外部情報（会議メモ、Slack会話、仕様�
 - 
 ```
 
-**決定事項 (`decisions.md`):**
+**決定事項 (`decisions.md`)** ── `python tools/mem.py decision add --project {slug} --title … --content … --reason …
+--prediction … --verify-date … [--status proposed|decided]` で追記する（既定は `提案（未承認）`。ユーザーが承認したら
+`decision set-status {slug} "{title}" decided`）。生成される書式：
 ```markdown
 ## YYYY-MM-DD: {決定の要約}
+- **状態**: 提案（未承認）/ 決定 / 検証済
 - **決定内容**: 
 - **決定理由**: 
 - **影響範囲**: 
@@ -84,6 +101,10 @@ description: ユーザーが外部情報（会議メモ、Slack会話、仕様�
 - **撤回条件**: （あれば）
 - **検証結果**: （/review-decisions が後日追記：予測通り/部分的/外れ ＋ 学び）
 ```
+
+**現状 (`status.md`)**：進捗・次のマイルストーン・ブロッカーを書く。**期限付きのタスク・指示は書かない**
+（それは `commitments.md` に一元記録し、status.md からは「約束は台帳の `P:{slug}` を参照」と書く。同じ事実を
+3か所に書かない）。
 
 **課題 (`issues.md`):**
 ```markdown
@@ -128,7 +149,8 @@ description: ユーザーが外部情報（会議メモ、Slack会話、仕様�
 |---|---|---|
 ```
 
-詳細は `memory/people/_template.md` を参照。
+詳細は `memory/people/_template.md` を参照。表（判断事例ログ・過去のやりとり・反応予測）への追記は
+`python tools/mem.py person observe|note|predict {識別子} …` で行う（`person-model-update` スキル）。
 
 **プロジェクト概要 (`overview.md`):**
 ```markdown

@@ -53,7 +53,8 @@ ai-agency/
 ├── memory/
 │   ├── dashboard.md          # 稼働登録簿（CLAUDE.md がインポート・100行上限）
 │   ├── situation.md          # 優先事項ダッシュボード
-│   ├── commitments.md        # 約束台帳（細かなタスク・受けた指示・出した指示のフォロー）
+│   ├── inbox.md              # 「覚えておいて」の受け皿（分類前に即時保存。mem.py inbox）
+│   ├── commitments.md        # 約束台帳（ID 付き。mem.py commitment で追記・状態変更）
 │   ├── delegation.md         # 委任レベル（人間可読）
 │   ├── guardrails.json       # 物理ガードレール（機械可読・フックが参照）
 │   ├── service-capabilities.md, user-profile.md, insights.md
@@ -62,6 +63,7 @@ ai-agency/
 │   ├── people/               # 人物情報＋人物モデル（判断事例ログ・反応予測の検証）
 │   └── task-log/             # 操作実績（gitignore・フックが自動記録）
 └── tools/
+    ├── mem.py                    # memory/ への決定的な追記 CLI（inbox / commitment / person / decision / check）
     ├── backlog-mcp/server.py
     ├── dev/                      # 本体メンテナンス層（雛形。本体フォルダでだけ有効化する）
     ├── sync/                     # 2台運用の片方向同期（export / import。OPERATIONS.md §6）
@@ -84,7 +86,8 @@ ai-agency/
 | 複合・専門的な判断を仰ぐ | `/consult このツール導入をコスト・法務・セキュリティで評価して` |
 | 報告・指示のリハーサル | `/simulate 田中部長 来期予算の増額案を報告したい` |
 | 障害対応 | `/incident 本番APIがエラーを返している` |
-| 情報をファイリング | `/intake`（または会議メモ等を貼って「ファイリングして」「覚えておいて」） |
+| 情報をファイリング | `/intake`（または会議メモ等を貼って「ファイリングして」） |
+| 忘れずに覚えさせる | 「覚えておいて」＋内容（分類前に inbox へ即時保存され、分類後に記録先が報告される。迷えば1行で確認される） |
 | タスク・指示を記録 | 「〇〇やっておく」「部長に△△を頼まれた」「鈴木さんに□□を依頼した」と言うだけ |
 | 今日の状況を把握 | `/morning-brief` |
 | 過去の決定を検証 | `/review-decisions` |

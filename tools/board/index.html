@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>秘書ボード</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--muted:#6b7280;--line:#e5e7eb;--accent:#2563eb;--warn:#b45309;--warn-bg:#fff7ed;--danger:#b91c1c;--danger-bg:#fef2f2;--ok:#15803d;--ok-bg:#f0fdf4;--chip:#eef2ff}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1117;--card:#171a22;--fg:#e6e8ee;--muted:#9aa3b2;--line:#2a2f3a;--accent:#60a5fa;--warn:#fbbf24;--warn-bg:#2a2210;--danger:#f87171;--danger-bg:#2a1414;--ok:#4ade80;--ok-bg:#122117;--chip:#1e2433}}
+  :root[data-theme="dark"]{--bg:#0f1117;--card:#171a22;--fg:#e6e8ee;--muted:#9aa3b2;--line:#2a2f3a;--accent:#60a5fa;--warn:#fbbf24;--warn-bg:#2a2210;--danger:#f87171;--danger-bg:#2a1414;--ok:#4ade80;--ok-bg:#122117;--chip:#1e2433}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 system-ui,-apple-system,"Segoe UI","Hiragino Sans","Noto Sans JP",sans-serif}
+  header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;padding:14px 16px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:2}
+  header h1{font-size:16px;margin:0}
+  header .who{color:var(--muted)}
+  nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+  nav button{border:1px solid var(--line);background:transparent;color:var(--fg);padding:6px 12px;border-radius:999px;cursor:pointer}
+  nav button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  main{max-width:1100px;margin:0 auto;padding:16px}
+  section{display:none}section.active{display:block}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .card h2{font-size:14px;margin:0 0 8px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+  .card h3{font-size:15px;margin:0 0 6px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600}
+  .chip{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--chip);font-size:12px;margin-right:4px}
+  .due-over{color:var(--danger);font-weight:600}.due-soon{color:var(--warn);font-weight:600}
+  .muted{color:var(--muted)}
+  .empty{color:var(--muted);padding:12px;text-align:center}
+  button.act{border:1px solid var(--line);background:var(--card);color:var(--fg);padding:3px 9px;border-radius:6px;cursor:pointer;font-size:12px}
+  button.act:hover{border-color:var(--accent);color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  form.inline{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+  input,select,textarea{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
+  input[type=text]{min-width:160px}textarea{width:100%;min-height:56px}
+  .md h1,.md h2,.md h3{font-size:14px;margin:12px 0 4px}.md ul{margin:4px 0;padding-left:20px}.md table{margin:6px 0}
+  .toast{position:fixed;right:16px;bottom:16px;background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:8px;opacity:0;transition:.2s;max-width:60vw}
+  .toast.show{opacity:1}
+  .banner{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:8px 12px;margin-bottom:12px}
+  details summary{cursor:pointer;color:var(--muted)}
+  pre{white-space:pre-wrap;font:12px/1.5 ui-monospace,Consolas,monospace;margin:0}
+</style>
+</head>
+<body>
+<header>
+  <h1>秘書ボード</h1>
+  <span class="who" id="who"></span>
+  <nav id="nav"></nav>
+</header>
+<main>
+  <div id="banner"></div>
+  <section id="tab-today" class="active"></section>
+  <section id="tab-commitments"></section>
+  <section id="tab-inbox"></section>
+  <section id="tab-projects"></section>
+  <section id="tab-people"></section>
+  <section id="tab-decisions"></section>
+  <section id="tab-log"></section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const TABS=[["today","今日"],["commitments","約束"],["inbox","inbox"],["projects","案件"],["people","人物"],["decisions","決定"],["log","操作ログ"]];
+const $=(s,el=document)=>el.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api=async(p,body)=>{const r=await fetch(p,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});const j=await r.json();if(body){toast(j.ok?("📝 "+j.message):("❌ "+j.error));if(j.ok)refresh();}return j;};
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),3500);}
+function dueCls(n){if(n==null)return"";if(n<0)return"due-over";if(n<=3)return"due-soon";return"";}
+function dueTxt(d,n){if(!d||d==="なし")return"—";return `<span class="${dueCls(n)}">${esc(d)}${n==null?"":(n<0?`（${-n}日超過）`:n===0?"（今日）":`（${n}日後）`)}</span>`;}
+function md(src){ // 最小の markdown → HTML（見出し・箇条書き・表・太字・コード）
+  const out=[];let lines=src.split("\n"),i=0;
+  const inline=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`([^`]+)`/g,"<code>$1</code>");
+  while(i<lines.length){const l=lines[i];
+    if(/^\|/.test(l)&&/^\|\s*:?-{2,}/.test(lines[i+1]||"")){const hdr=l.split("|").slice(1,-1);i+=2;let rows=[];while(i<lines.length&&/^\|/.test(lines[i])){rows.push(lines[i].split("|").slice(1,-1));i++;}
+      out.push("<table><tr>"+hdr.map(h=>`<th>${inline(h.trim())}</th>`).join("")+"</tr>"+rows.filter(r=>!/（未登録|記録なし）/.test(r.join(""))).map(r=>"<tr>"+r.map(c=>`<td>${inline(c.trim())}</td>`).join("")+"</tr>").join("")+"</table>");continue;}
+    const h=/^(#{1,3})\s+(.*)/.exec(l);if(h){out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`);i++;continue;}
+    if(/^\s*[-*]\s+/.test(l)){let items=[];while(i<lines.length&&/^\s*[-*]\s+/.test(lines[i])){items.push(`<li>${inline(lines[i].replace(/^\s*[-*]\s+/,""))}</li>`);i++;}out.push("<ul>"+items.join("")+"</ul>");continue;}
+    if(/^>/.test(l)||/^---/.test(l)||!l.trim()){i++;continue;}
+    out.push(`<p>${inline(l)}</p>`);i++;}
+  return `<div class="md">${out.join("")}</div>`;}
+
+let S={};
+async function refresh(){
+  const [sum,sit,inbox,com,proj,ppl,dec,log]=await Promise.all(["summary","situation","inbox","commitments","projects","people","decisions","oplog"].map(k=>fetch("/api/"+k).then(r=>r.json())));
+  S={sum,sit,inbox,com,proj,ppl,dec,log};
+  $("#who").textContent=sum.name&&sum.name!=="（未設定）"?`${sum.nickname||sum.name}（${sum.role}）`:"プロフィール未設定 — /setup を実行してください";
+  $("#banner").innerHTML=sum.is_template?`<div class="banner">このフォルダは本体（テンプレート）です。記憶は空のはずで、ここでの記録は配布物に混ざります。</div>`:"";
+  renderToday();renderCommitments();renderInbox();renderProjects();renderPeople();renderDecisions();renderLog();
+}
+function renderToday(){
+  const rows=S.com.rows.filter(r=>r["状態"]!=="done");
+  const urgent=rows.filter(r=>(r.due_in!=null&&r.due_in<=3)||(r.follow_in!=null&&r.follow_in<=0));
+  const proposed=S.dec.decisions.filter(d=>d.status.startsWith("提案"));
+  $("#tab-today").innerHTML=`<div class="grid">
+    <div class="card"><h2>🔴 期限3日以内・フォロー到来（${urgent.length}）</h2>${urgent.length?tbl(urgent):'<div class="empty">なし</div>'}</div>
+    <div class="card"><h2>📥 inbox 未分類（${S.inbox.pending.length}）</h2>${S.inbox.pending.length?S.inbox.pending.map(inboxRow).join(""):'<div class="empty">なし</div>'}</div>
+    <div class="card"><h2>🟡 未承認の提案（${proposed.length}）</h2>${proposed.length?proposed.map(decRow).join(""):'<div class="empty">なし</div>'}</div>
+    <div class="card" style="grid-column:1/-1"><h2>situation.md <span class="muted">（最終更新 ${esc(S.sum.situation_updated||"未記録")}）</span></h2>${md(S.sit.markdown)}</div>
+  </div>`;}
+function tbl(rows){return `<table><tr><th>ID</th><th>種別</th><th>誰</th><th>内容</th><th>期限</th><th>フォロー</th><th>関連</th><th>状態</th><th></th></tr>${rows.map(r=>`<tr>
+  <td class="muted">${esc(r.ID)}</td><td>${{task:"自分",received:"受けた",given:"出した"}[r.kind]}</td><td>${esc(r.who)}</td><td>${esc(r.content)}</td>
+  <td>${dueTxt(r["期限"],r.due_in)}</td><td>${r["フォロー日"]?dueTxt(r["フォロー日"],r.follow_in):"—"}</td><td><span class="chip">${esc(r["関連"]||"-")}</span></td>
+  <td>${esc(r["状態"])}</td><td style="white-space:nowrap">${["open","in-progress","waiting","done"].filter(s=>s!==r["状態"]).map(s=>`<button class="act" onclick="api('/api/commitment/state',{id:'${r.ID}',state:'${s}'})">${s}</button>`).join(" ")}
+  <button class="act" onclick="editDue('${r.ID}','${esc(r["期限"])}')">期限</button></td></tr>`).join("")}</table>`;}
+function editDue(id,cur){const d=prompt(`${id} の新しい期限（YYYY-MM-DD）`,cur&&cur!=="なし"?cur:"");if(d)api("/api/commitment/due",{id,due:d});}
+function renderCommitments(){
+  const all=S.com.rows;const open=all.filter(r=>r["状態"]!=="done"),done=all.filter(r=>r["状態"]==="done");
+  $("#tab-commitments").innerHTML=`<div class="card"><h2>約束台帳（未完了 ${open.length}）</h2>${open.length?tbl(open):'<div class="empty">なし</div>'}
+    <form class="inline" onsubmit="return addCommitment(this)">
+      <select name="kind"><option value="task">自分のタスク</option><option value="received">受けた指示</option><option value="given">出した指示</option></select>
+      <input type="text" name="content" placeholder="内容" required><input type="text" name="who" placeholder="依頼者 / 相手" style="min-width:110px">
+      <input type="date" name="due"><input type="date" name="follow" title="フォロー日（出した指示）"><input type="text" name="rel" placeholder="P:slug" style="min-width:110px">
+      <button class="act primary">追加</button></form></div>
+    <details class="card" style="margin-top:12px"><summary>完了済み（${done.length}）</summary>${done.length?tbl(done):""}</details>`;}
+async function addCommitment(f){const d=Object.fromEntries(new FormData(f));Object.keys(d).forEach(k=>{if(!d[k])delete d[k];});await api("/api/commitment/add",d);f.reset();return false;}
+function inboxRow(it){return `<div style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="muted">${esc(it.id)} ${esc(it.at)}</span> 「${esc(it.text)}」 <span class="chip">${esc(it.source)}</span>
+  <form class="inline" onsubmit="return resolveInbox(this,'${it.id}')"><input type="text" name="to" list="targets" placeholder="記録先（memory/… または 不要）" style="min-width:260px" required><button class="act">分類済にする</button></form></div>`;}
+async function resolveInbox(f,id){await api("/api/inbox/resolve",{id,to:f.to.value});return false;}
+function renderInbox(){
+  const targets=[...S.proj.projects.flatMap(p=>[`memory/projects/${p.slug}/status.md`,`memory/projects/${p.slug}/issues.md`,`memory/projects/${p.slug}/decisions.md`,`memory/projects/${p.slug}/context/`]),...S.ppl.people.map(p=>`memory/people/${p.ident}.md`),"memory/commitments.md","memory/situation.md","memory/insights.md","不要（破棄）"];
+  $("#tab-inbox").innerHTML=`<datalist id="targets">${targets.map(t=>`<option value="${esc(t)}">`).join("")}</datalist>
+    <div class="card"><h2>未分類（${S.inbox.pending.length}）</h2>${S.inbox.pending.length?S.inbox.pending.map(inboxRow).join(""):'<div class="empty">なし</div>'}
+      <form class="inline" onsubmit="return addInbox(this)"><input type="text" name="text" placeholder="覚えておくこと" style="min-width:320px" required><input type="text" name="source" placeholder="出所" value="ボード"><button class="act primary">inbox に追加</button></form></div>
+    <details class="card" style="margin-top:12px"><summary>分類済（直近 ${S.inbox.resolved.length}）</summary><table>${S.inbox.resolved.map(it=>`<tr><td class="muted">${esc(it.id)}</td><td>${esc(it.text)}</td><td>→ ${esc(it.to)}</td><td class="muted">${esc(it.resolved_at)}</td></tr>`).join("")}</table></details>`;}
+async function addInbox(f){await api("/api/inbox/add",{text:f.text.value,source:f.source.value});f.reset();return false;}
+function renderProjects(){
+  const ps=S.proj.projects;
+  $("#tab-projects").innerHTML=ps.length?`<div class="grid">${ps.map(p=>`<div class="card"><h3>${esc(p.title)} <span class="muted">${esc(p.slug)}</span></h3>
+    <div>${esc(p.purpose)}</div><div class="muted">状態: ${esc(p.state||"—")}／期限: ${dueTxt(p.deadline,p.deadline_in)}</div>
+    <div style="margin:6px 0">${p.coordinates.map(c=>`<span class="chip">${esc(c["サービス"]||"")}: ${esc(c["URL/ID"]||c["場所"]||"")}</span>`).join("")}</div>
+    <div><span class="chip">未完了の約束 ${p.open_commitments}</span><span class="chip">決定 ${p.decisions_total}（未承認 ${p.decisions_proposed}）</span><span class="chip">open 課題 ${p.issues_open}</span></div>
+    <details style="margin-top:6px"><summary>status.md</summary>${md(p.status_excerpt)}</details></div>`).join("")}</div>`:'<div class="card empty">案件が登録されていません（/setup または /intake で登録）</div>';}
+function renderPeople(){
+  const ps=S.ppl.people;
+  $("#tab-people").innerHTML=ps.length?`<div class="card"><table><tr><th>氏名</th><th>所属・役職</th><th>関係</th><th>成熟度</th><th>判断事例</th><th>最終観察</th><th>未検証予測</th><th>効果的なアプローチ</th><th></th></tr>
+    ${ps.map(p=>`<tr><td><b>${esc(p.name)}</b><div class="muted" style="font-size:11px">${esc(p.ident)}</div></td><td>${esc(p.org)}<br>${esc(p.title)}</td><td>${esc(p.relation)}</td><td><span class="chip">${esc(p.maturity)}</span></td><td>${p.observations}</td><td>${esc(p.last_observation||"—")}</td><td>${p.pending_predictions}</td><td>${esc(p.approach||"—")}</td>
+    <td><button class="act" onclick="observe('${p.ident}')">判断事例を追加</button></td></tr>`).join("")}</table></div>`:'<div class="card empty">人物が登録されていません</div>';}
+function observe(ident){const situation=prompt("状況（何があったか）");if(!situation)return;const judgment=prompt("本人の判断・言動");if(!judgment)return;const reason=prompt("理由（本人談 / 推測）","（推測）");api("/api/person/observe",{ident,situation,judgment,reason});}
+function decRow(d){const st=d.status;return `<div style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${esc(d.title)}</b> <span class="chip">${esc(d.project)}</span> <span class="chip">${esc(st)}</span><div class="muted">${esc(d.content)}</div>
+  <div class="muted">予測: ${esc(d.prediction||"—")}／検証日: ${dueTxt(d.verify_date,d.verify_in)}${d.result&&!/後日追記/.test(d.result)?"／結果: "+esc(d.result):""}</div>
+  <div style="margin-top:4px">${st.startsWith("提案")?`<button class="act primary" data-p="${esc(d.project)}" data-t="${esc(d.title)}" data-s="decided" onclick="decStatus(this)">承認して決定にする</button>`:""}
+  ${!st.startsWith("提案")&&!st.startsWith("検証済")?`<button class="act" data-p="${esc(d.project)}" data-t="${esc(d.title)}" data-s="proposed" onclick="decStatus(this)">提案に戻す</button>`:""}</div></div>`;}
+function decStatus(b){api("/api/decision/status",{project:b.dataset.p,title:b.dataset.t,status:b.dataset.s});}
+function renderDecisions(){const ds=S.dec.decisions;$("#tab-decisions").innerHTML=ds.length?`<div class="card">${ds.map(decRow).join("")}</div>`:'<div class="card empty">決定の記録がありません</div>';}
+function renderLog(){$("#tab-log").innerHTML=`<div class="card"><h2>操作ログ（直近）<span class="muted"> memory/task-log・フックが自動記録</span></h2>${S.log.lines.length?`<pre>${esc(S.log.lines.join("\n"))}</pre>`:'<div class="empty">記録なし</div>'}</div>`;}
+function show(k){TABS.forEach(([t])=>{$("#tab-"+t).classList.toggle("active",t===k);});[...$("#nav").children].forEach(b=>b.classList.toggle("active",b.dataset.k===k));try{localStorage.setItem("board.tab",k);}catch(e){}}
+$("#nav").innerHTML=TABS.map(([k,l])=>`<button data-k="${k}" onclick="show('${k}')">${l}</button>`).join("");
+let initial="today";try{initial=localStorage.getItem("board.tab")||"today";}catch(e){}
+show(initial);refresh();setInterval(refresh,30000);
+</script>
+</body>
+</html>

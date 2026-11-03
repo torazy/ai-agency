@@ -63,7 +63,8 @@ ai-agency/
 │   ├── people/               # 人物情報＋人物モデル（判断事例ログ・反応予測の検証）
 │   └── task-log/             # 操作実績（gitignore・フックが自動記録）
 └── tools/
-    ├── mem.py                    # memory/ への決定的な追記 CLI（inbox / commitment / person / decision / check）
+    ├── mem.py                    # memory/ への決定的な追記 CLI（inbox / commitment / person / decision / check / migrate）
+    ├── board/                    # 秘書ボード：memory/ を見る・触るローカル画面（server.py＋index.html。書き込みは mem.py 経由）
     ├── backlog-mcp/server.py
     ├── dev/                      # 本体メンテナンス層（雛形。本体フォルダでだけ有効化する）
     ├── sync/                     # 2台運用の片方向同期（export / import。OPERATIONS.md §6）
@@ -90,6 +91,7 @@ ai-agency/
 | 忘れずに覚えさせる | 「覚えておいて」＋内容（分類前に inbox へ即時保存され、分類後に記録先が報告される。迷えば1行で確認される） |
 | タスク・指示を記録 | 「〇〇やっておく」「部長に△△を頼まれた」「鈴木さんに□□を依頼した」と言うだけ |
 | 今日の状況を把握 | `/morning-brief` |
+| 画面で見る・触る | 「ボードを開いて」（または `python tools/board/server.py` → http://127.0.0.1:8765/）。約束・inbox・案件・人物・決定を一覧し、状態変更や分類も画面から |
 | 過去の決定を検証 | `/review-decisions` |
 | 自律範囲の昇格提案 | `/propose-delegation` |
 | プロジェクト登録 | 「〇〇を登録したい。Backlogキー=XXX、GitHub=owner/repo、Drive=URL、Slack=#ch」 |

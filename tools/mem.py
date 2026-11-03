@@ -110,13 +110,20 @@ def next_id(lines: list[str], prefix: str) -> str:
     return f"{prefix}-{(max(nums) + 1) if nums else 1:03d}"
 
 
+class MemError(Exception):
+    """利用者に見せる失敗（入力不備・対象なし）。CLI は ❌ を出して exit 1、ボードは 400 で返す。"""
+
+
+LAST_OK: list[str] = []  # ライブラリ利用時に ok() の文言を拾うためのバッファ（直近の呼び出し分）
+
+
 def ok(msg: str) -> None:
+    LAST_OK.append(msg)
     print(f"📝 記録: {msg}")
 
 
 def fail(msg: str, code: int = 1) -> None:
-    print(f"❌ {msg}", file=sys.stderr)
-    sys.exit(code)
+    raise MemError(msg)
 
 
 # ---------------------------------------------------------------- inbox
@@ -629,6 +636,14 @@ def main(argv: list[str] | None = None) -> None:
 
     a = ap.parse_args(argv)
     root = (a.root or default_root()).resolve()
+    try:
+        dispatch(root, a)
+    except MemError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def dispatch(root: Path, a: argparse.Namespace) -> None:
     if not (root / "memory").is_dir():
         fail(f"{root} に memory/ が無い（--root を確認）")
 

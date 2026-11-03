@@ -235,7 +235,8 @@ Slack会話・仕様書・メール等が貼り付けられたとき → `intake
 | スラッシュコマンド | `.claude/commands/{name}.md` | /setup /intake /consult /simulate /incident /morning-brief /review-decisions /propose-delegation |
 | ガードレール・フック | `.claude/settings.json`、`tools/hooks/` | deny＋guardrail.py／session-start.py／operation-logger.py。正典は `memory/guardrails.json` |
 | MCP | `.mcp.json` | github / backlog / brave-search。コネクタは claude.ai 側 |
-| 記憶 | `memory/` | 唯一の正典 |
+| 記憶 | `memory/` | 唯一の正典。表への追記は `tools/mem.py` 経由 |
+| ボード | `tools/board/`（`board` スキル・`.claude/launch.json`） | memory/ を見る・触るローカル画面。書き込みは mem.py と同じ経路 |
 | 定期実行 | scheduled task（`/schedule`） | /morning-brief 等 |
 
 本体（テンプレート）とインスタンスの分離、メンテナンス層は `OPERATIONS.md`。

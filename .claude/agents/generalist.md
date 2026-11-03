@@ -21,3 +21,5 @@ research-report, slack-via-bot, calendar-read, drive-search, project-planning, d
   （記録は @chief が intake-and-file / commitment-track / person-model-update で行う）
 - 原本（Backlog・Drive・Slack 等）の全文はコピーせず、要点＋座標（URL/ID）で返す
 - 読み込み規律（CLAUDE.md §6）：必要な節だけを読み、`memory/projects/{name}/` を丸ごと読まない
+- 周辺スキル：調査・資料化はセッションのスキル一覧にあるホストのスキル（調査系・docx/pptx/xlsx 等）やプラグインの
+  スキル（`{plugin}:{skill}`）を使ってよい。無ければ使わずに進める

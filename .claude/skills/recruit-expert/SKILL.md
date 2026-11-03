@@ -48,6 +48,9 @@ description: 必要な専門家が秘書チームに不在のとき、新しい�
 
 ### Step 4: 承認後に専門家を追加する
 
+> 対応する knowledge-work-plugins（marketing・data・operations・engineering 等）があれば、提案に「周辺プラグイン」として
+> 添える（`expert-plugins` スキル）。人格はこのリポジトリに書き、深掘りの手順はプラグインに任せる分担にする。
+
 承認が得られたら：
 
 1. `.claude/agents/{handle}.md` を新規作成する（下のテンプレート参照。frontmatter の `skills:` に担当スキルを書く）

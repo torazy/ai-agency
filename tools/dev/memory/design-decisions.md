@@ -28,6 +28,19 @@
   Antigravity・Copilot にはローカル上書き層が無い
 - **検証**：有効化後の新規セッションで「あなたは誰？」→ 第一秘書と名乗らないこと
 
+## 2026-11-04: 外部プラグインは取り込まず「入っていれば使う」
+
+- **判断**：knowledge-work-plugins（legal / finance / human-resources / product-management）は本体に同梱・複製しない。
+  インスタンスごとに承認制で `--scope local` 導入し、専門家は共通規則「スキル一覧にあれば Skill ツールで使う」で拾う。
+  エージェント frontmatter の `skills:` には書かない（プラグイン名前空間のスキルを preload できるかは文書化されておらず、
+  未導入の環境で壊れるため）
+- **理由**：中身は米国実務前提（US GAAP・SOX・米国の雇用慣行・米国の標準契約ポジション）で、取り込むと日本向けの修正と
+  上流追従の保守を背負う。人格と判断の型（日本前提）は本体、深掘りの手順は上流、という分担なら両方の更新を活かせる
+- **local スコープ**：インスタンスの `.claude/settings.json` を本体からの upstream merge と衝突させないため
+- **ホスト委譲**：research-report は検索手段を固定せず（組み込み Web 検索 → brave → 手動）、本格調査はホストの調査スキルへ。
+  deliverable-create はファイル生成を docx/pptx/xlsx/pdf 等のホストスキルへ。どちらも「範囲・宛先の定義」と
+  「memory への保存」だけを本体の価値として残す
+
 ## 2026-11-04: ボードのアイコンは「正典に書く」、見た目は外部依存ゼロ
 
 - **判断**：専門家のアイコンは `.claude/agents/{handle}.md` の frontmatter `icon:`、人物のアイコンは人物ファイルの

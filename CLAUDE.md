@@ -234,6 +234,7 @@ Slack会話・仕様書・メール等が貼り付けられたとき → `intake
 | 常時ルール | `CLAUDE.md`（このファイル）＋ `@memory/dashboard.md` | 正典 |
 | 人格（専門家・汎用秘書） | `.claude/agents/{handle}.md` | Agent ツールで召集。担当スキルを `skills:` で事前読込、`icon:` はボード表示用 |
 | 手順（スキル） | `.claude/skills/{name}/SKILL.md` | 説明文（description）で自動起動 |
+| 専門家の周辺プラグイン（任意） | knowledge-work-plugins（`expert-plugins` スキル） | 入っていれば専門家が `{plugin}:{skill}` を深掘りに使う。導入はインスタンスごと・`--scope local` |
 | スラッシュコマンド | `.claude/commands/{name}.md` | /setup /intake /consult /discuss /simulate /incident /morning-brief /review-decisions /propose-delegation |
 | ガードレール・フック | `.claude/settings.json`、`tools/hooks/` | deny＋guardrail.py／session-start.py／operation-logger.py。正典は `memory/guardrails.json` |
 | MCP | `.mcp.json` | github / backlog / brave-search。コネクタは claude.ai 側 |

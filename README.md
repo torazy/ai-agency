@@ -92,6 +92,7 @@ ai-agency/
 | 忘れずに覚えさせる | 「覚えておいて」＋内容（分類前に inbox へ即時保存され、分類後に記録先が報告される。迷えば1行で確認される） |
 | タスク・指示を記録 | 「〇〇やっておく」「部長に△△を頼まれた」「鈴木さんに□□を依頼した」と言うだけ |
 | 今日の状況を把握 | `/morning-brief` |
+| 専門家を強くする | 「@legal を強くしたい」→ knowledge-work-plugins（legal / finance / human-resources / product-management）を承認制で導入。入れなくても動く |
 | 画面で見る・触る | 「ボードを開いて」（または `python tools/board/server.py` → http://127.0.0.1:8765/）。約束・inbox・案件・人物・決定を一覧し、状態変更や分類も画面から |
 | 過去の決定を検証 | `/review-decisions` |
 | 自律範囲の昇格提案 | `/propose-delegation` |

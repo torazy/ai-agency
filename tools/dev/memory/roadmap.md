@@ -47,8 +47,10 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 |---|---|---|
 | 2a | **Claude Code 専用化**：`.agents/skills` を `.claude/skills` に正典として移す（ポインタ廃止）、ワークフローを `.claude/commands` に統合、専門家の人格を `.claude/agents/*.md` 本体に（`skills:` で担当スキルを事前読込）、CLAUDE.md を正典に。/consult のブリーフを「事実と座標のみ・思考は渡さない」に明文化。他ツール層（AGENTS.md・GEMINI.md・.agents/・.github/・tools/hermes）は削除し、復元経路を PORTABILITY.md に記載 | ✅ 2026-11-04 |
 | 2b | **記録の確実性**：`memory/inbox.md`（capture-first）、確認の二段階＋必ず確認する4場面（intake-and-file・CLAUDE.md §5）、`tools/mem.py`（inbox / commitment（ID 付き）/ person / decision / check）、decisions の 提案（未承認）→決定、専門家出力は本文30行＋付録、観測記録表の縦持ち、user-profile と dashboard の二重管理解消、status.md に期限付きタスクを書かない規則、operation-logger が permission_mode を見て「承認済」と「自動実行」を区別 | ✅ 2026-11-04 |
+| 2c-test | テストインスタンスで `/discuss`（@accountant・@it-architect・架空部長モデル×2ラウンド）を完走。R1 並列・R2 継続・統合・記録すべて OK、R3 不要。実測：3名合計 約27万トークン・約8分。指摘7点のうち6点を手順書とフックに反映（表示名の定義、R2 は R1 本文をそのまま貼る、人物モデルの出力形式の接合、コスト目安の明記、verify-date は約束台帳から、付録15行、`--help` をログ除外） | ✅ 2026-11-04 |
 | 2c | **/discuss**：混成パネル（専門家＋Lv1 以上の人物モデル）、R1 意見表明（Agent 並列）→ R2 反論・修正（SendMessage で同じ agent を継続、他者の結論だけを見せる）→ R3 収束（対立時のみ）→ @chief 統合（合意／対立／裁定／ラウンドで変わったこと）。記録は meetings/ の議事録＋decision（提案）＋person predict。着手前にコスト確認 | ✅ 2026-11-04（実行テストは別途） |
 | 2d | **ボード**：`tools/board/server.py`（標準ライブラリの HTTP サーバー・127.0.0.1 専用・JSON API）＋ `index.html`（7タブ：今日/約束/inbox/案件/人物/決定/操作ログ）。書き込みは mem.py の関数を直接呼ぶ（二重ストア無し）。`board` スキルと `.claude/launch.json` で「ボードを開いて」→ preview。mem.py は MemError 例外化してライブラリ利用可に | ✅ 2026-11-04 |
+| 2d-2 | **ボードの見た目**（ユーザー要望 2026-11-04）：おしゃれでかっこよく。①エージェント（`.claude/agents/*.md` の frontmatter に `icon:`／絵文字 or SVG）と人物（人物ファイルの基本情報に `アイコン:`）にアイコンを設定でき、ボードと会話の見出しで使う ②操作ボタン・状態・種別にアイコン（状態変更・期限・分類・承認、受けた/出した/自分、Lv バッジ）③案件カードに進捗や期限の図（期限までのバー、約束の件数リング）④タイポグラフィ・余白・カードの階層を整える。外部依存なしのまま（インライン SVG アイコンセット） | 🔲 |
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | 🔲 |
 | 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | 🔲 |
 

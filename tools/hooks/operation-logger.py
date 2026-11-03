@@ -99,6 +99,8 @@ def classify(tool_name: str, tool_input: dict, cfg: dict, root: Path):
         segments = [s.strip() for s in re.split(r"&&|\|\||;|\n", cmd_wo_heredoc) if s.strip()]
         hits = []
         for seg in segments:
+            if re.search(r"(^|\s)(--help|-h)(\s|$)", seg):  # ヘルプ表示は操作ではない
+                continue
             for rule in cfg.get("bash_categories", []):
                 try:
                     if re.search(rule["pattern"], seg, re.IGNORECASE):

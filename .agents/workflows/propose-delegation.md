@@ -13,8 +13,10 @@ description: タスクログの承認履歴を分析し、繰り返し承認さ�
 カテゴリ別に「承認済回数」「却下/差し戻し回数」「直近の発生」を出す。
 （記録が薄い場合は `decisions.md` や会話の実績も補助的に参照する。）
 
-> 注：Antigravity IDE ではセッション終了フックが使えないため、外部操作の実行記録は秘書が会話中に
-> `memory-update` で task-log へ追記する（[AGENTS.md] §7）。この履歴がここでの集計対象。
+> 注：Claude Code では PostToolUse フック（`tools/hooks/operation-logger.py`）が外部書き込み・送信を
+> 自動で `**操作**:` 行として記録する（カテゴリ＝`{server}:{tool}` / `git-push` / `memory-write` 等）。
+> フックのないホスト（Antigravity IDE・Copilot）では秘書が会話中に追記する（[AGENTS.md] §7）。
+> 記録ゼロなら「まだ実績が無い」と報告して終える（/setup 未実施の可能性も案内）。
 
 ## Step 2: 昇格候補を判定する
 昇格候補の条件（すべて満たすもの）：

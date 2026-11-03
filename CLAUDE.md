@@ -21,7 +21,8 @@
 | スラッシュコマンド | `.agents/workflows/` | `.claude/commands/`（中身は workflows へのポインタ） |
 | スキル | `.agents/skills/` | `.claude/skills/`（中身は `.agents/skills/` へのポインタ。**手順の正典は常に `.agents/skills/` 側**） |
 | 物理ガードレール | GUI Deny List | `.claude/settings.json` の `permissions.deny` ＋ PreToolUse フック（`tools/hooks/guardrail.py`） |
-| 活動ログ | 会話中に自分で追記 | Stop フック（`tools/hooks/task-log-writer.py`）が自動記録。リッチな実績は従来通り memory-update で追記 |
+| 活動ログ | 会話中に自分で追記 | **PostToolUse フック（`tools/hooks/operation-logger.py`）が外部書き込み・送信を自動記録**（`**操作**:` 行＝/propose-delegation の集計対象）。秘書は書かない。学び等のリッチな実績は従来通り memory-update で追記 |
+| 記憶の育成状態 | 秘書が自分で診断 | SessionStart フック（`tools/hooks/session-start.py`）が「未初期化／案件n件／期限超過」を会話冒頭に注入。未初期化なら `/setup` を案内する |
 | 定期実行 | `/schedule` | ユーザーに cron／scheduled routines／`/loop` の登録を案内する |
 
 ## 注意

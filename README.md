@@ -53,6 +53,7 @@ ai-agency/
 ├── .agents/
 │   ├── agents.md             # 全ペルソナ（@chief + @generalist + 8専門家）
 │   ├── workflows/            # スラッシュコマンド
+│   │   ├── setup.md              # /setup    オンボーディング（プロフィール・案件・人物・ツール棚卸し）
 │   │   ├── consult.md            # /consult  専門家を並列召集して統合
 │   │   ├── intake.md             # /intake   情報ファイリング
 │   │   ├── simulate.md           # /simulate 実在人物の反応を事前予測（リハーサル）
@@ -63,12 +64,12 @@ ai-agency/
 │   └── skills/               # 28スキル（intake-and-file, commitment-track, deliverable-create 等）
 ├── .claude/                  # Claude Code 適応層（すべて .agents/ へのポインタ）
 │   ├── agents/               # 専門家サブエージェント×8（Taskツールで並列召集）
-│   ├── commands/             # /consult /simulate 等×6
-│   ├── skills/               # スキルポインタ×25（自動起動用）
-│   └── settings.json         # permissions.deny＋PreToolUse/Stopフック（ガードレール）
+│   ├── commands/             # /setup /consult /simulate 等×8
+│   ├── skills/               # スキルポインタ×28（自動起動用）
+│   └── settings.json         # permissions.deny＋SessionStart/PreToolUse/PostToolUse フック
 ├── .github/                  # GitHub Copilot 適応層（部分対応・劣化モード明記）
 │   ├── copilot-instructions.md
-│   └── prompts/              # /consult 等×6（prompt.md）
+│   └── prompts/              # /setup /consult 等×8（prompt.md）
 ├── memory/
 │   ├── dashboard.md          # 稼働登録簿（全ツールが会話開始時にロード・100行上限）
 │   ├── situation.md          # 優先事項ダッシュボード
@@ -86,8 +87,11 @@ ai-agency/
     ├── hermes/                   # Hermes Agent 適応層（SETUP.md＋スキルインストーラ）
     ├── sync/                     # 2台運用の片方向同期（export.sh / import.sh。OPERATIONS.md §6）
     └── hooks/
-        ├── guardrail.py          # CLI/Claude Code用：deny操作を物理ブロック（IDEはGUI Deny Listを使用）
-        └── task-log-writer.py    # CLI/Claude Code用：セッション終了時に活動マーカー記録
+        ├── guardrail.py          # PreToolUse：deny操作を物理ブロック（IDEはGUI Deny Listを使用）
+        ├── session-start.py      # SessionStart：記憶の育成状態（未初期化・期限超過）を会話冒頭に注入
+        ├── operation-logger.py   # PostToolUse：外部書き込み・送信を task-log に自動記録（/propose-delegation の素材）
+        ├── operation-log.json    # ↑の分類設定（書き込み動詞・Bashパターン・コネクタIDの別名）
+        └── task-log-writer.py    # SessionEnd 用の活動マーカー（Gemini CLI 向け・任意）
 ```
 
 ---
@@ -98,6 +102,7 @@ ai-agency/
 
 | やりたいこと | コマンド／言い方 |
 |---|---|
+| **最初に記憶を初期化する（必須）** | `/setup`（プロフィール・案件・人物・優先事項を対話で登録、使えるツールを棚卸し。約15分） |
 | 複合・専門的な判断を仰ぐ | `/consult このツール導入をコスト・法務・セキュリティで評価して` |
 | 報告・指示のリハーサル | `/simulate 田中部長 来期予算の増額案を報告したい` |
 | 障害対応 | `/incident 本番APIがエラーを返している` |

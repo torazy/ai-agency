@@ -45,8 +45,8 @@ ai-agency（本体・テンプレート）          ← ツールの進化はこ
    `git merge upstream/main --allow-unrelated-histories` が必要になる
 2. `.env` を作成（`.env.template` 参照。Backlog/GitHub/Brave の各キー）
 3. MCP を登録（`tools/mcp_config.sample.json` 参照。ツールごとの置き場所はコメントに記載）
-4. 好きなエージェント（Antigravity / Claude Code / Copilot）でフォルダを開き、秘書に自己紹介する：
-   「`memory/dashboard.md` に私を登録して。名前=〇〇、役職=〇〇、判断基準=〇〇」
+4. 好きなエージェント（Antigravity / Claude Code / Copilot）でフォルダを開き、**`/setup`** を実行する
+   （対話でプロフィール・案件・人物・優先事項を登録し、使えるツールを棚卸しする。約15分・再実行可）
 5. 定期実行を登録（README の `/schedule` 文例）
 6. upstream の確認（手順1の clone 方式なら登録済み）：
    ```bash

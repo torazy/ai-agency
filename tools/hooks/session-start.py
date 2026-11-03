@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""
+session-start.py ── SessionStart フック。記憶の育成状態を 1〜3 行で会話に注入する。
+
+目的：memory/ が雛形のまま（dashboard 未設定・案件/人物ゼロ）だと、/simulate・/morning-brief・
+/propose-delegation などは素材が無くて動かない。その状態を秘書が毎回自力で診断する代わりに、
+セッション開始時に事実だけを渡し、/setup の案内や期限超過の注意につなげる。
+
+stdout（プレーンテキスト・exit 0）は Claude Code が「Claude が見られる文脈」として追加する。
+命令形ではなく事実の記述にする（フック出力の規約）。失敗しても exit 0。上限 10,000 文字。
+"""
+
+import re
+import sys
+from datetime import date, datetime
+from pathlib import Path
+
+
+def workspace_root() -> Path:
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def main() -> None:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+    root = workspace_root()
+    mem = root / "memory"
+    lines = []
+
+    dashboard = read(mem / "dashboard.md")
+    profile_unset = "**名前**: （未設定）" in dashboard
+    projects = [p for p in (mem / "projects").glob("*/overview.md")] if (mem / "projects").exists() else []
+    people = [p for p in (mem / "people").glob("*.md") if p.name != "_template.md"] if (mem / "people").exists() else []
+
+    ops = 0
+    for f in (mem / "task-log").glob("*.md") if (mem / "task-log").exists() else []:
+        ops += read(f).count("**操作**:")
+
+    if profile_unset or (not projects and not people):
+        lines.append(
+            "[記憶の状態] memory/ は未初期化（プロフィール"
+            + ("未設定" if profile_unset else "設定済")
+            + f"・案件 {len(projects)} 件・人物 {len(people)} 名）。/setup ワークフローで初期化できる。"
+        )
+    else:
+        lines.append(f"[記憶の状態] 案件 {len(projects)} 件・人物 {len(people)} 名・操作実績 {ops} 件。")
+
+    # situation.md の鮮度（最終更新が 14 日以上前なら注意）
+    situation = read(mem / "situation.md")
+    m = re.search(r"\*\*最終更新\*\*:\s*(\d{4}-\d{2}-\d{2})", situation)
+    if m:
+        try:
+            age = (date.today() - datetime.strptime(m.group(1), "%Y-%m-%d").date()).days
+            if age >= 14:
+                lines.append(f"[situation.md] 最終更新から {age} 日経過。")
+        except ValueError:
+            pass
+
+    # commitments.md の期限超過：先頭セルが日付（＝台帳の実データ行）で、他の日付セルに今日より前があり、
+    # 状態が done でない行を数える（記法説明や雛形行は先頭セルが日付でないので対象外）
+    commitments = read(mem / "commitments.md")
+    overdue = 0
+    today = date.today()
+    for row in commitments.splitlines():
+        cells = [c.strip() for c in row.strip().strip("|").split("|")] if row.startswith("|") else []
+        if len(cells) < 3 or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", cells[0]) or "done" in row:
+            continue
+        for d in re.findall(r"(\d{4}-\d{2}-\d{2})", " ".join(cells[1:])):
+            try:
+                if datetime.strptime(d, "%Y-%m-%d").date() < today:
+                    overdue += 1
+                    break
+            except ValueError:
+                continue
+    if overdue:
+        lines.append(f"[約束台帳] 期限または追加日が過去日付の未完了行が {overdue} 行ある（要確認）。")
+
+    print("\n".join(lines)[:9000])
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

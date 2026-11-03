@@ -1,6 +1,6 @@
 ---
 name: slack-via-bot
-description: Slackで情報を取得・送信するとき。「Slackで〇〇を確認して」「〇〇のSlackチャンネルの最新情報を教えて」などの依頼に使用する。ブラウザ経由でChromeのSlackを操作する。前提：ChromeがSlackにログイン済みであること。
+description: Slack で情報を取得・送信するとき。「Slackで〇〇を確認して」「〇〇のSlackチャンネルの最新情報を教えて」「〇〇さんにSlackで送って」などの依頼に使用する。手段はコネクタ/MCP → ブラウザ → 手動アシストの順で解決する。送信は必ず事前提示→承認。
 ---
 
 # slack-via-bot（ポインタ）

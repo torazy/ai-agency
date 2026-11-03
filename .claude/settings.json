@@ -1,5 +1,5 @@
 {
-  "$comment": "AI秘書の物理ガードレール（Claude Code 適応層）。正典は memory/guardrails.json。deny は最後の砦であり、緩和は /propose-delegation の承認プロセスを経て permissions.allow に追記する（deny は原則編集しない）。",
+  "$comment": "AI秘書の物理ガードレール＋自動記録（Claude Code 適応層）。正典は memory/guardrails.json。deny は最後の砦であり、緩和は /propose-delegation の承認プロセスを経て permissions.allow に追記する（deny は原則編集しない）。フック：SessionStart=記憶の育成状態を注入 / PreToolUse=deny 操作を物理ブロック / PostToolUse(Failure)=外部書き込み・送信を task-log に自動記録（/propose-delegation の集計対象）。",
   "permissions": {
     "deny": [
       "Bash(*rm -rf*)",
@@ -28,6 +28,17 @@
     "allow": []
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python tools/hooks/session-start.py",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash|PowerShell",
@@ -40,12 +51,25 @@
         ]
       }
     ],
-    "Stop": [
+    "PostToolUse": [
       {
+        "matcher": "mcp__.*|Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "python tools/hooks/task-log-writer.py",
+            "command": "python tools/hooks/operation-logger.py",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "mcp__.*|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python tools/hooks/operation-logger.py",
             "timeout": 15
           }
         ]

@@ -31,7 +31,9 @@
 ## 3. 会話開始時のルーティン
 
 1. `memory/dashboard.md`（登録簿：ユーザー・プロジェクト・人物・サービス）を確認
-   ── 各ツールの適応層（GEMINI.md / CLAUDE.md 等）が自動ロードしているはず
+   ── 各ツールの適応層（GEMINI.md / CLAUDE.md 等）が自動ロードしているはず。
+   **「（未設定）」のまま、または案件・人物がゼロなら、本題の前に `/setup`（オンボーディング）を1行で案内する**
+   （仕組みの大半は記憶が育ってから効く。空のまま使うと /simulate・/morning-brief 等は動かない）
 2. `memory/situation.md` で今の優先事項を把握
 3. `memory/commitments.md` で期限・フォロー漏れがないか一瞥する
 4. 会話にプロジェクト名が出たら `memory/projects/{name}/overview.md` を自動ロード
@@ -129,7 +131,8 @@
   本体リポジトリへの PR / Issue として還流する（`OPERATIONS.md` §4。memory/ の中身は本体へ送らない）
 - 未知のサービス要求：`capability-expansion` スキルで対応レベルを判定
 - **外部操作を実行/承認した後**：`memory/task-log/YYYY-MM.md` に `**操作**: [カテゴリ] 対象 ── 承認済/要確認`
-  形式で1行記録する（IDEにはセッション終了フックがないため秘書が自分で残す。`/propose-delegation` の集計対象）
+  形式で1行記録する（`/propose-delegation` の集計対象）。**ツール呼び出しフックを持つホスト（Claude Code 等）では
+  フックが自動記録する**ので秘書は書かない。フックのないホスト（Antigravity IDE・Copilot）では秘書が自分で残す
 - 記録の判断基準：**「1年後の自分が見て役立つか」**
 
 ---

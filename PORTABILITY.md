@@ -27,7 +27,9 @@
 | スキル | `.agents/skills/{name}/SKILL.md`（正典） | `.claude/skills/{name}/SKILL.md`（ポインタ・自動起動有効） | 手動参照（instructions で誘導） |
 | スラッシュコマンド | `.agents/workflows/{name}.md`（正典） | `.claude/commands/{name}.md`（ポインタ） | `.github/prompts/{name}.prompt.md`（ポインタ） |
 | 物理ガードレール | **GUI Deny List**（`gui_deny_tokens` を転記） | `.claude/settings.json` の `permissions.deny` ＋ PreToolUse フック（guardrail.py） | ✕ 機械的ブロックなし（instructions の自制のみ） |
-| 活動ログ | 会話中に秘書が追記 | `Stop` フックで task-log-writer.py 自動記録 | 会話中に追記（instructions で指示） |
+| 活動ログ（操作実績） | 会話中に秘書が追記 | `PostToolUse` フックで operation-logger.py が外部書き込み・送信を自動記録（秘書は書かない） | 会話中に追記（instructions で指示） |
+| 記憶の育成状態の注入 | 秘書が自分で診断 | `SessionStart` フックで session-start.py が「未初期化／案件n件／期限超過」を注入 → `/setup` 案内 | 秘書が自分で診断 |
+| オンボーディング | `/setup` | `/setup` | `/setup`（prompts） |
 | サブエージェント召集 | 動的サブエージェント | `Task` ツール（本物の並列・独立） | ✕ |
 | 定期実行 | `/schedule` | cron／`/loop`／scheduled routines | ✕（GitHub Actions で代替可） |
 | MCP | IDE MCPストア／`~/.gemini/config/mcp_config.json` | `.mcp.json`（**設置済み**・github/backlog/brave-search） | `.vscode/mcp.json`（キー名 `servers`・未設置） |
@@ -51,7 +53,11 @@ Gemini/Antigravity **CLI** ── `.gemini/settings.json`：
   "SessionEnd": [ { "hooks": [
   { "type": "command", "command": "python tools/hooks/task-log-writer.py", "timeout": 15000 } ] } ] } }
 ```
-**Claude Code** ── `.claude/settings.json`：同様に `hooks.PreToolUse` / `hooks.Stop` へ。
+**Claude Code** ── `.claude/settings.json`（設置済み）：`SessionStart`=session-start.py／`PreToolUse`=guardrail.py／
+`PostToolUse`・`PostToolUseFailure`（matcher `mcp__.*|Bash|PowerShell|Write|Edit|…`）=operation-logger.py。
+記録対象の分類（書き込み動詞・Bash パターン・コネクタ ID の別名）は `tools/hooks/operation-log.json` で調整する。
+`task-log-writer.py`（SessionEnd 用の活動マーカー）は Gemini CLI 向けの任意資産で、Claude Code では使わない
+（毎ターン発火する Stop に付けると空エントリが量産されるため）。
 
 ## 適応層のメンテナンス
 

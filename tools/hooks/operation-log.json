@@ -1,0 +1,42 @@
+{
+  "$comment": "operation-logger.py（PostToolUse / PostToolUseFailure フック）の分類設定。外部への書き込み・送信に当たるツール呼び出しだけを memory/task-log/YYYY-MM.md に『**操作**: [カテゴリ] 対象 ── 承認済』形式で記録する（/propose-delegation の集計対象）。読み取り系・IDE 内部ツールは記録しない。",
+  "skip_tool_prefixes": [
+    "mcp__ccd_",
+    "mcp__terminal__",
+    "mcp__visualize__",
+    "mcp__savvy",
+    "mcp__computer-use__",
+    "mcp__Claude_Browser__",
+    "mcp__claude-in-chrome__",
+    "mcp__scheduled-tasks__list",
+    "mcp__mcp-registry__"
+  ],
+  "mcp_write_verbs": "^(create|update|delete|send|reply|forward|push|merge|comment|upload|trash|untrash|label|unlabel|move|restore|cancel|set_|post|write|add_|remove|rename|duplicate|share|respond|mark_|spawn|stop_|resolve|apply|run_|insert|append|edit|patch|convert|stage|archive|close|reopen|assign|transition|publish)",
+  "bash_categories": [
+    { "category": "git-push",        "pattern": "\\bgit\\s+push\\b" },
+    { "category": "git-commit",      "pattern": "\\bgit\\s+commit\\b" },
+    { "category": "gh-pr-create",    "pattern": "\\bgh\\s+pr\\s+create\\b" },
+    { "category": "gh-pr-merge",     "pattern": "\\bgh\\s+pr\\s+merge\\b" },
+    { "category": "gh-pr-comment",   "pattern": "\\bgh\\s+pr\\s+(comment|review)\\b" },
+    { "category": "gh-issue-create", "pattern": "\\bgh\\s+issue\\s+(create|comment|close)\\b" },
+    { "category": "gh-api-write",    "pattern": "\\bgh\\s+api\\b.*-X\\s*(POST|PUT|PATCH|DELETE)\\b" },
+    { "category": "http-write",      "pattern": "\\bcurl\\b.*-X\\s*(POST|PUT|PATCH|DELETE)\\b" },
+    { "category": "deploy",          "pattern": "\\b(deploy|terraform\\s+apply|kubectl\\s+apply)\\b" }
+  ],
+  "server_aliases": {
+    "$comment": "claude.ai コネクタは mcp__{アカウント固有ID}__ の形で現れる。読みやすいカテゴリ名にしたいときにここで別名を付ける（/setup の棚卸しで判明したIDを登録。未登録ならIDのまま記録される）。",
+    "5b4a5dba-0a12-411e-b2a0-4a2a71e378cb": "gmail",
+    "68665b93-1c62-4f05-8812-12ecfa5cfd87": "google-calendar",
+    "6ea7d68f-c703-432d-a84a-59e9b6bab461": "google-drive",
+    "0c4e0ef3-0ea6-4bf4-9531-c3449c82779e": "notion",
+    "f9ac0333-3721-4792-b571-bd56c0518c54": "box",
+    "1a59c906-04da-521d-bda7-7f71b9f9e01c": "claude-docs",
+    "4043105e-e6cb-4522-b39f-ea304d429189": "figma"
+  },
+  "target_keys_priority": [
+    "owner", "repo", "issue_number", "pull_number", "number", "issueIdOrKey", "projectIdOrKey",
+    "path", "file_path", "to", "recipients", "subject", "channel", "channel_id",
+    "title", "name", "summary", "page_id", "event_id", "calendar_id", "id", "url", "query"
+  ],
+  "target_max_chars": 90
+}

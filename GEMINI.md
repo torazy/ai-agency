@@ -9,6 +9,7 @@
 ## Antigravity 運用メモ
 
 - ペルソナ定義は `.agents/agents.md`、スキルは `.agents/skills/`、スラッシュコマンドは `.agents/workflows/`。
+- 初回・環境変更時は `/setup`（オンボーディング：プロフィール・案件・人物・使えるツールの棚卸し）。
 - 複合・専門タスクは `/consult`、情報ファイリングは `/intake`、障害発生時は `/incident` を使う。
 - 実在の上司・メンバーへの報告・指示のリハーサルは `/simulate`（人物モデルは `memory/people/` に蓄積）。
 - 定期実行（朝のブリーフィング等）は `/schedule` で登録する（README の文例参照）。

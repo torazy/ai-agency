@@ -36,7 +36,7 @@ ai-agency（本体・テンプレート）          ← ツールの進化はこ
 1. **本体を clone して自分のインスタンスリポジトリを作る**（履歴を保持 ── 後の upstream merge が
    きれいに通る。この手順を推奨）：
    ```bash
-   git clone https://github.com/n-ima/ai-agency.git ai-agency-{name}
+   git clone https://github.com/torazy/ai-agency.git ai-agency-{name}
    cd ai-agency-{name}
    git remote rename origin upstream
    gh repo create ai-agency-{name} --private --source . --remote origin --push

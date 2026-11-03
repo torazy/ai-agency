@@ -83,10 +83,15 @@ git merge upstream/main
 
 ## 5. 本体側の変更規律（本体メンテナ向け）
 
-- **本体の作業フォルダにはマーカーファイル `.ai-agency-template` を置く**（gitignore 済み・中身は任意の1行）。
-  SessionStart フックがこれを見て「本体では /setup を案内しない」と判断する。インスタンスには clone されない
-  ので、置き忘れると本体でも「未初期化」と案内されるだけ（実害なし）。
-- **本体で `/setup` や `/intake` を実行しない**。動作確認はインスタンス（または一時的な clone）で行う。
+- **本体フォルダではメンテナンス層を有効化する**（Claude Code）：`python tools/dev/enable-maintenance.py` を1回実行。
+  製品の CLAUDE.md・フック・スキル・MCP を本体フォルダでだけ機械的に止め（`.claude/settings.local.json`）、
+  メンテナ向けの `CLAUDE.local.md` と `.claude/skills/maint-*` を置く。生成物はすべて gitignore 済みで
+  インスタンスには届かない。雛形は `tools/dev/`（コミット対象）。詳細は `tools/dev/README.md`。
+  有効化後、新しいセッションで「あなたは誰？」と聞いて第一秘書と名乗らないことを確認する。
+- **本体で `/setup` や `/intake` を実行しない**。動作確認は使い捨てのテストインスタンスで行う
+  （`maint-test-instance` スキル：`git clone . ../ai-agency-test`。push しない。削除は手動）。
+- `permissions.deny` は局所設定で外せないため本体でも効く。ディレクトリ削除は `git rm -r` か Python で行う。
+- Antigravity・Copilot にはローカル上書き層が無い。そちらで本体を編集するなら本体フォルダを直接開かず親フォルダから開く。
 
 - `memory/` 配下のファイルは**初期化用の雛形**。リリース後に雛形の構造を変える場合は、
   上書きでなく **移行手順** をコミットメッセージと `PORTABILITY.md` に明記する

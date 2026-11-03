@@ -52,6 +52,21 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | 🔲 |
 | 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | 🔲 |
 
+## テストインスタンスの観察（2026-11-04・2a 直後・全項目 OK）
+
+起動フック注入・人格・/setup（ダミー8ファイル・dashboard 48行）・自動記録（memory-write 12行）・
+/consult（@accountant＋@it-architect → 1推奨 → decisions.md）はすべて動作。NG なし。指摘された改善点（2b の入力）：
+
+1. **自動記録が Write/Edit 限定**：Bash のヒアドキュメントや sed での memory/ 書き込みは拾わない → `tools/mem.py` 経由に
+   統一すれば解決（CLI 呼び出しは Bash パターンで記録）
+2. **「承認済」が無条件**：auto モードや allow で通った書き込みも承認済と記録される → PermissionRequest 等で
+   「ユーザーが実際に承認した」と「自動で通った」を区別するか、集計時に permission_mode を併記
+3. **専門家の出力が長い**（各150行超・約9万トークン）→ consult のブリーフ雛形に「結論30行＋付録」の2層指示
+4. **同じ事実を3か所に書く**（situation / commitments / status）→ status.md のマイルストーン欄は台帳参照のみ、等の規則
+5. **ユーザー情報の二重管理**（dashboard と user-profile）と「呼び方」の置き場が無い → 雛形の整理
+6. **service-capabilities の観測記録表が横に長い**（10列）→ 縦持ち（サービス×手段）に
+7. **decisions.md に書くタイミング**：ユーザー承認前に書くか不明 → 「提案（未承認）」と「決定」を区別する規則
+
 ## 参照（外部）
 
 - Claude Duet（2026-10-21 研究プレビュー）：朝ブリーフ＋接続アプリの常時監視＋送信前承認。記憶は不透明。

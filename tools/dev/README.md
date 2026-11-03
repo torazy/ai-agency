@@ -25,6 +25,9 @@ python tools/dev/enable-maintenance.py
 その後 **新しいセッションを開き**、「あなたは誰？」と聞いて「第一秘書」と**名乗らない**ことを確認する
 （名乗ったら `claudeMdExcludes` のパターンが合っていない。`.claude/settings.local.json` を確認）。
 
+`claudeMdExcludes` の glob は**実行時のフォルダ名**（例：`**/ai-manager/CLAUDE.md`）から生成される。
+フォルダを改名・別名で clone したときは、同じコマンドをもう一度実行して glob を更新する（冪等）。
+
 戻すとき：
 
 ```bash

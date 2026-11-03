@@ -67,9 +67,13 @@ git merge upstream/main
 
 - **コンフリクトの解決方針**：コア領域＝本体側（`theirs`）を採用／データ領域＝自分側（`ours`）を採用。
   境界（§1）通りに運用していればコンフリクトはほぼ起きない。例外は **memory/ の雛形構造が変わった**とき
-  （表の列追加・節の移動）で、`memory/` のファイルが衝突する。このときは「本体の新しい構造に、自分のデータを
-  載せ替える」：見出し・表のヘッダは本体側、行・本文の中身は自分側を残す
-- マージ後は `python tools/mem.py migrate`（冪等）を実行し、`python tools/mem.py check` で表が崩れていないか確認する
+  （表の列追加・節の移動）で、`memory/` のファイルが衝突する。このときの解消は：
+  - **表（commitments.md・decisions.md）は自分側（`ours`）をそのまま残す**（旧ヘッダのまま）。列の追加や状態行の補完は
+    次の `mem.py migrate` が行う。本体側の新ヘッダだけを採ると「新ヘッダ＋旧行」になり migrate が効かない
+  - **説明文・見出し・節の構成（dashboard.md・user-profile.md・service-capabilities.md）は本体側**を採り、自分の値
+    （名前・座標・観測記録）を新しい構造へ載せ替える（横持ち→縦持ちなどは手作業）
+- マージ後は `python tools/mem.py migrate`（冪等）を実行し、`python tools/mem.py check` で表が崩れていないか確認する。
+  migrate が decisions に補った状態行（提案／決定の推定）は一度目を通す
 - マージ後、`PORTABILITY.md` 冒頭と本体のリリースノート（コミットログ）を確認し、
   **移行手順（下記 §5）があれば秘書が実行を提案**する
 

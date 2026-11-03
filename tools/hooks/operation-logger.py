@@ -88,17 +88,34 @@ def classify(tool_name: str, tool_input: dict, cfg: dict, root: Path):
             return f"{server}:{tool}", describe_target(tool_input, cfg)
         return None, None
 
-    # シェル: 外部書き込みに当たるコマンドだけ
+    # シェル: 外部書き込みに当たるコマンドだけ。&& ; | 改行で区切った各コマンドを個別に分類する
+    # （1つの Bash に mem.py を2回書いても2行記録される）
     if tool_name in ("Bash", "PowerShell"):
         cmd = ""
         if isinstance(tool_input, dict):
             cmd = str(tool_input.get("command", ""))
+        # ヒアドキュメント本文（<<'EOF' … EOF）はコマンドではないので外す
+        cmd_wo_heredoc = re.sub(r"<<-?\s*['\"]?(\w+)['\"]?\n.*?\n\1\s*$", "<<HEREDOC", cmd, flags=re.S | re.M)
+        segments = [s.strip() for s in re.split(r"&&|\|\||;|\n", cmd_wo_heredoc) if s.strip()]
+        hits = []
+        for seg in segments:
+            for rule in cfg.get("bash_categories", []):
+                try:
+                    if re.search(rule["pattern"], seg, re.IGNORECASE):
+                        hits.append((rule["category"], truncate(seg, cfg.get("target_max_chars", 90))))
+                        break
+                except (re.error, KeyError):
+                    continue
+        if hits:
+            return hits, None
+        # セグメントで拾えなくても、ヒアドキュメント本文（python スクリプト等）が memory/ に書いていれば記録する
         for rule in cfg.get("bash_categories", []):
-            try:
-                if re.search(rule["pattern"], cmd, re.IGNORECASE):
-                    return rule["category"], truncate(cmd, cfg.get("target_max_chars", 90))
-            except (re.error, KeyError):
-                continue
+            if rule.get("category", "").startswith("memory-write"):
+                try:
+                    if re.search(rule["pattern"], cmd, re.IGNORECASE):
+                        return [(rule["category"], truncate(cmd, cfg.get("target_max_chars", 90)))], None
+                except (re.error, KeyError):
+                    pass
         return None, None
 
     # ファイル書き込み: memory/ 配下は委任昇格の対象なので記録
@@ -151,7 +168,9 @@ def main() -> None:
     hook_event = str(event.get("hook_event_name", ""))
 
     category, target = classify(tool_name, tool_input, cfg, root)
-    if category:
+    # Bash は複数ヒットをリストで返す。単一ヒットと同じ経路に揃える
+    entries = category if isinstance(category, list) else ([(category, target)] if category else [])
+    for category, target in entries:
         # 「承認済」はユーザーが確認モードで通したもの。auto / acceptEdits / bypass で通ったものは
         # 「自動実行」として区別する（/propose-delegation は承認済だけを昇格根拠に数える）
         mode = str(event.get("permission_mode", "") or "")

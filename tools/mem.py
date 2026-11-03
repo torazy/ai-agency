@@ -13,8 +13,9 @@ mem.py ── memory/ への「決定的な追記」CLI。
   python tools/mem.py commitment add --kind task     --content "経費精算" --due 2026-11-07 --rel -
   python tools/mem.py commitment add --kind received --content "比較表提出" --who 架空部長 --due 2026-11-14 --rel P:kintai-saas
   python tools/mem.py commitment add --kind given    --content "レビュー依頼" --who 鈴木さん --due 2026-11-10 --follow 2026-11-08 --rel P:x
-  python tools/mem.py commitment set-state C-003 done
+  python tools/mem.py commitment set-state C-003 done      # set-due / set-follow で期限・フォロー日の変更
   python tools/mem.py commitment list [--rel P:x] [--state open] [--json]
+  python tools/mem.py person new suzuki-hanako-kakuu-corp-soumu --name "鈴木 花子" --org "架空株式会社 総務部" --email ...
   python tools/mem.py person observe kakuu-ichiro-kakuu-corp-bucho --situation "..." --judgment "..." --reason "...（推測）"
   python tools/mem.py person note    kakuu-ichiro-kakuu-corp-bucho --situation "..." --insight "..."
   python tools/mem.py person predict kakuu-ichiro-kakuu-corp-bucho --case "..." --prediction "..." --verify-date 2026-11-20
@@ -256,7 +257,7 @@ def commitment_add(root: Path, a: argparse.Namespace) -> None:
     lines, e = ensure_id_column(lines, h, e)
     lines = ensure_rel_column(lines, h, e)
     cid = next_id(lines, "C")
-    rel = a.rel or "-"
+    rel = (a.rel or "-").strip("`")
     state = a.state or "open"
     if state not in STATES:
         fail(f"状態は {sorted(STATES)} のいずれか")
@@ -287,20 +288,38 @@ def touch_updated(lines: list[str]) -> list[str]:
     return lines
 
 
+def _commitment_update_cell(root: Path, cid: str, column: str, value: str, label: str) -> None:
+    """ID で行を特定し、ヘッダ名 column のセルを value に置き換える。"""
+    p = commitments_path(root)
+    lines = read(p)
+    header: list[str] = []
+    for i, ln in enumerate(lines):
+        if TABLE_ROW_RE.match(ln) and i + 1 < len(lines) and TABLE_SEP_RE.match(lines[i + 1]):
+            header = cells(ln)
+        elif TABLE_ROW_RE.match(ln) and cells(ln)[:1] == [cid]:
+            c = cells(ln)
+            if column not in header:
+                fail(f"{cid} の表に『{column}』列が無い")
+            c[header.index(column)] = esc(value)
+            lines[i] = "| " + " | ".join(c) + " |"
+            write(p, touch_updated(lines))
+            ok(f"{cid} の{label}を {value} に")
+            return
+    fail(f"{cid} が見つからない")
+
+
 def commitment_set_state(root: Path, cid: str, state: str) -> None:
     if state not in STATES:
         fail(f"状態は {sorted(STATES)} のいずれか")
-    p = commitments_path(root)
-    lines = read(p)
-    for i, ln in enumerate(lines):
-        if TABLE_ROW_RE.match(ln) and cells(ln)[:1] == [cid]:
-            c = cells(ln)
-            c[-1] = state
-            lines[i] = "| " + " | ".join(c) + " |"
-            write(p, touch_updated(lines))
-            ok(f"{cid} の状態を {state} に")
-            return
-    fail(f"{cid} が見つからない")
+    _commitment_update_cell(root, cid, "状態", state, "状態")
+
+
+def commitment_set_due(root: Path, cid: str, due: str) -> None:
+    _commitment_update_cell(root, cid, "期限", due, "期限")
+
+
+def commitment_set_follow(root: Path, cid: str, follow: str) -> None:
+    _commitment_update_cell(root, cid, "フォロー日", follow, "フォロー日")
 
 
 def commitment_rows(root: Path) -> list[dict]:
@@ -343,6 +362,41 @@ def commitment_list(root: Path, a: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------- people
+def person_new(root: Path, a: argparse.Namespace) -> None:
+    """_template.md から人物ファイルを作る。識別子は {姓}-{名}-{所属略称}-{役職略称}（役職不明なら部署略称）。"""
+    ident = a.ident.removesuffix(".md")
+    if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+){3,}", ident):
+        fail("識別子は英小文字・数字・ハイフンで {姓}-{名}-{所属略称}-{役職略称} の4要素以上（例: tanaka-kenji-abc-corp-cfo）")
+    dst = root / "memory" / "people" / f"{ident}.md"
+    if dst.exists():
+        fail(f"既に存在する: {dst.relative_to(root)}（同一人物なら追記、別人なら識別子を変える）")
+    tpl = root / "memory" / "people" / "_template.md"
+    if not tpl.exists():
+        fail("memory/people/_template.md が無い")
+    lines = read(tpl)
+    fills = {
+        "**氏名**": a.name, "**読み仮名**": a.kana, "**役職**": a.title, "**所属組織**": a.org,
+        "**メールアドレス**": a.email, "**Backlogユーザー名**": a.backlog, "**GitHubアカウント**": a.github,
+        "**Slackアカウント名**": a.slack, "**初めて関わった日**": today(), "**関係の種別**": a.relation,
+    }
+    out = []
+    for ln in lines:
+        if ln.startswith("# 人物ファイル テンプレート"):
+            out.append(f"# {a.name}"); continue
+        if ln.startswith("> このテンプレートをコピー") or ln.startswith("> **ファイル名は氏名だけにしない**") \
+           or ln.startswith("> 例: ") or ln.startswith("> 同姓同名") or ln.strip() == ">":
+            continue
+        for key, val in fills.items():
+            if ln.startswith(f"- {key}:") and val:
+                ln = f"- {key}: {esc(val)}"
+        out.append(ln)
+    if not any(ln.startswith("| （未記録） | 新規作成") for ln in out):
+        pass
+    out = [ln.replace("| （未記録） | 新規作成 |", f"| {today()} | 新規作成（mem.py person new） |") for ln in out]
+    write(dst, out)
+    ok(f"人物ファイルを作成: {dst.relative_to(root).as_posix()}（成熟度 Lv0。dashboard.md の人物表への追加は別途）")
+
+
 def person_path(root: Path, ident: str) -> Path:
     ident = ident.removesuffix(".md")
     if "/" in ident or "\\" in ident:
@@ -466,7 +520,14 @@ def migrate(root: Path) -> None:
     if not (root / "memory" / "inbox.md").exists():
         inbox_path(root)
         changed.append("inbox.md を作成")
-    # decisions.md の各項目に状態行が無ければ「決定」を補う（旧雛形は全て承認済みの決定として記録していた）
+    # 関連欄の表記を統一（旧行の `P:x` のバッククォートを外す）
+    if p.exists():
+        lines = read(p)
+        norm = [re.sub(r"`([^`]*)`", r"\1", ln) if ln.startswith("| C-") else ln for ln in lines]
+        if norm != lines:
+            write(p, norm)
+            changed.append("関連欄の表記を統一")
+    # decisions.md の各項目に状態行が無ければ補う。見出し・直後の数行に「未承認」「提案」「案）」があれば提案扱い
     for d in sorted((root / "memory" / "projects").glob("*/decisions.md")) if (root / "memory" / "projects").exists() else []:
         lines = read(d)
         out, added = [], 0
@@ -475,7 +536,9 @@ def migrate(root: Path) -> None:
             if ln.startswith("## ") and re.match(r"## \d{4}-\d{2}-\d{2}:", ln):
                 nxt = lines[i + 1] if i + 1 < len(lines) else ""
                 if not nxt.startswith("- **状態**:"):
-                    out.append("- **状態**: 決定（移行時に補完）")
+                    window = " ".join(lines[i:i + 4])
+                    label = "提案（未承認）" if re.search(r"未承認|提案|検討中", window) else "決定"
+                    out.append(f"- **状態**: {label}（移行時に補完）")
                     added += 1
         if added:
             write(d, out)
@@ -538,9 +601,15 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--content", required=True); s.add_argument("--who"); s.add_argument("--due")
     s.add_argument("--follow"); s.add_argument("--rel"); s.add_argument("--state")
     s = cm.add_parser("set-state"); s.add_argument("id"); s.add_argument("state")
+    s = cm.add_parser("set-due"); s.add_argument("id"); s.add_argument("due")
+    s = cm.add_parser("set-follow"); s.add_argument("id"); s.add_argument("follow")
     s = cm.add_parser("list"); s.add_argument("--rel"); s.add_argument("--state"); s.add_argument("--json", action="store_true")
 
     pe = sub.add_parser("person").add_subparsers(dest="sub", required=True)
+    s = pe.add_parser("new"); s.add_argument("ident"); s.add_argument("--name", required=True)
+    for opt in ("--kana", "--title", "--org", "--email", "--backlog", "--github", "--slack"):
+        s.add_argument(opt)
+    s.add_argument("--relation", default="社内同僚", help="社内同僚 / 顧客担当者 / 外部ベンダー / パートナー / その他")
     s = pe.add_parser("observe"); s.add_argument("ident"); s.add_argument("--situation", required=True)
     s.add_argument("--judgment", required=True); s.add_argument("--reason")
     s = pe.add_parser("note"); s.add_argument("ident"); s.add_argument("--situation", required=True); s.add_argument("--insight", required=True)
@@ -570,9 +639,12 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "commitment":
         {"add": lambda: commitment_add(root, a),
          "set-state": lambda: commitment_set_state(root, a.id, a.state),
+         "set-due": lambda: commitment_set_due(root, a.id, a.due),
+         "set-follow": lambda: commitment_set_follow(root, a.id, a.follow),
          "list": lambda: commitment_list(root, a)}[a.sub]()
     elif a.cmd == "person":
-        {"observe": lambda: person_observe(root, a),
+        {"new": lambda: person_new(root, a),
+         "observe": lambda: person_observe(root, a),
          "note": lambda: person_note(root, a),
          "predict": lambda: person_predict(root, a)}[a.sub]()
     elif a.cmd == "decision":

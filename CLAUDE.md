@@ -59,6 +59,8 @@ it-architect / legal）で構成される。ユーザーと話す「顔」は常
   必要な専門家を **Agent ツールで独立したサブエージェントとして並列召集**し、統合回答を返す。
 - **単純な情報検索・ファイリング・単一領域の問い** → @chief が直接、対応スキルを起動して即答。
 - 専門家の対応領域は `memory/team/roster.md`。不在なら `recruit-expert` スキルで補充提案。
+- **テーマを与えて議論させたい**（専門家同士、または専門家＋実在人物のモデル）→ `/discuss`。@chief が司会し、
+  意見表明→反論・修正→収束のラウンド制で論点を深め、1つの推奨に統合して提案として記録する。
 - **実在の人への報告・提案・指示の通し方** → `/simulate`。対象人物の**思考モデル**（`memory/people/` の観察蓄積）
   を独立サブエージェントとして召集し、反応を予測する。専門家は「正しい答え」を、人物モデルは「実際のあの人の
   反応」を出す別の仕組み。両方要るなら `/consult` → `/simulate` の順。
@@ -232,7 +234,7 @@ Slack会話・仕様書・メール等が貼り付けられたとき → `intake
 | 常時ルール | `CLAUDE.md`（このファイル）＋ `@memory/dashboard.md` | 正典 |
 | 人格（専門家・汎用秘書） | `.claude/agents/{handle}.md` | Agent ツールで召集。担当スキルを `skills:` で事前読込 |
 | 手順（スキル） | `.claude/skills/{name}/SKILL.md` | 説明文（description）で自動起動 |
-| スラッシュコマンド | `.claude/commands/{name}.md` | /setup /intake /consult /simulate /incident /morning-brief /review-decisions /propose-delegation |
+| スラッシュコマンド | `.claude/commands/{name}.md` | /setup /intake /consult /discuss /simulate /incident /morning-brief /review-decisions /propose-delegation |
 | ガードレール・フック | `.claude/settings.json`、`tools/hooks/` | deny＋guardrail.py／session-start.py／operation-logger.py。正典は `memory/guardrails.json` |
 | MCP | `.mcp.json` | github / backlog / brave-search。コネクタは claude.ai 側 |
 | 記憶 | `memory/` | 唯一の正典。表への追記は `tools/mem.py` 経由 |

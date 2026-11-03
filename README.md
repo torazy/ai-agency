@@ -47,7 +47,7 @@ ai-agency/
 ├── .mcp.json                 # MCP 設定（github / backlog / brave-search）
 ├── .claude/
 │   ├── agents/               # 専門家×7＋汎用秘書（人格本体。/consult が Agent ツールで並列召集）
-│   ├── commands/             # /setup /intake /consult /simulate /incident /morning-brief /review-decisions /propose-delegation
+│   ├── commands/             # /setup /intake /consult /discuss /simulate /incident /morning-brief /review-decisions /propose-delegation
 │   ├── skills/               # 28スキル（intake-and-file, commitment-track, person-model-update, *-review 等）
 │   └── settings.json         # permissions.deny＋SessionStart/PreToolUse/PostToolUse フック
 ├── memory/
@@ -85,6 +85,7 @@ ai-agency/
 |---|---|
 | **最初に記憶を初期化する（必須）** | `/setup`（プロフィール・案件・人物・優先事項を対話で登録、使えるツールを棚卸し。約15分） |
 | 複合・専門的な判断を仰ぐ | `/consult このツール導入をコスト・法務・セキュリティで評価して` |
+| テーマを与えて議論させる | `/discuss 勤怠SaaSはクラウド型でよいか 参加: @accountant @it-architect 田中部長`（専門家＋人物モデルの混成パネル。ラウンド制で統合） |
 | 報告・指示のリハーサル | `/simulate 田中部長 来期予算の増額案を報告したい` |
 | 障害対応 | `/incident 本番APIがエラーを返している` |
 | 情報をファイリング | `/intake`（または会議メモ等を貼って「ファイリングして」） |

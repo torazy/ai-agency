@@ -54,6 +54,21 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
 | 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | 🔲 |
 
+## テストインスタンスの観察（2026-11-04・第3段・OK）
+
+legal プラグインを `--scope local` で導入（marketplace もテストインスタンスの local 設定に宣言）→ headless の `claude -p` で
+@legal に架空 NDA（非勧誘・片務賠償・NY 州法管轄）を審査させた。
+
+| 観点 | 結果 |
+|---|---|
+| プラグインの読込 | init に `legal:brief` ほか9スキルが並ぶ。常駐 約1千トークン、MCP 7個同梱（slack・box・gmail 等） |
+| サブエージェントからの利用 | @legal が `.claude/legal.local.md` を Glob で確認 → 無いので `legal:triage-nda` を Skill ツールで自発的に呼んだ |
+| 日本向けの読み替え | 「プレイブック未設定のため米国の標準水準で判定し日本法で読み替え」と明記。RED 判定・条項別の修正案・弁護士への論点・免責・@it-architect/@hr への委ねが出た |
+| 記憶への書き込み | なし（指示どおり） |
+| コスト | 約1.07 USD・2ターン・約108秒 |
+
+残課題：本番では `.claude/legal.local.md`（日本法プレイブック）の作成を /setup Step 6b で勧めると判定が自社基準になる。
+
 ## テストインスタンスの観察（2026-11-04・2a 直後・全項目 OK）
 
 起動フック注入・人格・/setup（ダミー8ファイル・dashboard 48行）・自動記録（memory-write 12行）・

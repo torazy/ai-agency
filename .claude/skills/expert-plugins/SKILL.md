@@ -24,8 +24,9 @@ description: 専門家（@legal・@accountant・@hr・@pm など）に周辺ス�
 
 ## 導入（ユーザーの承認を取ってから）
 
-1. 入れる前に提示する：どの専門家のために・どのプラグインか・**常駐コスト**（1プラグイン約8〜9スキル。説明文が毎セッション
-   読み込まれる。`claude plugin details {plugin}@knowledge-work-plugins` で見積り）。**必要な専門家の分だけ**入れる
+1. 入れる前に提示する：どの専門家のために・どのプラグインか・**常駐コスト**（実測：legal は9スキルで常駐 約1千トークン／
+   1回の呼び出しで 約1〜6千トークン。`claude plugin details {plugin}@knowledge-work-plugins` で確認できる）。
+   **必要な専門家の分だけ**入れる
 2. 承認されたら実行する（マーケットプレイス登録はユーザー設定、プラグインは端末ローカル）：
    ```bash
    claude plugin marketplace add anthropics/knowledge-work-plugins
@@ -33,7 +34,8 @@ description: 専門家（@legal・@accountant・@hr・@pm など）に周辺ス�
    ```
    - `--scope local` は `.claude/settings.local.json`（git 管理外）に書く。本体から upstream merge するときに
      `.claude/settings.json` が衝突しないようにするため。チーム全員で同じ構成にしたいインスタンスだけ `--scope project`
-   - プラグインに同梱の MCP 接続（Slack・Box 等）は使う時に個別承認が出る。接続しなくてもスキルは動く
+   - プラグインは MCP 接続を同梱している（legal は slack・box・egnyte・atlassian・docusign・google calendar・gmail の7つ）。
+     使う時に個別承認が出るので、普段使っていないサービスは拒否してよい。接続しなくてもスキルは動く
 3. 有効になるのは**次のセッションから**。「新しいセッションで @legal に契約を見せてください」と案内する
 4. `memory/team/roster.md` の「周辺プラグイン」表に1行追記する（導入日・スコープ・プレイブックの有無）。
    古いインスタンスで表が無ければ「専門領域クロスマトリクス」の前に作る（列：専門家｜プラグイン｜スコープ｜導入日｜備考）

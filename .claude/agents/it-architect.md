@@ -1,6 +1,7 @@
 ---
 name: it-architect
 description: ITアーキテクト。システム設計・技術選定・クラウド・セキュリティ設計・スケーラビリティの評価が必要なとき、/consult のチーム編成で技術観点が要るときに使用。
+icon: server
 skills:
   - architecture-review
 ---

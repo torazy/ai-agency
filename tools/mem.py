@@ -385,6 +385,7 @@ def person_new(root: Path, a: argparse.Namespace) -> None:
         "**氏名**": a.name, "**読み仮名**": a.kana, "**役職**": a.title, "**所属組織**": a.org,
         "**メールアドレス**": a.email, "**Backlogユーザー名**": a.backlog, "**GitHubアカウント**": a.github,
         "**Slackアカウント名**": a.slack, "**初めて関わった日**": today(), "**関係の種別**": a.relation,
+        "**アイコン**": getattr(a, "icon", None),
     }
     out = []
     for ln in lines:
@@ -441,6 +442,28 @@ def person_observe(root: Path, a: argparse.Namespace) -> None:
     n = sum(1 for ln in lines[h + 2:e] if not PLACEHOLDER_RE.match(ln))
     if n >= 5:
         print(f"   判断事例が {n} 件。成熟度 Lv2 以上の要件を満たす（人物ファイルの成熟度行を確認）")
+
+
+def person_set_icon(root: Path, ident: str, icon: str) -> None:
+    """基本情報の「アイコン」行を更新する（無ければ関係の種別の直後に挿入）。絵文字1つかボードのアイコン名。"""
+    icon = icon.strip()
+    if not icon or len(icon) > 24 or "|" in icon:
+        fail("アイコンは絵文字1つ、またはボードのアイコン名（英小文字）を指定する")
+    p = person_path(root, ident)
+    lines = read(p)
+    for i, ln in enumerate(lines):
+        if ln.startswith("- **アイコン**:"):
+            lines[i] = f"- **アイコン**: {esc(icon)}"
+            break
+    else:
+        for i, ln in enumerate(lines):
+            if ln.startswith("- **関係の種別**:"):
+                lines.insert(i + 1, f"- **アイコン**: {esc(icon)}")
+                break
+        else:
+            fail(f"{p.name} に基本情報の『関係の種別』行が無い")
+    write(p, lines)
+    ok(f"{p.name} のアイコンを {icon} に設定")
 
 
 def person_note(root: Path, a: argparse.Namespace) -> None:
@@ -617,6 +640,8 @@ def main(argv: list[str] | None = None) -> None:
     for opt in ("--kana", "--title", "--org", "--email", "--backlog", "--github", "--slack"):
         s.add_argument(opt)
     s.add_argument("--relation", default="社内同僚", help="社内同僚 / 顧客担当者 / 外部ベンダー / パートナー / その他")
+    s.add_argument("--icon", help="絵文字1つ、またはボードのアイコン名（user / crown / briefcase …）")
+    s = pe.add_parser("set-icon"); s.add_argument("ident"); s.add_argument("icon")
     s = pe.add_parser("observe"); s.add_argument("ident"); s.add_argument("--situation", required=True)
     s.add_argument("--judgment", required=True); s.add_argument("--reason")
     s = pe.add_parser("note"); s.add_argument("ident"); s.add_argument("--situation", required=True); s.add_argument("--insight", required=True)
@@ -659,6 +684,7 @@ def dispatch(root: Path, a: argparse.Namespace) -> None:
          "list": lambda: commitment_list(root, a)}[a.sub]()
     elif a.cmd == "person":
         {"new": lambda: person_new(root, a),
+         "set-icon": lambda: person_set_icon(root, a.ident, a.icon),
          "observe": lambda: person_observe(root, a),
          "note": lambda: person_note(root, a),
          "predict": lambda: person_predict(root, a)}[a.sub]()

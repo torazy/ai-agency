@@ -5,73 +5,353 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>秘書ボード</title>
 <style>
-  :root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--muted:#6b7280;--line:#e5e7eb;--accent:#2563eb;--warn:#b45309;--warn-bg:#fff7ed;--danger:#b91c1c;--danger-bg:#fef2f2;--ok:#15803d;--ok-bg:#f0fdf4;--chip:#eef2ff}
-  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1117;--card:#171a22;--fg:#e6e8ee;--muted:#9aa3b2;--line:#2a2f3a;--accent:#60a5fa;--warn:#fbbf24;--warn-bg:#2a2210;--danger:#f87171;--danger-bg:#2a1414;--ok:#4ade80;--ok-bg:#122117;--chip:#1e2433}}
-  :root[data-theme="dark"]{--bg:#0f1117;--card:#171a22;--fg:#e6e8ee;--muted:#9aa3b2;--line:#2a2f3a;--accent:#60a5fa;--warn:#fbbf24;--warn-bg:#2a2210;--danger:#f87171;--danger-bg:#2a1414;--ok:#4ade80;--ok-bg:#122117;--chip:#1e2433}
+  /* ---------- tokens ---------- */
+  :root{
+    --bg:#f3f4f8;--panel:#ffffff;--card:#ffffff;--fg:#141826;--fg-2:#3b4256;--muted:#6f7689;--line:#e4e7ef;--line-2:#eef0f5;
+    --accent:#4f46e5;--accent-2:#7c3aed;--accent-soft:#eef0ff;--accent-fg:#fff;
+    --ok:#16a34a;--ok-soft:#e9f9ee;--warn:#d97706;--warn-soft:#fff4e0;--danger:#dc2626;--danger-soft:#feeaea;--info:#0284c7;--info-soft:#e6f4fc;
+    --shadow:0 1px 2px rgba(20,24,38,.05),0 8px 24px -12px rgba(20,24,38,.14);
+    --r:14px;--r-s:9px;--side:236px;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#0c0e15;--panel:#12151e;--card:#171b26;--fg:#eceef5;--fg-2:#c6cad8;--muted:#8b92a8;--line:#262b3a;--line-2:#1f2431;
+    --accent:#818cf8;--accent-2:#a78bfa;--accent-soft:#1f2140;--accent-fg:#0c0e15;
+    --ok:#4ade80;--ok-soft:#10261a;--warn:#fbbf24;--warn-soft:#2a2210;--danger:#f87171;--danger-soft:#2c1517;--info:#38bdf8;--info-soft:#0f2231;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.8);}}
+  :root[data-theme="dark"]{
+    --bg:#0c0e15;--panel:#12151e;--card:#171b26;--fg:#eceef5;--fg-2:#c6cad8;--muted:#8b92a8;--line:#262b3a;--line-2:#1f2431;
+    --accent:#818cf8;--accent-2:#a78bfa;--accent-soft:#1f2140;--accent-fg:#0c0e15;
+    --ok:#4ade80;--ok-soft:#10261a;--warn:#fbbf24;--warn-soft:#2a2210;--danger:#f87171;--danger-soft:#2c1517;--info:#38bdf8;--info-soft:#0f2231;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.8);}
+
+  /* ---------- base ---------- */
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 system-ui,-apple-system,"Segoe UI","Hiragino Sans","Noto Sans JP",sans-serif}
-  header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;padding:14px 16px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:2}
-  header h1{font-size:16px;margin:0}
-  header .who{color:var(--muted)}
-  nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
-  nav button{border:1px solid var(--line);background:transparent;color:var(--fg);padding:6px 12px;border-radius:999px;cursor:pointer}
-  nav button.active{background:var(--accent);border-color:var(--accent);color:#fff}
-  main{max-width:1100px;margin:0 auto;padding:16px}
-  section{display:none}section.active{display:block}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
-  .card h2{font-size:14px;margin:0 0 8px;color:var(--muted);font-weight:600;letter-spacing:.02em}
-  .card h3{font-size:15px;margin:0 0 6px}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 "Inter",system-ui,-apple-system,"Segoe UI","Hiragino Sans","Noto Sans JP",sans-serif;font-feature-settings:"tnum";}
+  a{color:var(--accent)}
+  button{font:inherit;color:inherit}
+  code{font:12px/1.4 ui-monospace,Consolas,"SF Mono",monospace;background:var(--line-2);padding:1px 5px;border-radius:5px}
+  .ic{width:1em;height:1em;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em;flex:none}
+  .emoji{font-size:1.05em;line-height:1}
+
+  /* ---------- layout ---------- */
+  .app{display:grid;grid-template-columns:var(--side) 1fr;min-height:100vh}
+  aside{background:var(--panel);border-right:1px solid var(--line);padding:18px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:18px}
+  .brand{display:flex;align-items:center;gap:10px;padding:4px 8px}
+  .brand .mark{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:grid;place-items:center;color:#fff;box-shadow:var(--shadow)}
+  .brand .mark .ic{width:18px;height:18px;stroke-width:2.2}
+  .brand b{font-size:15px;letter-spacing:.01em}
+  .brand small{display:block;color:var(--muted);font-size:11px;margin-top:-2px}
+  nav.side{display:flex;flex-direction:column;gap:2px}
+  nav.side button{display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;padding:9px 10px;border-radius:10px;cursor:pointer;color:var(--fg-2);text-align:left;transition:background .15s,color .15s}
+  nav.side button .ic{width:18px;height:18px;color:var(--muted)}
+  nav.side button:hover{background:var(--line-2);color:var(--fg)}
+  nav.side button.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  nav.side button.active .ic{color:var(--accent)}
+  nav.side .cnt{margin-left:auto;font-size:11px;font-weight:600;color:var(--muted);background:var(--line-2);padding:0 7px;border-radius:999px;min-width:20px;text-align:center}
+  nav.side .cnt.hot{background:var(--danger);color:#fff}
+  nav.side .cnt.warm{background:var(--warn);color:#fff}
+  .side-foot{margin-top:auto;display:flex;flex-direction:column;gap:10px}
+  .team-strip{display:flex;flex-wrap:wrap;gap:6px;padding:0 6px}
+  .team-strip .av{cursor:pointer;transition:transform .15s}.team-strip .av:hover{transform:translateY(-2px)}
+  .side-foot .row{display:flex;align-items:center;justify-content:space-between;padding:0 6px;color:var(--muted);font-size:12px}
+
+  main{min-width:0}
+  .topbar{display:flex;align-items:center;gap:14px;padding:16px 26px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(10px);position:sticky;top:0;z-index:5}
+  .topbar h1{font-size:20px;margin:0;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+  .topbar h1 .ic{width:22px;height:22px;color:var(--accent)}
+  .topbar .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .topbar .spacer{flex:1}
+  .userchip{display:flex;align-items:center;gap:10px;padding:5px 10px 5px 6px;border:1px solid var(--line);border-radius:999px;background:var(--panel)}
+  .userchip .nm{font-weight:600;font-size:13px;line-height:1.2}.userchip .rl{color:var(--muted);font-size:11.5px}
+  .content{padding:22px 26px 60px;max-width:1280px}
+  section{display:none;animation:fade .2s ease}section.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* ---------- cards & grid ---------- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .span-all{grid-column:1/-1}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow)}
+  .card-h{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:13px;font-weight:600;color:var(--fg-2);letter-spacing:.01em}
+  .card-h .ic{width:16px;height:16px;color:var(--accent)}
+  .card-h .n{margin-left:4px;color:var(--muted);font-weight:500}
+  .card-h .right{margin-left:auto;display:flex;gap:6px;align-items:center;font-weight:500;color:var(--muted);font-size:12px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:14px}
+  .kpi{display:flex;gap:14px;align-items:center;padding:16px 18px}
+  .kpi .ico{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;flex:none}
+  .kpi .ico .ic{width:22px;height:22px}
+  .kpi .v{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+  .kpi .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .t-danger{color:var(--danger);background:var(--danger-soft)}.t-warn{color:var(--warn);background:var(--warn-soft)}.t-ok{color:var(--ok);background:var(--ok-soft)}.t-accent{color:var(--accent);background:var(--accent-soft)}.t-info{color:var(--info);background:var(--info-soft)}.t-muted{color:var(--muted);background:var(--line-2)}
+  .empty{color:var(--muted);padding:18px 8px;text-align:center;font-size:13px;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .empty .ic{width:26px;height:26px;color:var(--line);stroke-width:1.5}
+
+  /* ---------- badges / chips ---------- */
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;line-height:1.6;white-space:nowrap}
+  .badge .ic{width:12px;height:12px}
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:1px 9px;border-radius:999px;background:var(--line-2);color:var(--fg-2);font-size:12px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .chip .ic{width:12px;height:12px;color:var(--muted)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .due{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;white-space:nowrap}
+  .due .ic{width:13px;height:13px}
+  .due.over{color:var(--danger);font-weight:600}.due.soon{color:var(--warn);font-weight:600}.due.none{color:var(--muted)}
+  .muted{color:var(--muted)}.small{font-size:12px}.mono{font:12px/1.5 ui-monospace,Consolas,monospace}
+
+  /* ---------- avatars ---------- */
+  .av{display:inline-grid;place-items:center;border-radius:50%;width:32px;height:32px;font-weight:700;font-size:12.5px;color:#fff;background:linear-gradient(135deg,hsl(var(--h) 70% 55%),hsl(calc(var(--h) + 40) 70% 45%));box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);flex:none;user-select:none}
+  .av .ic{width:55%;height:55%;stroke-width:2}
+  .av .emoji{font-size:1.1em}
+  .av.lg{width:52px;height:52px;font-size:19px;border-radius:16px}.av.lg .emoji{font-size:1.6em}
+  .av.sm{width:22px;height:22px;font-size:10px}
+  .av.xl{width:64px;height:64px;font-size:22px;border-radius:20px}.av.xl .emoji{font-size:2em}
+
+  /* ---------- tables ---------- */
   table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{color:var(--muted);font-weight:600}
-  .chip{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--chip);font-size:12px;margin-right:4px}
-  .due-over{color:var(--danger);font-weight:600}.due-soon{color:var(--warn);font-weight:600}
-  .muted{color:var(--muted)}
-  .empty{color:var(--muted);padding:12px;text-align:center}
-  button.act{border:1px solid var(--line);background:var(--card);color:var(--fg);padding:3px 9px;border-radius:6px;cursor:pointer;font-size:12px}
-  button.act:hover{border-color:var(--accent);color:var(--accent)}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-  form.inline{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
-  input,select,textarea{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
-  input[type=text]{min-width:160px}textarea{width:100%;min-height:56px}
-  .md h1,.md h2,.md h3{font-size:14px;margin:12px 0 4px}.md ul{margin:4px 0;padding-left:20px}.md table{margin:6px 0}
-  .toast{position:fixed;right:16px;bottom:16px;background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:8px;opacity:0;transition:.2s;max-width:60vw}
-  .toast.show{opacity:1}
-  .banner{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);border-radius:8px;padding:8px 12px;margin-bottom:12px}
-  details summary{cursor:pointer;color:var(--muted)}
-  pre{white-space:pre-wrap;font:12px/1.5 ui-monospace,Consolas,monospace;margin:0}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  tbody tr:hover td{background:color-mix(in srgb,var(--accent-soft) 45%,transparent)}
+  td.who{white-space:nowrap}
+  .tscroll{overflow-x:auto;margin:0 -6px;padding:0 6px}
+  td.content{min-width:240px}td.nw{white-space:nowrap}
+  .seg button{white-space:nowrap}
+  @media (max-width:1200px){.seg .lbl-s{display:none}.seg button{padding:5px 7px}}
+
+  /* ---------- buttons / forms ---------- */
+  .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);color:var(--fg-2);padding:5px 11px;border-radius:var(--r-s);cursor:pointer;font-size:12.5px;font-weight:500;transition:.15s;white-space:nowrap}
+  .btn .ic{width:14px;height:14px}
+  .btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));border-color:transparent;color:#fff}
+  .btn.primary:hover{filter:brightness(1.07);color:#fff}
+  .btn.ok{color:var(--ok)}.btn.ok:hover{background:var(--ok-soft);border-color:var(--ok)}
+  .btn.ghost{border-color:transparent;background:transparent}
+  .btn.icon{padding:5px 7px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--r-s);overflow:hidden;background:var(--card)}
+  .seg button{border:0;background:transparent;padding:4px 8px;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;gap:4px;font-size:12px;border-right:1px solid var(--line-2)}
+  .seg button:last-child{border-right:0}
+  .seg button:hover{color:var(--fg);background:var(--line-2)}
+  .seg button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .seg .ic{width:13px;height:13px}
+  .filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .filters .btn.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+  form.panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;align-items:end;margin-top:14px;padding:14px;border:1px dashed var(--line);border-radius:var(--r-s);background:color-mix(in srgb,var(--line-2) 50%,transparent)}
+  form.panel label{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--muted)}
+  form.panel label span{display:flex;align-items:center;gap:4px}
+  form.panel .wide{grid-column:span 2}
+  input,select,textarea{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:var(--r-s);padding:7px 10px;font:inherit;font-size:13px;width:100%}
+  input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 40%,transparent);border-color:var(--accent)}
+  textarea{min-height:70px;resize:vertical}
+
+  /* ---------- figures ---------- */
+  .bar{height:8px;border-radius:999px;background:var(--line-2);overflow:hidden;position:relative}
+  .bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .4s}
+  .bar.warn i{background:linear-gradient(90deg,var(--warn),#f59e0b)}.bar.danger i{background:linear-gradient(90deg,var(--danger),#f43f5e)}.bar.ok i{background:linear-gradient(90deg,var(--ok),#22c55e)}
+  .bar-l{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:4px}
+  .ring{width:56px;height:56px;position:relative;flex:none}
+  .ring svg{transform:rotate(-90deg)}
+  .ring circle{fill:none;stroke-width:5;stroke-linecap:round}
+  .ring .bg{stroke:var(--line-2)}.ring .fg{stroke:var(--accent);transition:stroke-dasharray .4s}
+  .ring .c{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;font-weight:700;line-height:1;white-space:nowrap}
+  .ring .c small{font-weight:500;color:var(--muted);font-size:9.5px}
+  .lv{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--fg-2)}
+  .lv .segs{display:inline-flex;gap:2px}.lv .segs i{width:12px;height:6px;border-radius:2px;background:var(--line)}
+  .lv .segs i.on{background:var(--accent)}
+  .stat{display:flex;flex-direction:column;gap:1px;min-width:64px}
+  .stat b{font-size:17px;letter-spacing:-.01em}.stat span{font-size:11px;color:var(--muted)}
+  .stats{display:flex;gap:18px;flex-wrap:wrap}
+
+  /* ---------- lists ---------- */
+  .item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--line-2)}
+  .item:last-child{border-bottom:0;padding-bottom:0}
+  .item:first-child{padding-top:0}
+  .item .body{flex:1;min-width:0}
+  .item .ttl{font-weight:600;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .item .meta{color:var(--muted);font-size:12px;display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:3px}
+  .item .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .pcard .head{display:flex;gap:12px;align-items:flex-start}
+  .pcard h3{margin:0;font-size:16px;letter-spacing:-.01em}
+  .pcard .slug{color:var(--muted);font-size:12px;font-family:ui-monospace,Consolas,monospace}
+  .pcard .figs{display:flex;gap:16px;align-items:center;margin:14px 0 10px}
+  .pcard .figs .bars{flex:1;min-width:0}
+  .person{display:flex;flex-direction:column;gap:10px}
+  .person .head{display:flex;gap:14px;align-items:center}
+  .person h3{margin:0;font-size:16px}
+  .person .org{color:var(--muted);font-size:12.5px}
+  .agent .head{display:flex;gap:14px;align-items:center}
+  .agent h3{margin:0;font-size:15px;font-family:ui-monospace,Consolas,monospace}
+  .agent .role{color:var(--muted);font-size:12.5px}
+  .agent p{margin:10px 0 8px;color:var(--fg-2);font-size:13px}
+  .log{display:flex;flex-direction:column}
+  .log .row{display:grid;grid-template-columns:52px 150px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line-2);font-size:12.5px}
+  .log .row:last-child{border-bottom:0}
+  .log .tm{color:var(--muted);font-variant-numeric:tabular-nums}
+  .log .tg{font-family:ui-monospace,Consolas,monospace;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .md h1,.md h2,.md h3{font-size:13.5px;margin:14px 0 6px;color:var(--fg-2)}.md h1:first-child,.md h2:first-child{margin-top:0}
+  .md ul{margin:4px 0;padding-left:20px}.md table{margin:6px 0}.md p{margin:4px 0}
+  details.card>summary{cursor:pointer;color:var(--fg-2);font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px;list-style:none}
+  details.card>summary::-webkit-details-marker{display:none}
+  details.card>summary .ic{width:15px;height:15px;color:var(--muted);transition:transform .2s}
+  details.card[open]>summary .ic{transform:rotate(90deg)}
+  details.card[open]>summary{margin-bottom:12px}
+  details.sub summary{cursor:pointer;color:var(--muted);font-size:12.5px;display:flex;align-items:center;gap:6px;list-style:none}
+  details.sub summary::-webkit-details-marker{display:none}
+  details.sub .ic{width:13px;height:13px}
+  .banner{display:flex;gap:10px;align-items:center;background:var(--warn-soft);color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);border-radius:var(--r-s);padding:10px 14px;margin-bottom:16px;font-size:13px}
+  .banner .ic{width:18px;height:18px}
+
+  /* ---------- toast / dialog ---------- */
+  .toast{position:fixed;right:20px;bottom:20px;background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:10px;opacity:0;transform:translateY(8px);transition:.2s;max-width:60vw;display:flex;gap:8px;align-items:center;font-size:13px;z-index:20;box-shadow:var(--shadow)}
+  .toast.show{opacity:1;transform:none}
+  .toast .ic{width:16px;height:16px}
+  dialog{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:16px;padding:0;width:min(520px,calc(100vw - 32px));box-shadow:0 30px 80px -20px rgba(0,0,0,.45)}
+  dialog::backdrop{background:rgba(10,12,20,.45);backdrop-filter:blur(3px)}
+  dialog form{padding:20px 22px}
+  dialog h2{margin:0 0 14px;font-size:16px;display:flex;align-items:center;gap:8px}
+  dialog h2 .ic{width:18px;height:18px;color:var(--accent)}
+  dialog label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+  dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+  .iconpick{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .iconpick button{border:1px solid var(--line);background:var(--card);border-radius:8px;width:34px;height:34px;display:grid;place-items:center;cursor:pointer;color:var(--fg-2)}
+  .iconpick button:hover,.iconpick button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .iconpick .ic{width:16px;height:16px}
+
+  /* ---------- responsive ---------- */
+  @media (max-width:900px){
+    .app{grid-template-columns:1fr}
+    aside{position:static;height:auto;flex-direction:row;align-items:center;gap:10px;padding:10px 12px;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto}
+    nav.side{flex-direction:row;gap:2px}nav.side button{padding:7px 10px}nav.side button span.lbl{display:none}nav.side .cnt{margin-left:2px}
+    .brand b,.brand small{display:none}.side-foot{display:none}.userchip .rl{display:none}
+    .topbar{padding:12px 16px}.content{padding:16px 16px 48px}.grid-2{grid-template-columns:1fr}
+    .log .row{grid-template-columns:48px 1fr;grid-auto-rows:auto}.log .row .st{grid-column:2}
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>秘書ボード</h1>
-  <span class="who" id="who"></span>
-  <nav id="nav"></nav>
-</header>
-<main>
-  <div id="banner"></div>
-  <section id="tab-today" class="active"></section>
-  <section id="tab-commitments"></section>
-  <section id="tab-inbox"></section>
-  <section id="tab-projects"></section>
-  <section id="tab-people"></section>
-  <section id="tab-decisions"></section>
-  <section id="tab-log"></section>
-</main>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+  <symbol id="i-check-square" viewBox="0 0 24 24"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+  <symbol id="i-badge-check" viewBox="0 0 24 24"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M19 17v4M17 19h4M5 3v3M3.5 4.5h3"/></symbol>
+  <symbol id="i-arrow-in" viewBox="0 0 24 24"><path d="M17 7 7 17M17 17H7V7"/></symbol>
+  <symbol id="i-arrow-out" viewBox="0 0 24 24"><path d="M7 17 17 7M7 7h10v10"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5-12-7.5z"/></symbol>
+  <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M5 22h14M5 2h14M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><path d="M7 7h.01"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></symbol>
+  <symbol id="i-thumbs-up" viewBox="0 0 24 24"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></symbol>
+  <symbol id="i-crown" viewBox="0 0 24 24"><path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zM5 20h14"/></symbol>
+  <symbol id="i-calculator" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></symbol>
+  <symbol id="i-scale" viewBox="0 0 24 24"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1ZM2 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1ZM7 21h10M12 3v18M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></symbol>
+  <symbol id="i-briefcase" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></symbol>
+  <symbol id="i-building" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6M12 19h8"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+  <symbol id="i-git" viewBox="0 0 24 24"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9M12 12v3"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 12.5-9.17 4.18a2 2 0 0 1-1.66 0L2 12.5M22 17.5l-9.17 4.18a2 2 0 0 1-1.66 0L2 17.5"/></symbol>
+  <symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.5-.67 1.5-1.5 0-.4-.15-.74-.4-1-.23-.27-.4-.6-.4-1 0-.83.67-1.5 1.5-1.5H16c3.31 0 6-2.69 6-6 0-4.96-4.5-9-10-9z"/></symbol>
+</svg>
+
+<div class="app">
+  <aside>
+    <div class="brand"><div class="mark"><svg class="ic"><use href="#i-sparkles"/></svg></div><div><b>秘書ボード</b><small id="brand-sub">memory/ を見る・触る</small></div></div>
+    <nav class="side" id="nav"></nav>
+    <div class="side-foot">
+      <div class="row"><span>チーム</span><span id="team-n" class="muted"></span></div>
+      <div class="team-strip" id="team-strip"></div>
+      <div class="row"><span id="clock"></span><button class="btn ghost icon" id="theme" title="テーマ切替"><svg class="ic"><use href="#i-moon"/></svg></button></div>
+    </div>
+  </aside>
+  <main>
+    <div class="topbar">
+      <div><h1 id="title"></h1><div class="sub" id="subtitle"></div></div>
+      <div class="spacer"></div>
+      <button class="btn ghost icon" id="refresh" title="再読込"><svg class="ic"><use href="#i-refresh"/></svg></button>
+      <div class="userchip" id="user"></div>
+    </div>
+    <div class="content">
+      <div id="banner"></div>
+      <section id="tab-today" class="active"></section>
+      <section id="tab-commitments"></section>
+      <section id="tab-inbox"></section>
+      <section id="tab-projects"></section>
+      <section id="tab-people"></section>
+      <section id="tab-decisions"></section>
+      <section id="tab-team"></section>
+      <section id="tab-log"></section>
+    </div>
+  </main>
+</div>
 <div class="toast" id="toast"></div>
+<dialog id="dlg"></dialog>
 
 <script>
-const TABS=[["today","今日"],["commitments","約束"],["inbox","inbox"],["projects","案件"],["people","人物"],["decisions","決定"],["log","操作ログ"]];
+/* ------------------------------------------------------------ helpers */
+const TABS=[
+  ["today","今日","sun","期限・inbox・未承認の提案・situation"],
+  ["commitments","約束","check-square","約束台帳：自分のタスク・受けた指示・出した指示"],
+  ["inbox","inbox","inbox","「覚えておいて」の受け皿。分類して記録先へ"],
+  ["projects","案件","folder","進行中プロジェクトの座標・期限・約束"],
+  ["people","人物","users","関係者の思考モデル（/simulate の素材）"],
+  ["decisions","決定","badge-check","提案（未承認）→ 決定 → 検証"],
+  ["team","チーム","sparkles","AI秘書チーム：@chief と専門家"],
+  ["log","操作ログ","activity","フックが自動記録した外部操作"]];
+const ICONS=new Set([...document.querySelectorAll("symbol")].map(s=>s.id.slice(2)));
+const PICK=["user","crown","briefcase","star","heart","building","flag","shield","scale","calculator","bolt","server","chart","globe","lightbulb","palette","target","pen","message","layers"];
 const $=(s,el=document)=>el.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const api=async(p,body)=>{const r=await fetch(p,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});const j=await r.json();if(body){toast(j.ok?("📝 "+j.message):("❌ "+j.error));if(j.ok)refresh();}return j;};
-function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),3500);}
-function dueCls(n){if(n==null)return"";if(n<0)return"due-over";if(n<=3)return"due-soon";return"";}
-function dueTxt(d,n){if(!d||d==="なし")return"—";return `<span class="${dueCls(n)}">${esc(d)}${n==null?"":(n<0?`（${-n}日超過）`:n===0?"（今日）":`（${n}日後）`)}</span>`;}
-function md(src){ // 最小の markdown → HTML（見出し・箇条書き・表・太字・コード）
-  const out=[];let lines=src.split("\n"),i=0;
-  const inline=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`([^`]+)`/g,"<code>$1</code>");
+const val=s=>{s=String(s??"").trim();return /^（.*）$/.test(s)||s==="—"||s==="-"?"":s;};
+const ic=(n,cls="ic")=>`<svg class="${cls}"><use href="#i-${n}"/></svg>`;
+const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.codePointAt(0))%360;return h;};
+function glyph(icon,fallback){icon=val(icon);if(icon&&ICONS.has(icon))return ic(icon);if(icon)return `<span class="emoji">${esc(icon)}</span>`;return esc(initials(fallback));}
+function initials(s){s=val(s);if(!s)return "?";const parts=s.split(/[\s　]+/).filter(Boolean);if(/^[A-Za-z@]/.test(s))return parts.map(p=>p.replace(/^@/,"")[0]).join("").slice(0,2).toUpperCase();return parts[0].slice(0,1);}
+const avatar=(icon,name,size="",seed)=>`<span class="av ${size}" style="--h:${hue(seed||name)}" title="${esc(name)}">${glyph(icon,name)}</span>`;
+const api=async(p,body)=>{const r=await fetch(p,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});const j=await r.json();if(body){toast(j.ok?j.message:j.error,j.ok?"check":"alert");if(j.ok)refresh();}return j;};
+function toast(m,icon="check"){const t=$("#toast");t.innerHTML=ic(icon)+`<span>${esc(m)}</span>`;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),3800);}
+function relDays(n){if(n==null)return"";if(n<0)return`${-n}日超過`;if(n===0)return"今日";if(n===1)return"明日";return`${n}日後`;}
+function due(d,n,icon="calendar"){d=val(d);if(!d||d==="なし")return `<span class="due none">${ic("calendar")}—</span>`;const cls=n==null?"":n<0?"over":n<=3?"soon":"";return `<span class="due ${cls}">${ic(n!=null&&n<0?"alert":icon)}${esc(d)}${n==null?"":` <span class="muted small">${relDays(n)}</span>`}</span>`;}
+const KIND={task:["自分","user","t-info"],received:["受けた","arrow-in","t-warn"],given:["出した","arrow-out","t-accent"]};
+const STATE={open:["未着手","circle"],"in-progress":["進行中","play"],waiting:["相手待ち","hourglass"],done:["完了","archive"]};
+const kindBadge=k=>{const [l,i,c]=KIND[k]||[k,"tag","t-muted"];return `<span class="badge ${c}">${ic(i)}${l}</span>`;};
+function decBadge(st){const c=st.startsWith("提案")?"t-warn":st.startsWith("検証")?"t-ok":st.startsWith("決定")?"t-accent":"t-muted";const i=st.startsWith("提案")?"lightbulb":st.startsWith("検証")?"badge-check":"check";return `<span class="badge ${c}">${ic(i)}${esc(st)}</span>`;}
+function lvMeter(lv){const n=parseInt((lv||"Lv0").replace("Lv",""))||0;return `<span class="lv" title="人物モデルの成熟度（Lv2 以上で /simulate 実用）"><span class="segs">${[1,2,3].map(i=>`<i class="${n>=i?"on":""}"></i>`).join("")}</span>${esc(lv||"Lv0")}</span>`;}
+function ring(done,total){const r=24,c=2*Math.PI*r,p=total?done/total:0;return `<div class="ring" title="約束 完了 ${done} / ${total}"><svg width="56" height="56" viewBox="0 0 56 56"><circle class="bg" cx="28" cy="28" r="${r}"/><circle class="fg" cx="28" cy="28" r="${r}" stroke-dasharray="${(c*p).toFixed(1)} ${c.toFixed(1)}"/></svg><div class="c">${total?`${done}<small>/${total}</small>`:`<small>約束なし</small>`}</div></div>`;}
+function deadlineBar(p){const d=val(p.deadline);if(!d)return `<div class="bar"><i style="width:0"></i></div><div class="bar-l"><span>期限 未設定</span><span></span></div>`;
+  const left=p.deadline_in,span=p.start_in!=null&&p.start_in<0?(-p.start_in+Math.max(left,0)):365;const elapsed=span-Math.max(left,0);let pct=Math.min(100,Math.max(0,elapsed/span*100));if(left<0)pct=100;
+  const cls=left<0?"danger":left<=14?"danger":left<=45?"warn":"";return `<div class="bar ${cls}"><i style="width:${pct.toFixed(0)}%"></i></div><div class="bar-l"><span>${val(p.start)?`開始 ${esc(p.start)}`:"進捗（期限までの目安）"}</span><span>${due(d,left)}</span></div>`;}
+function empty(msg,icon="inbox"){return `<div class="empty">${ic(icon)}<span>${esc(msg)}</span></div>`;}
+function md(src){const out=[];let lines=(src||"").split("\n"),i=0;const inline=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`([^`]+)`/g,"<code>$1</code>");
   while(i<lines.length){const l=lines[i];
     if(/^\|/.test(l)&&/^\|\s*:?-{2,}/.test(lines[i+1]||"")){const hdr=l.split("|").slice(1,-1);i+=2;let rows=[];while(i<lines.length&&/^\|/.test(lines[i])){rows.push(lines[i].split("|").slice(1,-1));i++;}
       out.push("<table><tr>"+hdr.map(h=>`<th>${inline(h.trim())}</th>`).join("")+"</tr>"+rows.filter(r=>!/（未登録|記録なし）/.test(r.join(""))).map(r=>"<tr>"+r.map(c=>`<td>${inline(c.trim())}</td>`).join("")+"</tr>").join("")+"</table>");continue;}
@@ -81,74 +361,154 @@ function md(src){ // 最小の markdown → HTML（見出し・箇条書き・�
     out.push(`<p>${inline(l)}</p>`);i++;}
   return `<div class="md">${out.join("")}</div>`;}
 
-let S={};
+/* ------------------------------------------------------------ actions（inline onclick を避け、payload は表に置く） */
+const ACT=new Map();let actSeq=0;
+const act=(label,icon,fn,cls="")=>{const id=++actSeq;ACT.set(id,fn);return `<button class="btn ${cls}" data-act="${id}">${icon?ic(icon):""}${label}</button>`;};
+const actRaw=(html,fn,cls="")=>{const id=++actSeq;ACT.set(id,fn);return `<button class="${cls}" data-act="${id}">${html}</button>`;};
+document.addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(!b)return;const fn=ACT.get(+b.dataset.act);if(fn)fn(b);});
+
+/* ------------------------------------------------------------ dialog */
+function dialog({title,icon="pen",fields,submit="保存"}){return new Promise(res=>{const d=$("#dlg");
+  d.innerHTML=`<form method="dialog"><h2>${ic(icon)}${esc(title)}</h2>${fields.map(f=>`<label>${esc(f.label)}${f.type==="textarea"?`<textarea name="${f.name}" placeholder="${esc(f.placeholder||"")}" ${f.required?"required":""}>${esc(f.value||"")}</textarea>`:f.type==="icons"?`<input name="${f.name}" value="${esc(f.value||"")}" placeholder="${esc(f.placeholder||"")}"><div class="iconpick">${PICK.map(n=>`<button type="button" data-pick="${n}" title="${n}">${ic(n)}</button>`).join("")}</div>`:`<input type="${f.type||"text"}" name="${f.name}" value="${esc(f.value||"")}" placeholder="${esc(f.placeholder||"")}" ${f.required?"required":""}>`}</label>`).join("")}
+    <div class="actions"><button type="button" class="btn" data-cancel>${ic("x")}キャンセル</button><button class="btn primary" value="ok">${ic("check")}${esc(submit)}</button></div></form>`;
+  d.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{const inp=b.closest("label").querySelector("input");inp.value=b.dataset.pick;d.querySelectorAll("[data-pick]").forEach(x=>x.classList.toggle("on",x===b));});
+  $("[data-cancel]",d).onclick=()=>{d.close("cancel");};
+  d.onclose=()=>{if(d.returnValue!=="ok"){res(null);return;}const o=Object.fromEntries(new FormData($("form",d)));res(o);};
+  d.showModal();setTimeout(()=>$("input,textarea",d)?.focus(),30);});}
+
+/* ------------------------------------------------------------ state & render */
+let S={},cur="today";
 async function refresh(){
-  const [sum,sit,inbox,com,proj,ppl,dec,log]=await Promise.all(["summary","situation","inbox","commitments","projects","people","decisions","oplog"].map(k=>fetch("/api/"+k).then(r=>r.json())));
-  S={sum,sit,inbox,com,proj,ppl,dec,log};
-  $("#who").textContent=sum.name&&sum.name!=="（未設定）"?`${sum.nickname||sum.name}（${sum.role}）`:"プロフィール未設定 — /setup を実行してください";
-  $("#banner").innerHTML=sum.is_template?`<div class="banner">このフォルダは本体（テンプレート）です。記憶は空のはずで、ここでの記録は配布物に混ざります。</div>`:"";
-  renderToday();renderCommitments();renderInbox();renderProjects();renderPeople();renderDecisions();renderLog();
+  const keys=["summary","situation","inbox","commitments","projects","people","decisions","oplog","agents"];
+  const vals=await Promise.all(keys.map(k=>fetch("/api/"+k).then(r=>r.json()).catch(e=>({error:String(e)}))));
+  S=Object.fromEntries(keys.map((k,i)=>[k,vals[i]]));
+  const sum=S.summary,name=val(sum.name),nick=val(sum.nickname);
+  $("#user").innerHTML=name?`${avatar("",name,"",name)}<div><div class="nm">${esc(nick||name)}</div><div class="rl">${esc(val(sum.role)||"—")}</div></div>`:`${avatar("user","?")}<div><div class="nm">プロフィール未設定</div><div class="rl">/setup を実行してください</div></div>`;
+  $("#banner").innerHTML=sum.is_template?`<div class="banner">${ic("alert")}<span>このフォルダは本体（テンプレート）です。記憶は空のはずで、ここでの記録は配布物に混ざります。</span></div>`:"";
+  $("#clock").textContent=new Date().toLocaleDateString("ja-JP",{month:"long",day:"numeric",weekday:"short"});
+  const rows=S.commitments.rows||[],open=rows.filter(r=>r["状態"]!=="done");
+  const urgent=open.filter(r=>(r.due_in!=null&&r.due_in<=3)||(r.follow_in!=null&&r.follow_in<=0));
+  const proposed=(S.decisions.decisions||[]).filter(d=>d.status.startsWith("提案"));
+  S.derived={open,urgent,proposed};
+  renderNav();renderTeamStrip();
+  renderToday();renderCommitments();renderInbox();renderProjects();renderPeople();renderDecisions();renderTeam();renderLog();
 }
+function counts(){const {open,urgent,proposed}=S.derived;return {today:urgent.length,commitments:open.length,inbox:(S.inbox.pending||[]).length,projects:(S.projects.projects||[]).length,people:(S.people.people||[]).length,decisions:proposed.length,team:(S.agents.agents||[]).length,log:(S.oplog.items||[]).length};}
+function renderNav(){const c=counts();$("#nav").innerHTML=TABS.map(([k,l,i])=>{const n=c[k];const hot=k==="today"&&n>0?"hot":(k==="inbox"||k==="decisions")&&n>0?"warm":"";return `<button data-tab="${k}" class="${k===cur?"active":""}">${ic(i)}<span class="lbl">${l}</span>${n?`<span class="cnt ${hot}">${n}</span>`:""}</button>`;}).join("");
+  $("#nav").querySelectorAll("button").forEach(b=>b.onclick=()=>show(b.dataset.tab));}
+function renderTeamStrip(){const ag=S.agents.agents||[];$("#team-n").textContent=`${ag.length}名`;$("#team-strip").innerHTML=ag.map(a=>`<span data-team="${esc(a.handle)}">${avatar(a.icon,"@"+a.handle,"sm",a.handle)}</span>`).join("");$("#team-strip").querySelectorAll("[data-team]").forEach(el=>el.onclick=()=>show("team"));}
+
 function renderToday(){
-  const rows=S.com.rows.filter(r=>r["状態"]!=="done");
-  const urgent=rows.filter(r=>(r.due_in!=null&&r.due_in<=3)||(r.follow_in!=null&&r.follow_in<=0));
-  const proposed=S.dec.decisions.filter(d=>d.status.startsWith("提案"));
-  $("#tab-today").innerHTML=`<div class="grid">
-    <div class="card"><h2>🔴 期限3日以内・フォロー到来（${urgent.length}）</h2>${urgent.length?tbl(urgent):'<div class="empty">なし</div>'}</div>
-    <div class="card"><h2>📥 inbox 未分類（${S.inbox.pending.length}）</h2>${S.inbox.pending.length?S.inbox.pending.map(inboxRow).join(""):'<div class="empty">なし</div>'}</div>
-    <div class="card"><h2>🟡 未承認の提案（${proposed.length}）</h2>${proposed.length?proposed.map(decRow).join(""):'<div class="empty">なし</div>'}</div>
-    <div class="card" style="grid-column:1/-1"><h2>situation.md <span class="muted">（最終更新 ${esc(S.sum.situation_updated||"未記録")}）</span></h2>${md(S.sit.markdown)}</div>
+  const {open,urgent,proposed}=S.derived,inbox=S.inbox.pending||[];
+  const kpi=(v,l,i,t)=>`<div class="card kpi"><div class="ico ${t}">${ic(i)}</div><div><div class="v">${v}</div><div class="l">${l}</div></div></div>`;
+  $("#tab-today").innerHTML=`<div class="kpis">${kpi(urgent.length,"期限3日以内・フォロー到来","alert",urgent.length?"t-danger":"t-ok")}${kpi(open.length,"未完了の約束","check-square","t-accent")}${kpi(inbox.length,"inbox 未分類","inbox",inbox.length?"t-warn":"t-muted")}${kpi(proposed.length,"未承認の提案","lightbulb",proposed.length?"t-warn":"t-muted")}</div>
+  <div class="grid-2">
+    <div class="card"><div class="card-h">${ic("alert")}いま動くべき約束<span class="n">${urgent.length}</span></div>${urgent.length?urgent.map(comItem).join(""):empty("期限間近・フォロー到来の約束はありません","check")}</div>
+    <div class="card"><div class="card-h">${ic("lightbulb")}未承認の提案<span class="n">${proposed.length}</span></div>${proposed.length?proposed.map(decItem).join(""):empty("承認待ちの提案はありません","badge-check")}</div>
+    <div class="card"><div class="card-h">${ic("inbox")}inbox 未分類<span class="n">${inbox.length}</span></div>${inbox.length?inbox.map(inboxItem).join(""):empty("未分類の記憶はありません","inbox")}</div>
+    <div class="card"><div class="card-h">${ic("file")}situation.md<span class="right">${ic("clock")}最終更新 ${esc(val(S.summary.situation_updated)||"未記録")}</span></div>${md(S.situation.markdown)}</div>
   </div>`;}
-function tbl(rows){return `<table><tr><th>ID</th><th>種別</th><th>誰</th><th>内容</th><th>期限</th><th>フォロー</th><th>関連</th><th>状態</th><th></th></tr>${rows.map(r=>`<tr>
-  <td class="muted">${esc(r.ID)}</td><td>${{task:"自分",received:"受けた",given:"出した"}[r.kind]}</td><td>${esc(r.who)}</td><td>${esc(r.content)}</td>
-  <td>${dueTxt(r["期限"],r.due_in)}</td><td>${r["フォロー日"]?dueTxt(r["フォロー日"],r.follow_in):"—"}</td><td><span class="chip">${esc(r["関連"]||"-")}</span></td>
-  <td>${esc(r["状態"])}</td><td style="white-space:nowrap">${["open","in-progress","waiting","done"].filter(s=>s!==r["状態"]).map(s=>`<button class="act" onclick="api('/api/commitment/state',{id:'${r.ID}',state:'${s}'})">${s}</button>`).join(" ")}
-  <button class="act" onclick="editDue('${r.ID}','${esc(r["期限"])}')">期限</button></td></tr>`).join("")}</table>`;}
-function editDue(id,cur){const d=prompt(`${id} の新しい期限（YYYY-MM-DD）`,cur&&cur!=="なし"?cur:"");if(d)api("/api/commitment/due",{id,due:d});}
+
+/* --- commitments --- */
+function stateSeg(r){return `<span class="seg">${Object.entries(STATE).map(([s,[l,i]])=>actRaw(ic(i)+`<span class="lbl-s">${l}</span>`,()=>api("/api/commitment/state",{id:r.ID,state:s}),s===r["状態"]?"on":"").replace("<button ",`<button title="${l}" `))}</span>`;}
+function comItem(r){return `<div class="item">${avatar("",r.who||"自分","",r.who||"me")}<div class="body"><div class="ttl">${kindBadge(r.kind)}<span>${esc(r.content)}</span></div>
+  <div class="meta"><span class="mono">${esc(r.ID)}</span>${val(r.who)?`<span>${ic("user")} ${esc(r.who)}</span>`:""}<span>${due(r["期限"],r.due_in)}</span>${r["フォロー日"]?`<span>${ic("eye")}フォロー ${due(r["フォロー日"],r.follow_in,"eye")}</span>`:""}${val(r["関連"])?`<span class="chip">${ic("tag")}${esc(r["関連"].replace(/`/g,""))}</span>`:""}</div>
+  <div class="acts">${stateSeg(r)}${act("期限","calendar",()=>editDue(r))}</div></div></div>`;}
+let comFilter={kind:"all",state:"open"};
+function comTable(rows){if(!rows.length)return empty("該当する約束はありません","check-square");return `<div class="tscroll"><table><thead><tr><th>種別</th><th>誰</th><th>内容</th><th>期限</th><th>フォロー</th><th>関連</th><th>状態</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr>
+  <td>${kindBadge(r.kind)}</td><td class="who">${val(r.who)?`${avatar("",r.who,"sm",r.who)} ${esc(r.who)}`:'<span class="muted">—</span>'}</td><td class="content">${esc(r.content)}<div class="muted small mono">${esc(r.ID)}</div></td>
+  <td class="nw">${due(r["期限"],r.due_in)}</td><td class="nw">${r["フォロー日"]?due(r["フォロー日"],r.follow_in,"eye"):'<span class="muted">—</span>'}</td><td>${val(r["関連"])?`<span class="chip">${ic("tag")}${esc(r["関連"].replace(/`/g,""))}</span>`:'<span class="muted">—</span>'}</td>
+  <td class="nw">${stateSeg(r)}</td><td class="nw">${act("","calendar",()=>editDue(r),"icon")}${r.kind==="given"?act("","eye",()=>editFollow(r),"icon"):""}</td></tr>`).join("")}</tbody></table></div>`;}
+async function editDue(r){const o=await dialog({title:`${r.ID} の期限を変更`,icon:"calendar",fields:[{label:"内容",name:"c",value:r.content},{label:"新しい期限",name:"due",type:"date",value:/\d{4}-\d{2}-\d{2}/.test(r["期限"]||"")?r["期限"].match(/\d{4}-\d{2}-\d{2}/)[0]:"",required:true}]});if(o)api("/api/commitment/due",{id:r.ID,due:o.due});}
+async function editFollow(r){const o=await dialog({title:`${r.ID} のフォロー日を変更`,icon:"eye",fields:[{label:"内容",name:"c",value:r.content},{label:"新しいフォロー日",name:"f",type:"date",required:true}]});if(o)api("/api/commitment/follow",{id:r.ID,follow:o.f});}
 function renderCommitments(){
-  const all=S.com.rows;const open=all.filter(r=>r["状態"]!=="done"),done=all.filter(r=>r["状態"]==="done");
-  $("#tab-commitments").innerHTML=`<div class="card"><h2>約束台帳（未完了 ${open.length}）</h2>${open.length?tbl(open):'<div class="empty">なし</div>'}
-    <form class="inline" onsubmit="return addCommitment(this)">
-      <select name="kind"><option value="task">自分のタスク</option><option value="received">受けた指示</option><option value="given">出した指示</option></select>
-      <input type="text" name="content" placeholder="内容" required><input type="text" name="who" placeholder="依頼者 / 相手" style="min-width:110px">
-      <input type="date" name="due"><input type="date" name="follow" title="フォロー日（出した指示）"><input type="text" name="rel" placeholder="P:slug" style="min-width:110px">
-      <button class="act primary">追加</button></form></div>
-    <details class="card" style="margin-top:12px"><summary>完了済み（${done.length}）</summary>${done.length?tbl(done):""}</details>`;}
-async function addCommitment(f){const d=Object.fromEntries(new FormData(f));Object.keys(d).forEach(k=>{if(!d[k])delete d[k];});await api("/api/commitment/add",d);f.reset();return false;}
-function inboxRow(it){return `<div style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="muted">${esc(it.id)} ${esc(it.at)}</span> 「${esc(it.text)}」 <span class="chip">${esc(it.source)}</span>
-  <form class="inline" onsubmit="return resolveInbox(this,'${it.id}')"><input type="text" name="to" list="targets" placeholder="記録先（memory/… または 不要）" style="min-width:260px" required><button class="act">分類済にする</button></form></div>`;}
-async function resolveInbox(f,id){await api("/api/inbox/resolve",{id,to:f.to.value});return false;}
+  const all=S.commitments.rows||[];const f=comFilter;
+  let rows=all.filter(r=>f.kind==="all"||r.kind===f.kind).filter(r=>f.state==="all"?true:f.state==="open"?r["状態"]!=="done":r["状態"]===f.state);
+  const fbtn=(k,v,l,i)=>act(l,i,()=>{comFilter[k]=v;renderCommitments();},f[k]===v?"on":"");
+  $("#tab-commitments").innerHTML=`<div class="card"><div class="card-h">${ic("check-square")}約束台帳<span class="n">未完了 ${S.derived.open.length} / 全 ${all.length}</span></div>
+    <div class="filters">${fbtn("kind","all","すべて","layers")}${fbtn("kind","task","自分","user")}${fbtn("kind","received","受けた","arrow-in")}${fbtn("kind","given","出した","arrow-out")}<span style="width:10px"></span>${fbtn("state","open","未完了","circle")}${fbtn("state","waiting","相手待ち","hourglass")}${fbtn("state","done","完了","archive")}${fbtn("state","all","全状態","eye")}</div>
+    ${comTable(rows)}
+    <form class="panel" id="f-com">
+      <label><span>${ic("tag")}種別</span><select name="kind"><option value="task">自分のタスク</option><option value="received">受けた指示</option><option value="given">出した指示</option></select></label>
+      <label class="wide"><span>${ic("pen")}内容</span><input type="text" name="content" placeholder="何をするか / 何を約束したか" required></label>
+      <label><span>${ic("user")}依頼者 / 相手</span><input type="text" name="who" placeholder="架空部長"></label>
+      <label><span>${ic("calendar")}期限</span><input type="date" name="due"></label>
+      <label><span>${ic("eye")}フォロー日</span><input type="date" name="follow"></label>
+      <label><span>${ic("folder")}関連</span><input type="text" name="rel" placeholder="P:slug / チケット"></label>
+      <button class="btn primary">${ic("plus")}追加</button></form></div>`;
+  $("#f-com").onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));Object.keys(d).forEach(k=>{if(!d[k])delete d[k];});await api("/api/commitment/add",d);e.target.reset();};}
+
+/* --- inbox --- */
+function inboxItem(it){return `<div class="item"><div class="av sm" style="--h:${hue(it.source)}">${ic("inbox")}</div><div class="body"><div class="ttl"><span>「${esc(it.text)}」</span></div>
+  <div class="meta"><span class="mono">${esc(it.id)}</span><span>${ic("clock")} ${esc(it.at)}</span><span class="chip">${ic("send")}${esc(it.source)}</span></div>
+  <form class="acts" data-inbox="${esc(it.id)}"><input type="text" name="to" list="targets" placeholder="記録先（memory/… または 不要）" style="max-width:360px" required>${actRaw(ic("check")+"分類済にする",null,"btn ok")}</form></div></div>`;}
+function bindInboxForms(root){root.querySelectorAll("form[data-inbox]").forEach(f=>{f.onsubmit=e=>{e.preventDefault();api("/api/inbox/resolve",{id:f.dataset.inbox,to:f.to.value});};});}
 function renderInbox(){
-  const targets=[...S.proj.projects.flatMap(p=>[`memory/projects/${p.slug}/status.md`,`memory/projects/${p.slug}/issues.md`,`memory/projects/${p.slug}/decisions.md`,`memory/projects/${p.slug}/context/`]),...S.ppl.people.map(p=>`memory/people/${p.ident}.md`),"memory/commitments.md","memory/situation.md","memory/insights.md","不要（破棄）"];
+  const pend=S.inbox.pending||[],res=S.inbox.resolved||[];
+  const targets=[...(S.projects.projects||[]).flatMap(p=>[`memory/projects/${p.slug}/status.md`,`memory/projects/${p.slug}/issues.md`,`memory/projects/${p.slug}/decisions.md`,`memory/projects/${p.slug}/context/`]),...(S.people.people||[]).map(p=>`memory/people/${p.ident}.md`),"memory/commitments.md","memory/situation.md","memory/insights.md","不要（破棄）"];
   $("#tab-inbox").innerHTML=`<datalist id="targets">${targets.map(t=>`<option value="${esc(t)}">`).join("")}</datalist>
-    <div class="card"><h2>未分類（${S.inbox.pending.length}）</h2>${S.inbox.pending.length?S.inbox.pending.map(inboxRow).join(""):'<div class="empty">なし</div>'}
-      <form class="inline" onsubmit="return addInbox(this)"><input type="text" name="text" placeholder="覚えておくこと" style="min-width:320px" required><input type="text" name="source" placeholder="出所" value="ボード"><button class="act primary">inbox に追加</button></form></div>
-    <details class="card" style="margin-top:12px"><summary>分類済（直近 ${S.inbox.resolved.length}）</summary><table>${S.inbox.resolved.map(it=>`<tr><td class="muted">${esc(it.id)}</td><td>${esc(it.text)}</td><td>→ ${esc(it.to)}</td><td class="muted">${esc(it.resolved_at)}</td></tr>`).join("")}</table></details>`;}
-async function addInbox(f){await api("/api/inbox/add",{text:f.text.value,source:f.source.value});f.reset();return false;}
+    <div class="card"><div class="card-h">${ic("inbox")}未分類<span class="n">${pend.length}</span></div>${pend.length?pend.map(inboxItem).join(""):empty("未分類の記憶はありません。「覚えておいて」と言われたものがここに溜まります","inbox")}
+      <form class="panel" id="f-inbox"><label class="wide"><span>${ic("pen")}覚えておくこと</span><input type="text" name="text" placeholder="例：来週の定例は水曜に変更" required></label><label><span>${ic("send")}出所</span><input type="text" name="source" value="ボード"></label><button class="btn primary">${ic("plus")}inbox に追加</button></form></div>
+    <details class="card" style="margin-top:14px"><summary>${ic("chevron")}分類済（直近 ${res.length}）</summary><table><tbody>${res.map(it=>`<tr><td class="muted mono">${esc(it.id)}</td><td>${esc(it.text)}</td><td><span class="chip">${ic("folder")}${esc(it.to)}</span></td><td class="muted small">${esc(it.resolved_at)}</td></tr>`).join("")}</tbody></table></details>`;
+  $("#f-inbox").onsubmit=async e=>{e.preventDefault();await api("/api/inbox/add",{text:e.target.text.value,source:e.target.source.value});e.target.reset();};
+  bindInboxForms($("#tab-inbox"));bindInboxForms($("#tab-today"));}
+
+/* --- projects --- */
 function renderProjects(){
-  const ps=S.proj.projects;
-  $("#tab-projects").innerHTML=ps.length?`<div class="grid">${ps.map(p=>`<div class="card"><h3>${esc(p.title)} <span class="muted">${esc(p.slug)}</span></h3>
-    <div>${esc(p.purpose)}</div><div class="muted">状態: ${esc(p.state||"—")}／期限: ${dueTxt(p.deadline,p.deadline_in)}</div>
-    <div style="margin:6px 0">${p.coordinates.map(c=>`<span class="chip">${esc(c["サービス"]||"")}: ${esc(c["URL/ID"]||c["場所"]||"")}</span>`).join("")}</div>
-    <div><span class="chip">未完了の約束 ${p.open_commitments}</span><span class="chip">決定 ${p.decisions_total}（未承認 ${p.decisions_proposed}）</span><span class="chip">open 課題 ${p.issues_open}</span></div>
-    <details style="margin-top:6px"><summary>status.md</summary>${md(p.status_excerpt)}</details></div>`).join("")}</div>`:'<div class="card empty">案件が登録されていません（/setup または /intake で登録）</div>';}
+  const ps=S.projects.projects||[];
+  const prio=p=>{const v=val(p.priority);if(!v)return"";const c=/高|high/i.test(v)?"t-danger":/中|mid/i.test(v)?"t-warn":"t-muted";return `<span class="badge ${c}">${ic("flag")}優先度 ${esc(v)}</span>`;};
+  $("#tab-projects").innerHTML=ps.length?`<div class="grid">${ps.map(p=>`<div class="card pcard">
+    <div class="head">${avatar("folder",p.title,"lg",p.slug)}<div style="flex:1;min-width:0"><h3>${esc(p.title)}</h3><div class="slug">${esc(p.slug)}</div><div class="chips" style="margin-top:6px">${val(p.state)?`<span class="badge t-accent">${ic("activity")}${esc(p.state)}</span>`:""}${prio(p)}</div></div></div>
+    ${val(p.purpose)?`<p style="margin:12px 0 0;color:var(--fg-2)">${esc(p.purpose)}</p>`:""}
+    <div class="figs"><div class="bars">${deadlineBar(p)}</div>${ring(p.total_commitments-p.open_commitments,p.total_commitments)}</div>
+    <div class="stats"><div class="stat"><b>${p.open_commitments}</b><span>未完了の約束</span></div><div class="stat"><b>${p.decisions_total}</b><span>決定<span style="color:var(--warn)">${p.decisions_proposed?` ・未承認 ${p.decisions_proposed}`:""}</span></span></div><div class="stat"><b>${p.issues_open}</b><span>open 課題</span></div></div>
+    ${(p.coordinates||[]).filter(c=>val(c["URL/ID"]||c["場所"])).length?`<div class="chips" style="margin-top:12px">${p.coordinates.filter(c=>val(c["URL/ID"]||c["場所"])).map(c=>`<span class="chip" title="${esc(c["URL/ID"]||"")}">${ic("pin")}${esc(c["サービス"]||"")}: ${esc((val(c["URL/ID"])||val(c["場所"])).replace(/`/g,""))}</span>`).join("")}</div>`:""}
+    ${(p.members||[]).length?`<div class="chips" style="margin-top:8px">${p.members.map(m=>`<span class="chip" title="${esc(m["役割"]||"")}">${avatar("",m["名前"],"sm",m["名前"])}${esc(String(m["名前"]||"").replace(/（.*/,""))}</span>`).join("")}</div>`:""}
+    <details class="sub" style="margin-top:12px"><summary>${ic("file")}status.md を見る</summary>${md(p.status_excerpt)}</details></div>`).join("")}</div>`:`<div class="card">${empty("案件が登録されていません（/setup または /intake で登録）","folder")}</div>`;}
+
+/* --- people --- */
+async function observe(p){const o=await dialog({title:`${p.name} の判断事例を追加`,icon:"message",fields:[{label:"状況（何があったか）",name:"situation",type:"textarea",required:true},{label:"本人の判断・言動",name:"judgment",type:"textarea",required:true},{label:"理由（本人談 / 推測）",name:"reason",value:"（推測）"}]});if(o)api("/api/person/observe",{ident:p.ident,...o});}
+async function setIcon(p){const o=await dialog({title:`${p.name} のアイコン`,icon:"palette",fields:[{label:"絵文字1つ、またはアイコン名（下から選べます）",name:"icon",type:"icons",value:p.icon,placeholder:"👔 / user / crown …"}]});if(o&&o.icon)api("/api/person/icon",{ident:p.ident,icon:o.icon.trim()});}
 function renderPeople(){
-  const ps=S.ppl.people;
-  $("#tab-people").innerHTML=ps.length?`<div class="card"><table><tr><th>氏名</th><th>所属・役職</th><th>関係</th><th>成熟度</th><th>判断事例</th><th>最終観察</th><th>未検証予測</th><th>効果的なアプローチ</th><th></th></tr>
-    ${ps.map(p=>`<tr><td><b>${esc(p.name)}</b><div class="muted" style="font-size:11px">${esc(p.ident)}</div></td><td>${esc(p.org)}<br>${esc(p.title)}</td><td>${esc(p.relation)}</td><td><span class="chip">${esc(p.maturity)}</span></td><td>${p.observations}</td><td>${esc(p.last_observation||"—")}</td><td>${p.pending_predictions}</td><td>${esc(p.approach||"—")}</td>
-    <td><button class="act" onclick="observe('${p.ident}')">判断事例を追加</button></td></tr>`).join("")}</table></div>`:'<div class="card empty">人物が登録されていません</div>';}
-function observe(ident){const situation=prompt("状況（何があったか）");if(!situation)return;const judgment=prompt("本人の判断・言動");if(!judgment)return;const reason=prompt("理由（本人談 / 推測）","（推測）");api("/api/person/observe",{ident,situation,judgment,reason});}
-function decRow(d){const st=d.status;return `<div style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${esc(d.title)}</b> <span class="chip">${esc(d.project)}</span> <span class="chip">${esc(st)}</span><div class="muted">${esc(d.content)}</div>
-  <div class="muted">予測: ${esc(d.prediction||"—")}／検証日: ${dueTxt(d.verify_date,d.verify_in)}${d.result&&!/後日追記/.test(d.result)?"／結果: "+esc(d.result):""}</div>
-  <div style="margin-top:4px">${st.startsWith("提案")?`<button class="act primary" data-p="${esc(d.project)}" data-t="${esc(d.title)}" data-s="decided" onclick="decStatus(this)">承認して決定にする</button>`:""}
-  ${!st.startsWith("提案")&&!st.startsWith("検証済")?`<button class="act" data-p="${esc(d.project)}" data-t="${esc(d.title)}" data-s="proposed" onclick="decStatus(this)">提案に戻す</button>`:""}</div></div>`;}
-function decStatus(b){api("/api/decision/status",{project:b.dataset.p,title:b.dataset.t,status:b.dataset.s});}
-function renderDecisions(){const ds=S.dec.decisions;$("#tab-decisions").innerHTML=ds.length?`<div class="card">${ds.map(decRow).join("")}</div>`:'<div class="card empty">決定の記録がありません</div>';}
-function renderLog(){$("#tab-log").innerHTML=`<div class="card"><h2>操作ログ（直近）<span class="muted"> memory/task-log・フックが自動記録</span></h2>${S.log.lines.length?`<pre>${esc(S.log.lines.join("\n"))}</pre>`:'<div class="empty">記録なし</div>'}</div>`;}
-function show(k){TABS.forEach(([t])=>{$("#tab-"+t).classList.toggle("active",t===k);});[...$("#nav").children].forEach(b=>b.classList.toggle("active",b.dataset.k===k));try{localStorage.setItem("board.tab",k);}catch(e){}}
-$("#nav").innerHTML=TABS.map(([k,l])=>`<button data-k="${k}" onclick="show('${k}')">${l}</button>`).join("");
+  const ps=S.people.people||[];
+  $("#tab-people").innerHTML=ps.length?`<div class="grid">${ps.map(p=>`<div class="card person">
+    <div class="head">${avatar(p.icon,p.name,"xl",p.ident)}<div style="flex:1;min-width:0"><h3>${esc(p.name)}</h3><div class="org">${[val(p.org),val(p.title)].filter(Boolean).map(esc).join(" ・ ")||"—"}</div><div class="chips" style="margin-top:6px">${val(p.relation)?`<span class="chip">${ic("users")}${esc(p.relation)}</span>`:""}${lvMeter(p.maturity)}</div></div></div>
+    <div class="stats"><div class="stat"><b>${p.observations}</b><span>判断事例</span></div><div class="stat"><b>${p.pending_predictions}</b><span>未検証の予測</span></div><div class="stat"><b style="font-size:13px;line-height:1.9">${esc(val(p.last_observation)||"—")}</b><span>最終観察</span></div></div>
+    ${val(p.approach)?`<div class="small" style="color:var(--fg-2)">${ic("lightbulb")} ${esc(p.approach)}</div>`:""}
+    <div class="muted small mono">${esc(p.ident)}</div>
+    <div class="acts" style="display:flex;gap:6px;flex-wrap:wrap">${act("判断事例を追加","message",()=>observe(p),"primary")}${act("アイコン","palette",()=>setIcon(p))}</div></div>`).join("")}</div>`:`<div class="card">${empty("人物が登録されていません（/setup または /intake で登録）","users")}</div>`;}
+
+/* --- decisions --- */
+function decItem(d){const st=d.status;return `<div class="item"><div class="av" style="--h:${hue(d.project)}">${ic(st.startsWith("提案")?"lightbulb":"badge-check")}</div><div class="body"><div class="ttl"><span>${esc(d.title)}</span>${decBadge(st)}<span class="chip">${ic("folder")}${esc(d.project)}</span></div>
+  ${val(d.content)?`<div style="color:var(--fg-2);margin-top:2px">${esc(d.content)}</div>`:""}
+  <div class="meta"><span>${ic("calendar")} ${esc(d.date)}</span>${val(d.prediction)?`<span>${ic("target")} 予測: ${esc(d.prediction)}</span>`:""}<span>${ic("eye")} 検証日 ${due(d.verify_date,d.verify_in,"eye")}</span>${d.result&&!/後日追記/.test(d.result)?`<span>${ic("check")} 結果: ${esc(d.result)}</span>`:""}</div>
+  <div class="acts">${st.startsWith("提案")?act("承認して決定にする","thumbs-up",()=>api("/api/decision/status",{project:d.project,title:d.title,status:"decided"}),"primary"):""}${!st.startsWith("提案")&&!st.startsWith("検証済")?act("提案に戻す","undo",()=>api("/api/decision/status",{project:d.project,title:d.title,status:"proposed"})):""}</div></div></div>`;}
+function renderDecisions(){const ds=S.decisions.decisions||[];const grp=k=>ds.filter(d=>k(d.status));const sec=(t,i,arr)=>arr.length?`<div class="card" style="margin-bottom:14px"><div class="card-h">${ic(i)}${t}<span class="n">${arr.length}</span></div>${arr.map(decItem).join("")}</div>`:"";
+  $("#tab-decisions").innerHTML=ds.length?sec("提案（未承認）","lightbulb",grp(s=>s.startsWith("提案")))+sec("決定","check",grp(s=>s.startsWith("決定")))+sec("検証済","badge-check",grp(s=>s.startsWith("検証")))+sec("その他","tag",grp(s=>!/^(提案|決定|検証)/.test(s))):`<div class="card">${empty("決定の記録がありません。/consult・/discuss の結果が提案として溜まります","badge-check")}</div>`;}
+
+/* --- team --- */
+function renderTeam(){const ag=S.agents.agents||[];
+  $("#tab-team").innerHTML=`<div class="grid">${ag.map(a=>`<div class="card agent"><div class="head">${avatar(a.icon,"@"+a.handle,"lg",a.handle)}<div style="flex:1;min-width:0"><h3>@${esc(a.handle)}</h3><div class="role">${esc(val(a.role)||"—")}</div></div>${a.handle==="chief"?`<span class="badge t-accent">${ic("crown")}司会</span>`:""}</div>
+    <p>${esc(a.description)}</p>
+    <div class="chips">${(a.skills||[]).map(s=>`<span class="chip">${ic("layers")}${esc(s)}</span>`).join("")}${a.path?`<span class="chip mono" title="frontmatter の icon: を変えるとアイコンが変わります">${ic("file")}${esc(a.path)}</span>`:`<span class="chip">${ic("file")}CLAUDE.md §1</span>`}</div></div>`).join("")}</div>
+  <div class="card" style="margin-top:14px"><div class="card-h">${ic("palette")}アイコンの設定</div><div class="small" style="color:var(--fg-2)">専門家：<code>.claude/agents/{handle}.md</code> の frontmatter に <code>icon: calculator</code> のようにアイコン名か絵文字を書く。人物：人物カードの「アイコン」ボタン、または <code>python tools/mem.py person set-icon {識別子} 👔</code>。使えるアイコン名：</div>
+    <div class="chips" style="margin-top:8px">${PICK.concat(["users","folder","sparkles","git","terminal","send"]).map(n=>`<span class="chip">${ic(n)}${n}</span>`).join("")}</div></div>`;}
+
+/* --- log --- */
+function renderLog(){const items=S.oplog.items||[];const cat=c=>{const t=/失敗/.test(c.status)?"t-danger":/^memory/.test(c.category)?"t-accent":/^git|^gh/.test(c.category)?"t-info":/^mem:/.test(c.category)?"t-ok":"t-muted";const i=/^git|^gh/.test(c.category)?"git":/^memory|^mem:/.test(c.category)?"file":/:/.test(c.category)?"globe":"terminal";return `<span class="badge ${t}">${ic(i)}${esc(c.category||"—")}</span>`;};
+  const stat=s=>{const t=/失敗/.test(s)?"t-danger":/承認済/.test(s)?"t-ok":"t-muted";return `<span class="badge ${t} st">${ic(/失敗/.test(s)?"alert":/承認済/.test(s)?"check":"bolt")}${esc(s||"—")}</span>`;};
+  $("#tab-log").innerHTML=`<div class="card"><div class="card-h">${ic("activity")}操作ログ<span class="n">直近 ${items.length}</span><span class="right">${ic("file")}memory/task-log ・ フックが自動記録</span></div>
+    ${items.length?`<div class="log">${items.map(c=>`<div class="row"><span class="tm">${esc(c.time)}</span>${cat(c)}<span class="tg" title="${esc(c.target)}">${esc(c.target)}</span>${stat(c.status)}</div>`).join("")}</div>`:empty("記録なし。会話で memory/ に書くと自動で残ります","activity")}</div>`;}
+
+/* ------------------------------------------------------------ nav / theme */
+function show(k){cur=k;TABS.forEach(([t,l,i,sub])=>{$("#tab-"+t).classList.toggle("active",t===k);if(t===k){$("#title").innerHTML=ic(i)+esc(l);$("#subtitle").textContent=sub;}});$("#nav").querySelectorAll("button").forEach(b=>b.classList.toggle("active",b.dataset.tab===k));try{localStorage.setItem("board.tab",k);}catch(e){}}
+const THEMES=["auto","light","dark"];let theme="auto";try{theme=localStorage.getItem("board.theme")||"auto";}catch(e){}
+function applyTheme(){if(theme==="auto")document.documentElement.removeAttribute("data-theme");else document.documentElement.setAttribute("data-theme",theme);$("#theme").innerHTML=ic(theme==="dark"?"moon":theme==="light"?"sun":"sparkles");$("#theme").title=`テーマ: ${theme}`;}
+$("#theme").onclick=()=>{theme=THEMES[(THEMES.indexOf(theme)+1)%3];try{localStorage.setItem("board.theme",theme);}catch(e){}applyTheme();};
+$("#refresh").onclick=()=>{refresh();toast("再読込しました","refresh");};
+applyTheme();
 let initial="today";try{initial=localStorage.getItem("board.tab")||"today";}catch(e){}
-show(initial);refresh();setInterval(refresh,30000);
+cur=TABS.some(([t])=>t===initial)?initial:"today";show(cur);refresh();setInterval(refresh,30000);
 </script>
 </body>
 </html>

@@ -67,6 +67,7 @@ description: 必要な専門家が秘書チームに不在のとき、新しい�
 ---
 name: {handle}
 description: {役割}。{どんな判断が必要なとき}、/consult のチーム編成で{観点}が要るときに使用。
+icon: {ボードのアイコン名（calculator / users / bolt / flag / shield / server / scale / briefcase / chart / globe / pen / heart …）または絵文字1つ}
 skills:
   - {domain}-review
 ---

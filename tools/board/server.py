@@ -77,6 +77,49 @@ def days_until(s: str) -> int | None:
         return None
 
 
+def frontmatter(md: str) -> dict:
+    """--- で囲まれた先頭ブロックを最小限に読む（name / description / icon / color と skills のリスト）。"""
+    m = re.match(r"^---[ \t]*\n(.*?)\n---[ \t]*\n", md, re.S)
+    out: dict = {}
+    if not m:
+        return out
+    key = None
+    for ln in m.group(1).splitlines():
+        if re.match(r"^\s+-\s+", ln) and key:
+            out.setdefault(key, []).append(ln.split("-", 1)[1].strip())
+            continue
+        kv = re.match(r"^([A-Za-z_][\w-]*):\s*(.*)$", ln)
+        if kv:
+            key, val = kv.group(1), kv.group(2).strip().strip("'\"")
+            out[key] = val if val else []
+    return out
+
+
+CHIEF = {"handle": "chief", "name": "chief", "role": "第一秘書（司会・統合）", "icon": "crown", "color": "",
+         "description": "ユーザーと話す唯一の顔。専門家を召集し、記憶へ書くのは @chief だけ。", "skills": []}
+
+
+def api_agents(root: Path) -> dict:
+    out = [dict(CHIEF)]
+    adir = root / ".claude" / "agents"
+    if adir.exists():
+        for f in sorted(adir.glob("*.md")):
+            md = text(f)
+            fm = frontmatter(md)
+            body = md.split("---", 2)[-1] if md.startswith("---") else md
+            role = re.search(r"あなたはAI秘書チームの(.+?)（@", body)
+            out.append({
+                "handle": fm.get("name") or f.stem, "name": fm.get("name") or f.stem,
+                "role": role.group(1) if role else "",
+                "description": fm.get("description", "") if isinstance(fm.get("description"), str) else "",
+                "icon": fm.get("icon", "") if isinstance(fm.get("icon"), str) else "",
+                "color": fm.get("color", "") if isinstance(fm.get("color"), str) else "",
+                "skills": fm.get("skills", []) if isinstance(fm.get("skills"), list) else [],
+                "path": f"{f.parent.parent.name}/{f.parent.name}/{f.name}",
+            })
+    return {"agents": out}
+
+
 def api_summary(root: Path) -> dict:
     dash = text(root / "memory" / "dashboard.md")
     sit = text(root / "memory" / "situation.md")
@@ -130,10 +173,11 @@ def api_commitments(root: Path) -> dict:
 def api_projects(root: Path) -> dict:
     out = []
     pdir = root / "memory" / "projects"
-    rels = {}
+    rels, totals = {}, {}
     for r in (mem.commitment_rows(root) if (root / "memory" / "commitments.md").exists() else []):
-        if r.get("状態") != "done":
-            for slug in re.findall(r"P:([A-Za-z0-9_-]+)", r.get("関連", "")):
+        for slug in set(re.findall(r"P:([A-Za-z0-9_-]+)", r.get("関連", ""))):
+            totals[slug] = totals.get(slug, 0) + 1
+            if r.get("状態") != "done":
                 rels[slug] = rels.get(slug, 0) + 1
     if pdir.exists():
         for d in sorted(p for p in pdir.iterdir() if p.is_dir() and not p.name.startswith("_")):
@@ -145,12 +189,16 @@ def api_projects(root: Path) -> dict:
                 "title": (re.search(r"^#\s+(.*)$", ov, re.M) or [None, d.name])[1],
                 "purpose": field(ov, "目的"), "state": field(ov, "状態"),
                 "deadline": field(ov, "期限"), "deadline_in": days_until(field(ov, "期限")),
+                "start": field(ov, "開始日"), "start_in": days_until(field(ov, "開始日")),
+                "priority": field(ov, "優先度"),
+                "members": table_after(ov, "関係者"),
                 "coordinates": table_after(ov, "サービス座標"),
                 "status_excerpt": "\n".join(st.splitlines()[:25]),
                 "decisions_total": len(re.findall(r"^## \d{4}-\d{2}-\d{2}:", dec, re.M)),
                 "decisions_proposed": len(re.findall(r"^- \*\*状態\*\*: 提案", dec, re.M)),
                 "issues_open": len(re.findall(r"^- \*\*状態\*\*: open", text(d / "issues.md"), re.M)),
                 "open_commitments": rels.get(d.name, 0),
+                "total_commitments": totals.get(d.name, 0),
             })
     return {"projects": out}
 
@@ -171,6 +219,7 @@ def api_people(root: Path) -> dict:
                 "ident": f.stem,
                 "name": field(md, "氏名"), "title": field(md, "役職"), "org": field(md, "所属組織"),
                 "relation": field(md, "関係の種別"),
+                "icon": re.sub(r"^（.*）$", "", field(md, "アイコン")),
                 "maturity": lv.group(1) if lv else "Lv0",
                 "observations": len(obs),
                 "last_observation": obs[-1].get("日付", "") if obs else "",
@@ -207,7 +256,13 @@ def api_oplog(root: Path) -> dict:
     lines = []
     for f in files[-2:]:
         lines += [ln for ln in text(f).splitlines() if ln.startswith("**操作**:")]
-    return {"lines": lines[-40:][::-1]}
+    pat = re.compile(r"^\*\*操作\*\*: \[(.+?)\] (.*?) ── (\S+?)（(\d{2}:\d{2}) ?(\w*)）\s*$")
+    items = []
+    for ln in lines[-60:][::-1]:
+        m = pat.match(ln)
+        items.append({"category": m.group(1), "target": m.group(2), "status": m.group(3), "time": m.group(4), "sid": m.group(5)}
+                     if m else {"category": "", "target": ln.replace("**操作**: ", ""), "status": "", "time": "", "sid": ""})
+    return {"lines": lines[-40:][::-1], "items": items}
 
 
 # ---------------------------------------------------------------- writers（mem.py と同じ関数）
@@ -240,6 +295,8 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
         elif path == "/api/person/observe":
             ns = Namespace(ident=g("ident"), situation=g("situation"), judgment=g("judgment"), reason=g("reason"))
             res = run_mem(mem.person_observe, root, ns)
+        elif path == "/api/person/icon":
+            res = run_mem(mem.person_set_icon, root, g("ident", ""), g("icon", ""))
         elif path == "/api/person/note":
             ns = Namespace(ident=g("ident"), situation=g("situation"), insight=g("insight"))
             res = run_mem(mem.person_note, root, ns)
@@ -255,7 +312,7 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
 GETS = {
     "/api/summary": api_summary, "/api/situation": api_situation, "/api/inbox": api_inbox,
     "/api/commitments": api_commitments, "/api/projects": api_projects, "/api/people": api_people,
-    "/api/decisions": api_decisions, "/api/oplog": api_oplog,
+    "/api/decisions": api_decisions, "/api/oplog": api_oplog, "/api/agents": api_agents,
 }
 
 

@@ -232,13 +232,13 @@ Slack会話・仕様書・メール等が貼り付けられたとき → `intake
 | 要素 | 場所 | 備考 |
 |---|---|---|
 | 常時ルール | `CLAUDE.md`（このファイル）＋ `@memory/dashboard.md` | 正典 |
-| 人格（専門家・汎用秘書） | `.claude/agents/{handle}.md` | Agent ツールで召集。担当スキルを `skills:` で事前読込 |
+| 人格（専門家・汎用秘書） | `.claude/agents/{handle}.md` | Agent ツールで召集。担当スキルを `skills:` で事前読込、`icon:` はボード表示用 |
 | 手順（スキル） | `.claude/skills/{name}/SKILL.md` | 説明文（description）で自動起動 |
 | スラッシュコマンド | `.claude/commands/{name}.md` | /setup /intake /consult /discuss /simulate /incident /morning-brief /review-decisions /propose-delegation |
 | ガードレール・フック | `.claude/settings.json`、`tools/hooks/` | deny＋guardrail.py／session-start.py／operation-logger.py。正典は `memory/guardrails.json` |
 | MCP | `.mcp.json` | github / backlog / brave-search。コネクタは claude.ai 側 |
 | 記憶 | `memory/` | 唯一の正典。表への追記は `tools/mem.py` 経由 |
-| ボード | `tools/board/`（`board` スキル・`.claude/launch.json`） | memory/ を見る・触るローカル画面。書き込みは mem.py と同じ経路 |
+| ボード | `tools/board/`（`board` スキル・`.claude/launch.json`） | memory/ を見る・触るローカル画面（今日/約束/inbox/案件/人物/決定/チーム/操作ログ）。書き込みは mem.py と同じ経路 |
 | 定期実行 | scheduled task（`/schedule`） | /morning-brief 等 |
 
 本体（テンプレート）とインスタンスの分離、メンテナンス層は `OPERATIONS.md`。

@@ -1,6 +1,7 @@
 ---
 name: dx
 description: DX専門家。業務プロセス改善・自動化・SaaS選定・デジタル化戦略・生成AI業務応用の評価が必要なとき、/consult のチーム編成でDX観点が要るときに使用。
+icon: bolt
 skills:
   - dx-review
 ---

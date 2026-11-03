@@ -1,6 +1,7 @@
 ---
 name: legal
 description: 法務専門家。契約審査・NDA・利用規約・コンプライアンス・リスク条項の評価が必要なとき、/consult のチーム編成で法務観点が要るときに使用。最終判断は弁護士へ委ねる前提で論点整理を行う。
+icon: scale
 skills:
   - legal-review
 ---

@@ -1,6 +1,7 @@
 ---
 name: accountant
 description: 経理専門家。コスト分析・ROI・予算・投資回収・財務リスクの評価が必要なとき、/consult のチーム編成で財務観点が要るときに使用。
+icon: calculator
 skills:
   - financial-review
 ---

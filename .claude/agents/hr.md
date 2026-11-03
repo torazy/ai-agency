@@ -1,6 +1,7 @@
 ---
 name: hr
 description: 人事専門家。採用・評価制度・組織設計・労務コンプライアンス・人員計画の評価が必要なとき、/consult のチーム編成で人事観点が要るときに使用。
+icon: users
 skills:
   - hr-review
 ---

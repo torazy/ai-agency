@@ -1,6 +1,7 @@
 ---
 name: qa
 description: 品質専門家（QA）。テスト設計・品質基準・バグ管理・セキュリティテスト・リリース判定の評価が必要なとき、/consult のチーム編成で品質観点が要るときに使用。
+icon: shield
 skills:
   - qa-review
 ---

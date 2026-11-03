@@ -1,6 +1,7 @@
 ---
 name: pm
 description: PM専門家（PMP）。プロジェクト計画・スケジュール・リスク管理・ステークホルダー管理・進捗評価が必要なとき、/consult のチーム編成でPM観点が要るときに使用。
+icon: flag
 skills:
   - pm-review
 ---

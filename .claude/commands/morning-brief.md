@@ -1,18 +1,31 @@
 ---
-description: 予定・Backlog・GitHub・Slack・未解決課題を横断スキャンし、今日対応すべきことを優先順位付きで提示する。下書きまで用意するが送信・実行はしない。/schedule で毎朝の定期実行に登録できる。
+description: 予定・Backlog・GitHub・Slack・未解決課題を横断スキャンし、今日対応すべきことを優先順位付きで提示する。下書きまで用意するが送信・実行はしない。--unattended で無人実行（tools/schedule/ やデスクトップの定期タスクから）し、memory/briefs/ に保存する。
 ---
 
 # /morning-brief ── 朝のブリーフィング（プロアクティブ自律）
 
-ユーザー入力：`/morning-brief`（または Scheduled Task から自動起動）
+ユーザー入力：`/morning-brief`（無人実行は `/morning-brief --unattended`）
 
 入力（引数）: $ARGUMENTS
 
 @chief として、ユーザーが動く前に「今日の状況」を先回りで整える。**読み取りと下書きのみ。外部への送信・実行はしない。**
 
+## 無人モード（引数に `--unattended`）
+
+`tools/schedule/morning-brief.ps1|.sh` やデスクトップアプリの定期タスクから、**人がいない前提**で起動されたとき：
+
+- `.ai-agency-template` がある（本体）か `memory/dashboard.md` が無ければ、何もせず1行で終える
+- **質問しない・確認を待たない**。「▶ 実行してよいですか？」で止めない
+- 最初に `/update --capture` の手順で、前回以降の取り込み候補を **inbox にだけ**入れる（使える手段があるときだけ）
+- 外部への送信・作成・更新はしない。`memory/delegation.md` で自律実行が許可された操作でも、無人ではしない（下書きをブリーフに書く）
+- 台帳・人物・決定・`situation.md` は書き換えない。更新したほうがよいことは「私からの提案」に書く
+- Step 4 の形式で **`memory/briefs/{YYYY-MM-DD}.md` に書き**（同日のものは上書き）、末尾に
+  「取り込み: inbox +{n}（I-…）」「見られなかったサービス」を添える。標準出力には要約1行だけ返して終える
+
 ## Step 1: コンテキストをロード
 `memory/dashboard.md` / `memory/situation.md` / `memory/commitments.md` /
 進行中プロジェクトの `status.md`・`issues.md` を読む。
+対話で起動され、今日の `memory/briefs/{YYYY-MM-DD}.md`（無人実行の分）があれば、それを起点にして**その後の変化だけ**を見る。
 
 ## Step 2: 横断スキャン（座標があるものだけ・並列でよい）
 - **inbox**（`python tools/mem.py inbox list`）：未分類が残っていれば件数と要点を出し、仕分けを提案する。

@@ -15,6 +15,10 @@ venv/
 # タスクログ（個人情報を含む可能性あり）
 memory/task-log/
 
+# 無人実行の生成物（朝のブリーフ・取り込み範囲）。再生成でき、端末ごとの状態
+memory/briefs/
+memory/sync-state.json
+
 # OS
 .DS_Store
 Thumbs.db

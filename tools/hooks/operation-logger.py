@@ -16,6 +16,7 @@ stdout: JSON のみ（{"suppressOutput": true}）。診断は stderr。失敗し
 """
 
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -131,7 +132,8 @@ def classify(tool_name: str, tool_input: dict, cfg: dict, root: Path):
             rel = Path(fp).resolve().relative_to(root).as_posix()
         except ValueError:
             return None, None
-        if rel.startswith("memory/") and not rel.startswith("memory/task-log/"):
+        # task-log（このフック自身の出力）と briefs（無人ブリーフの生成物）は委任の判断材料ではないので記録しない
+        if rel.startswith("memory/") and not rel.startswith(("memory/task-log/", "memory/briefs/")):
             return "memory-write", rel
         return None, None
 
@@ -176,6 +178,8 @@ def main() -> None:
         # 「承認済」はユーザーが確認モードで通したもの。auto / acceptEdits / bypass で通ったものは
         # 「自動実行」として区別する（/propose-delegation は承認済だけを昇格根拠に数える）
         mode = str(event.get("permission_mode", "") or "")
+        if os.environ.get("AI_AGENCY_UNATTENDED"):
+            mode = "unattended"  # tools/schedule/ の無人実行。人が承認したわけではないので承認済に数えない
         if hook_event == "PostToolUseFailure":
             status = "失敗"
         elif mode in ("", "default", "plan"):

@@ -20,7 +20,7 @@
 | 1.5 | 本体メンテナンス層（`tools/dev/`：CLAUDE.local・settings.local・maint-* スキル・メンテ用メモリ）。製品を本体フォルダで止める | ✅ 2026-11-04 |
 | 2 | `/update` 相当：接続済みコネクタ（メール・カレンダー・チャット）から約束・人物観察を拾う（貼り付け依存を脱する）。約束台帳を表の直接編集から小さな CLI（`tools/mem.py` 等）経由の追記に変え、壊れ方を減らす。操作ログ分類の精度向上（heredoc 本文のマッチ、`git -c … commit` の見逃し） | 🔲 未着手 |
 | 3 | 専門家の周辺スキル：anthropics/knowledge-work-plugins の legal / finance / product-management / human-resources を @legal / @accountant / @pm / @hr に紐付け。リポジトリ内の research-report・deliverable-create はホストに同等スキル（deep-research・docs・pptx 等）があれば委譲する形に | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
-| 4 | `/morning-brief` を定期実行に乗せ、Claude Duet 的な「本人がいない間も動く」体験に。承認ゲートは delegation.md のまま | 🔲 未着手 |
+| 4 | `/morning-brief` を定期実行に乗せ、Claude Duet 的な「本人がいない間も動く」体験に。承認ゲートは delegation.md のまま | ✅ 2026-11-04（/update コマンド・mem.py sync・inbox の重複防止・/morning-brief --unattended → memory/briefs/・tools/schedule の ps1/sh・ログの unattended 区別・起動フックとボードへの表示・/setup Step 6 をローカル定期実行に） |
 
 ## 方針転換（2026-11-04）：Claude Code 専用でよい
 
@@ -52,7 +52,7 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 2d | **ボード**：`tools/board/server.py`（標準ライブラリの HTTP サーバー・127.0.0.1 専用・JSON API）＋ `index.html`（7タブ：今日/約束/inbox/案件/人物/決定/操作ログ）。書き込みは mem.py の関数を直接呼ぶ（二重ストア無し）。`board` スキルと `.claude/launch.json` で「ボードを開いて」→ preview。mem.py は MemError 例外化してライブラリ利用可に | ✅ 2026-11-04 |
 | 2d-2 | **ボードの見た目**（ユーザー要望 2026-11-04）：おしゃれでかっこよく。①エージェント（`.claude/agents/*.md` の frontmatter に `icon:`／絵文字 or SVG）と人物（人物ファイルの基本情報に `アイコン:`）にアイコンを設定でき、ボードと会話の見出しで使う ②操作ボタン・状態・種別にアイコン（状態変更・期限・分類・承認、受けた/出した/自分、Lv バッジ）③案件カードに進捗や期限の図（期限までのバー、約束の件数リング）④タイポグラフィ・余白・カードの階層を整える。外部依存なしのまま（インライン SVG アイコンセット） | ✅ 2026-11-04（agents `icon:`・人物 `アイコン`＋`person set-icon`・`/api/agents`・チームタブ・期限バー・完了リング・Lv メーター・SVG スプライト 50 個・dialog 化・ライト/ダーク切替・モバイル対応。テストインスタンスでブラウザ確認済） |
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
-| 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | 🔲 |
+| 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | ✅ 2026-11-04（/update コマンド・mem.py sync・inbox の重複防止・/morning-brief --unattended → memory/briefs/・tools/schedule の ps1/sh・ログの unattended 区別・起動フックとボードへの表示・/setup Step 6 をローカル定期実行に） |
 
 ## テストインスタンスの観察（2026-11-04・第3段・OK）
 

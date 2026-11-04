@@ -48,7 +48,7 @@ ai-agency（本体・テンプレート）          ← ツールの進化はこ
    Slack・Google Workspace・Notion 等は claude.ai のコネクタを接続しておく（無ければ手動アシストに落ちる）
 4. Claude Code でフォルダを開き、**`/setup`** を実行する
    （対話でプロフィール・案件・人物・優先事項を登録し、使えるツールを棚卸しする。約15分・再実行可）
-5. 定期実行を登録（README の `/schedule` 文例）
+5. 定期実行を登録（`/setup` Step 6。デスクトップの定期タスクか `tools/schedule/` を OS のスケジューラへ）
 6. upstream の確認（手順1の clone 方式なら登録済み）：
    ```bash
    git remote -v   # upstream = 本体 / origin = 自分のインスタンス になっていること

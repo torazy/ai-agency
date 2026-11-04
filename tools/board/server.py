@@ -136,6 +136,15 @@ def api_summary(root: Path) -> dict:
     }
 
 
+def api_brief(root: Path) -> dict:
+    bdir = root / "memory" / "briefs"
+    files = sorted(bdir.glob("????-??-??.md")) if bdir.exists() else []
+    if not files:
+        return {"date": "", "markdown": "", "age": None}
+    f = files[-1]
+    return {"date": f.stem, "markdown": text(f), "age": -(days_until(f.stem) or 0)}
+
+
 def api_situation(root: Path) -> dict:
     return {"markdown": text(root / "memory" / "situation.md")}
 
@@ -312,7 +321,7 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
 GETS = {
     "/api/summary": api_summary, "/api/situation": api_situation, "/api/inbox": api_inbox,
     "/api/commitments": api_commitments, "/api/projects": api_projects, "/api/people": api_people,
-    "/api/decisions": api_decisions, "/api/oplog": api_oplog, "/api/agents": api_agents,
+    "/api/decisions": api_decisions, "/api/oplog": api_oplog, "/api/agents": api_agents, "/api/brief": api_brief,
 }
 
 

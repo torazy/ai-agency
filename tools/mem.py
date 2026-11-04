@@ -151,6 +151,13 @@ def inbox_path(root: Path) -> Path:
 def inbox_add(root: Path, text: str, source: str) -> None:
     p = inbox_path(root)
     lines = read(p)
+    # 同じ文面が未分類に残っていれば足さない（/update の無人取り込みを何度回しても inbox が膨らまないように）
+    norm = lambda t: re.sub(r"\s+", "", t)
+    for ln in lines:
+        m = re.match(r"^- \[ \] (I-\d+) .*?「(.*)」（出所:", ln)
+        if m and norm(m.group(2)) == norm(esc(text)):
+            ok(f"inbox {m.group(1)} に同じ内容が未分類で残っている（追加しない）")
+            return
     iid = next_id(lines, "I")
     sec = find_section(lines, "未分類")
     if sec < 0:
@@ -366,6 +373,42 @@ def commitment_list(root: Path, a: argparse.Namespace) -> None:
         extra = f"・フォロー {r['フォロー日']}" if "フォロー日" in r else ""
         print(f"{r.get('ID','?'):6s} {r['kind']:8s} {who:10s} {content} ── 期限 {r.get('期限','')}{extra} ［{r.get('関連','')}］ {r.get('状態','')}")
     print(f"計 {len(rows)} 件")
+
+
+# ---------------------------------------------------------------- sync（/update の取り込み範囲）
+def sync_path(root: Path) -> Path:
+    return root / "memory" / "sync-state.json"
+
+
+def sync_load(root: Path) -> dict:
+    try:
+        return json.loads(sync_path(root).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def sync_show(root: Path, as_json: bool) -> None:
+    st = sync_load(root)
+    if as_json:
+        print(json.dumps(st, ensure_ascii=False, indent=2))
+        return
+    if not st:
+        print("取り込み記録なし（/update は既定で直近7日を見る）")
+        return
+    for src, at in sorted(st.items()):
+        print(f"{src:12s} {at}")
+
+
+def sync_mark(root: Path, source: str, at: str | None) -> None:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,30}", source):
+        fail("source は英小文字の短い名前（calendar / gmail / slack / backlog / github など）")
+    at = at or datetime.now().strftime("%Y-%m-%dT%H:%M")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?", at):
+        fail("--at は YYYY-MM-DD または YYYY-MM-DDTHH:MM")
+    st = sync_load(root)
+    st[source] = at
+    sync_path(root).write_text(json.dumps(st, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    ok(f"{source} の取り込みを {at} まで済みとして記録")
 
 
 # ---------------------------------------------------------------- people
@@ -656,6 +699,10 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--status", choices=["proposed", "decided"], default="proposed")
     s = de.add_parser("set-status"); s.add_argument("project"); s.add_argument("title"); s.add_argument("status")
 
+    sy = sub.add_parser("sync", help="/update の取り込み済み範囲（memory/sync-state.json）").add_subparsers(dest="sub", required=True)
+    s = sy.add_parser("show"); s.add_argument("--json", action="store_true")
+    s = sy.add_parser("mark"); s.add_argument("source"); s.add_argument("--at")
+
     sub.add_parser("check")
     sub.add_parser("migrate", help="旧雛形からの移行（commitments の ID 列・inbox.md・decisions の状態行）。冪等")
 
@@ -691,6 +738,9 @@ def dispatch(root: Path, a: argparse.Namespace) -> None:
     elif a.cmd == "decision":
         {"add": lambda: decision_add(root, a),
          "set-status": lambda: decision_set_status(root, a.project, a.title, a.status)}[a.sub]()
+    elif a.cmd == "sync":
+        {"show": lambda: sync_show(root, a.json),
+         "mark": lambda: sync_mark(root, a.source, a.at)}[a.sub]()
     elif a.cmd == "check":
         check(root)
     elif a.cmd == "migrate":

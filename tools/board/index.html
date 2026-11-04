@@ -379,7 +379,7 @@ function dialog({title,icon="pen",fields,submit="保存"}){return new Promise(re
 /* ------------------------------------------------------------ state & render */
 let S={},cur="today";
 async function refresh(){
-  const keys=["summary","situation","inbox","commitments","projects","people","decisions","oplog","agents"];
+  const keys=["summary","situation","inbox","commitments","projects","people","decisions","oplog","agents","brief"];
   const vals=await Promise.all(keys.map(k=>fetch("/api/"+k).then(r=>r.json()).catch(e=>({error:String(e)}))));
   S=Object.fromEntries(keys.map((k,i)=>[k,vals[i]]));
   const sum=S.summary,name=val(sum.name),nick=val(sum.nickname);
@@ -402,6 +402,7 @@ function renderToday(){
   const {open,urgent,proposed}=S.derived,inbox=S.inbox.pending||[];
   const kpi=(v,l,i,t)=>`<div class="card kpi"><div class="ico ${t}">${ic(i)}</div><div><div class="v">${v}</div><div class="l">${l}</div></div></div>`;
   $("#tab-today").innerHTML=`<div class="kpis">${kpi(urgent.length,"期限3日以内・フォロー到来","alert",urgent.length?"t-danger":"t-ok")}${kpi(open.length,"未完了の約束","check-square","t-accent")}${kpi(inbox.length,"inbox 未分類","inbox",inbox.length?"t-warn":"t-muted")}${kpi(proposed.length,"未承認の提案","lightbulb",proposed.length?"t-warn":"t-muted")}</div>
+  ${S.brief&&S.brief.markdown?`<details class="card" style="margin-bottom:14px" ${S.brief.age<=1?"open":""}><summary>${ic("chevron")}${ic("sun")}朝のブリーフ <span class="muted" style="font-weight:500">${esc(S.brief.date)}${S.brief.age===0?"（今日）":S.brief.age===1?"（昨日）":`（${S.brief.age}日前）`} ・ 無人実行</span></summary>${md(S.brief.markdown)}</details>`:""}
   <div class="grid-2">
     <div class="card"><div class="card-h">${ic("alert")}いま動くべき約束<span class="n">${urgent.length}</span></div>${urgent.length?urgent.map(comItem).join(""):empty("期限間近・フォロー到来の約束はありません","check")}</div>
     <div class="card"><div class="card-h">${ic("lightbulb")}未承認の提案<span class="n">${proposed.length}</span></div>${proposed.length?proposed.map(decItem).join(""):empty("承認待ちの提案はありません","badge-check")}</div>

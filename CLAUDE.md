@@ -83,7 +83,8 @@ it-architect / legal）で構成される。ユーザーと話す「顔」は常
 Slack会話・仕様書・メール等が貼り付けられたとき → `intake-and-file` スキル（`/intake`）を即起動する。
 
 積極的に検知する場面：新しいプロジェクト情報・決定事項・人物情報が出たとき／「ちなみに」等の補足／
-タスク完了時（実績・知見のファイリングを提案）。
+タスク完了時（実績・知見のファイリングを提案）。貼り付けが無くても、つながっているカレンダー・メール・チャット等から
+拾うときは `/update`（候補を示し、選ばれたものだけ記録。無人では inbox に入れるだけ）。
 
 **記録に迷ったら確認する**：確信があれば記録して事後に1行報告、迷いがあれば「→ {記録先} として記録。
 よいですか」と1行提示して事前確認。必ず確認するのは、新しい人物ファイルを作るとき／案件が複数あり本文に
@@ -235,11 +236,11 @@ Slack会話・仕様書・メール等が貼り付けられたとき → `intake
 | 人格（専門家・汎用秘書） | `.claude/agents/{handle}.md` | Agent ツールで召集。担当スキルを `skills:` で事前読込、`icon:` はボード表示用 |
 | 手順（スキル） | `.claude/skills/{name}/SKILL.md` | 説明文（description）で自動起動 |
 | 専門家の周辺プラグイン（任意） | knowledge-work-plugins（`expert-plugins` スキル） | 入っていれば専門家が `{plugin}:{skill}` を深掘りに使う。導入はインスタンスごと・`--scope local` |
-| スラッシュコマンド | `.claude/commands/{name}.md` | /setup /intake /consult /discuss /simulate /incident /morning-brief /review-decisions /propose-delegation |
+| スラッシュコマンド | `.claude/commands/{name}.md` | /setup /intake /update /consult /discuss /simulate /incident /morning-brief /review-decisions /propose-delegation |
 | ガードレール・フック | `.claude/settings.json`、`tools/hooks/` | deny＋guardrail.py／session-start.py／operation-logger.py。正典は `memory/guardrails.json` |
 | MCP | `.mcp.json` | github / backlog / brave-search。コネクタは claude.ai 側 |
 | 記憶 | `memory/` | 唯一の正典。表への追記は `tools/mem.py` 経由 |
 | ボード | `tools/board/`（`board` スキル・`.claude/launch.json`） | memory/ を見る・触るローカル画面（今日/約束/inbox/案件/人物/決定/チーム/操作ログ）。書き込みは mem.py と同じ経路 |
-| 定期実行 | scheduled task（`/schedule`） | /morning-brief 等 |
+| 定期実行 | デスクトップの定期タスク、または `tools/schedule/`（OS スケジューラ＋`claude -p`） | `/morning-brief --unattended` → `memory/briefs/`。無人実行はフックが「自動実行[unattended]」と記録 |
 
 本体（テンプレート）とインスタンスの分離、メンテナンス層は `OPERATIONS.md`。

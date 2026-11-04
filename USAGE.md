@@ -163,10 +163,13 @@ Anthropic 公式の knowledge-work-plugins を入れると、専門家が深掘�
   （`.claude/agents/*.md` の `icon:`）が出る。ライト／ダークは左下のボタンで切替
 - 画面で変えた内容は秘書も次の発話で読み直す。markdown が正典なので、画面とファイルのどちらで直してもよい
 
-### 6. 朝の状況把握 ── `/morning-brief`
+### 6. 朝の状況把握 ── `/morning-brief` と `/update`
 
-今日の優先事項・進行中プロジェクト・要対応事項を横断ブリーフィング。
-`/schedule 毎朝8:30に /morning-brief を実行して` で定期実行にできる。
+今日の優先事項・進行中プロジェクト・要対応事項を横断ブリーフィング。平日の朝に**無人で**回しておける（下の「定期実行の登録」）。
+
+`/update` は、貼り付けなくても、つながっているカレンダー・メール・チャット・Backlog・GitHub から前回以降の
+「受けた依頼」「自分が約束したこと」「人の判断や反応」を拾って候補の表にする。選んだ番号だけが台帳や人物ファイルに入る。
+同じ内容はすでに台帳や inbox にあれば外され、人物はメールアドレス等の識別子で照合される。
 
 ### 7. 振り返り・改善（定期実行推奨）
 
@@ -213,13 +216,17 @@ memory/people/tanaka-kenji-abc-corp-bucho.md
 
 ## 定期実行の登録（推奨セット）
 
-IDEのチャットで：
+毎朝のブリーフは**このフォルダで動かす**（memory/ がここにあるため。クラウドの `/schedule` は memory/ を書き戻せない）。
+`/setup` の Step 6 で秘書が案内する。手で登録する場合は次のどちらか：
 
-```
-/schedule 毎朝8:30に /morning-brief を実行して結果を報告して
-/schedule 毎週金曜17:00に /review-decisions を実行して
-/schedule 毎週月曜9:00に /propose-delegation を実行して
-```
+- **デスクトップアプリの定期タスク**（アプリが開いている間に動く）：会話で「平日8:30に朝のブリーフを無人で回して」と頼む
+- **OS のスケジューラ**（アプリを閉じていても動く）：
+  - Windows：`tools/schedule/morning-brief.ps1` をタスク スケジューラに登録（コマンド例はスクリプト冒頭）
+  - macOS / Linux：`tools/schedule/morning-brief.sh` を cron に登録（`30 8 * * 1-5 /path/to/tools/schedule/morning-brief.sh`）
+
+無人実行は `/morning-brief --unattended`：コネクタから前回以降の約束・依頼を拾って **inbox に入れるだけ**、外部への送信や
+台帳の書き換えはしない。結果は `memory/briefs/{日付}.md` に残り、次に会話を始めると件数が知らされ、ボードの「今日」にも出る。
+週次の `/review-decisions`・`/propose-delegation`、月次の `memory-maintenance` も同じ仕組みで登録できる。
 
 ---
 

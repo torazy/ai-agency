@@ -28,6 +28,20 @@
   Antigravity・Copilot にはローカル上書き層が無い
 - **検証**：有効化後の新規セッションで「あなたは誰？」→ 第一秘書と名乗らないこと
 
+## 2026-11-04: 無人実行は「inbox まで」、定期実行はローカル
+
+- **判断**：`/morning-brief --unattended` と `/update --capture` は、拾ったものを **inbox にだけ**入れ、台帳・人物・決定・
+  situation は書き換えない。外部への送信は delegation で許可済みのものでもしない（下書きをブリーフに書く）。
+  出力は `memory/briefs/{日付}.md`（gitignore）。起動フックとボードが次の対話でそれを示す
+- **理由**：CLAUDE.md §5 の「迷ったら確認」は人がいないと守れない。inbox は「分類前の受け皿」として既にあり、
+  無人で拾った候補の置き場に合う。capture-first のまま人が分類するので、誤記録が正典に入らない
+- **定期実行の仕組み**：クラウドの `/schedule` は memory/ を書き戻せない（clone 上で動く）ので使わない。
+  デスクトップの定期タスク（アプリ起動中）か、OS スケジューラ＋`claude -p`（`tools/schedule/`）。後者は
+  `--allowedTools` を読み取り・mem.py・`memory/briefs/` 書き込みに絞り、それ以外は settings の allow にあるものだけ通る
+- **ログの区別**：無人実行は環境変数 `AI_AGENCY_UNATTENDED` を立て、operation-logger が「自動実行[unattended]」と書く。
+  `/propose-delegation` が人の承認実績と混ぜないため
+- **/update の範囲**：`memory/sync-state.json`（gitignore）にサービスごとの取り込み済み時刻。初回は直近7日、1サービス30件まで
+
 ## 2026-11-04: 外部プラグインは取り込まず「入っていれば使う」
 
 - **判断**：knowledge-work-plugins（legal / finance / human-resources / product-management）は本体に同梱・複製しない。

@@ -59,4 +59,4 @@ description: メモリ（memory/ 配下）の肥大化を防ぐ月次メンテ�
 
 - ガードレール（guardrails.json）・delegation.md・CLAUDE.md はこのスキルの対象外（勝手に触らない）
 - アーカイブはユーザー承認後に実行（Level 2 以上で自律化可）
-- 月次実行の登録例：`/schedule 毎月1日9:00に memory-maintenance を実行して`
+- 月次実行の登録：デスクトップの定期タスク（「毎月1日9:00に memory-maintenance を回して」）。`memory/briefs/` の30日より古いブリーフも削除してよい（gitignore 済みの生成物）

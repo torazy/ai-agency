@@ -98,6 +98,24 @@ def main() -> None:
     if pending:
         lines.append(f"[inbox] 未分類が {pending} 件ある（分類して `mem.py inbox resolve`）。")
 
+    # 無人実行の朝のブリーフ（tools/schedule/）。今日か昨日の分があれば件数だけ伝える
+    briefs = sorted((mem / "briefs").glob("????-??-??.md")) if (mem / "briefs").exists() else []
+    if briefs:
+        latest = briefs[-1]
+        try:
+            age = (today - datetime.strptime(latest.stem, "%Y-%m-%d").date()).days
+        except ValueError:
+            age = 99
+        if age <= 1:
+            body = read(latest)
+            def count(head: str) -> int:
+                m = re.search(rf"^## {head}.*?$(.*?)(?=^## |\Z)", body, re.M | re.S)
+                return sum(1 for ln in m.group(1).splitlines() if ln.startswith("- ")) if m else 0
+            lines.append(
+                f"[朝のブリーフ] memory/briefs/{latest.name}（{'今日' if age == 0 else '昨日'}の無人実行）"
+                f"：今日中 {count('🔴')} 件・見ておく {count('🟡')} 件・取り込み候補は inbox へ。"
+            )
+
     print("\n".join(lines)[:9000])
     sys.exit(0)
 

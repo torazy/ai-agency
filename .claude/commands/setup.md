@@ -91,11 +91,21 @@ GitHub リポジトリ / Drive フォルダ URL / Slack チャンネル）、主
 
 ## Step 6: 定期実行の登録を案内する
 
-推奨セットを提示し、**ユーザーが承認したものだけ** scheduled task（`/schedule` スキル）で登録する：
+推奨セットを提示し、**ユーザーが承認したものだけ**登録する。仕組みは次の順で選ぶ（memory/ はこのフォルダにあるので、
+ローカルで動くものを使う。クラウドの `/schedule` は memory/ を書き戻せないので使わない）：
+
+1. **デスクトップアプリの定期タスク**（`create_scheduled_task` ツールがあるとき）：アプリが開いている間に動く。
+   プロンプトは自己完結に書く：「`{このフォルダの絶対パス}` で作業する。そこに `memory/dashboard.md` が無ければ何もせず終える。
+   `/morning-brief --unattended` を実行する」
+2. **OS のスケジューラ＋無人実行**（アプリを閉じていても動く）：Windows は `tools/schedule/morning-brief.ps1` を
+   タスク スケジューラに、macOS/Linux は `tools/schedule/morning-brief.sh` を cron に登録するコマンドを示す
+   （登録はユーザーが実行する。スクリプト冒頭のコメントに文例）
+
+どちらも出力は `memory/briefs/{日付}.md`。次に会話を始めると起動フックが件数を知らせ、ボードの「今日」にも出る。
 
 | 周期 | コマンド | 目的 |
 |---|---|---|
-| 毎朝 | `/morning-brief` | 先回りの状況整理（Duet 的な常時稼働の入口） |
+| 平日の朝 | `/morning-brief --unattended` | 先回りの状況整理と、コネクタからの取り込み候補を inbox へ（Duet 的な常時稼働の入口） |
 | 週次（金） | `/review-decisions` | 予測 vs 実際の答え合わせ |
 | 週次（月） | `/propose-delegation` | 承認実績から自動承認への昇格提案 |
 | 月次 | `memory-maintenance` | 記憶を育てても軽く保つ |

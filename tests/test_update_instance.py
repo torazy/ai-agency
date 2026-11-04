@@ -16,7 +16,7 @@ def make_zip_folder(dst: Path) -> None:
         if (REPO / name).exists():
             shutil.copy2(REPO / name, dst / name)
     for d in (".claude", "tools", "tests"):
-        shutil.copytree(REPO / d, dst / d, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "settings.local.json", "maint-*"))
+        shutil.copytree(REPO / d, dst / d, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "settings.local.json"))
     shutil.copytree(FIXTURE_MEMORY, dst / "memory")
 
 

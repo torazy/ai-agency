@@ -39,7 +39,6 @@ CORE_FILES = ["CLAUDE.md", "README.md", "USAGE.md", "PORTABILITY.md", "OPERATION
 CORE_DIRS = [".claude", "tools", "tests", ".github"]
 # コアの中でもインスタンスのもの（触らない）
 KEEP = {".claude/settings.local.json"}
-KEEP_PREFIX = (".claude/skills/maint-",)
 IGNORE_PARTS = {"__pycache__", ".pytest_cache"}
 
 
@@ -62,7 +61,7 @@ def core_files(root: Path) -> dict[str, Path]:
             if not p.is_file() or set(p.parts) & IGNORE_PARTS or p.suffix == ".pyc":
                 continue
             rel = p.relative_to(root).as_posix()
-            if rel in KEEP or rel.startswith(KEEP_PREFIX):
+            if rel in KEEP:
                 continue
             out[rel] = p
     return out

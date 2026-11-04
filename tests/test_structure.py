@@ -17,8 +17,6 @@ def frontmatter(p: Path) -> str:
 class StructureTest(unittest.TestCase):
     def test_skills_frontmatter(self):
         for f in sorted((REPO / ".claude" / "skills").glob("*/SKILL.md")):
-            if f.parent.name.startswith("maint-"):
-                continue
             fm = frontmatter(f)
             m = re.search(r"^name:\s*(\S+)", fm, re.M)
             self.assertTrue(m and m.group(1) == f.parent.name, f"{f}: name がフォルダ名と違う")

@@ -20,7 +20,7 @@ ai-agency（本体・テンプレート）          ← ツールの進化はこ
 
 | 領域 | パス | 所有者 | アップデート時 |
 |---|---|---|---|
-| **コア（本体領域）** | `CLAUDE.md` `README.md` `USAGE.md` `PORTABILITY.md` `OPERATIONS.md` `.claude/`（settings.local.json・skills/maint-* 除く） `.mcp.json` `tools/` | 本体 | 本体の変更で上書きされる。**インスタンスで直接編集しない** |
+| **コア（本体領域）** | `CLAUDE.md` `README.md` `USAGE.md` `PORTABILITY.md` `OPERATIONS.md` `.claude/`（settings.local.json 除く） `.mcp.json` `tools/` | 本体 | 本体の変更で上書きされる。**インスタンスで直接編集しない** |
 | **データ（インスタンス領域）** | `memory/`（全部） `deliverables/` `.env` `.claude/settings.local.json` | 各ユーザー | 本体は触らない。マージで衝突しない |
 
 例外：緊急でインスタンス側のコアを直した場合は、**必ず本体へ PR で還流**する（しないと次の

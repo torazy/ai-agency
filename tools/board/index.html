@@ -493,7 +493,7 @@ function reviewOptions(r){const me=String(r.who).replace(/^@/,"");
 function planLabel(p){const v=(p||{}).review;return !v||v==="auto"?"レビュー：秘書が判断":v==="none"?"レビューなし":`レビュー：@${v}`;}
 async function runTask(r){const o=await dialog({title:`${r.ID} を ${r.who} に着手させる`,icon:"sparkles",submit:"着手させる",
     fields:[{label:"レビュー（作った本人とは別のエージェントが見る）",name:"review",type:"select",value:(r.plan||{}).review||"auto",options:reviewOptions(r)},
-            {label:"1回の上限（USD）。レビューありは作成・レビュー・直しの3人分で 2 が目安。記憶や外部サービスは変えない",name:"budget",type:"number",value:((r.plan||{}).review==="none"?"1":"2"),step:"0.1",min:"0.1",max:"20",required:true}]});
+            {label:"1回の上限（USD）。レビューありは作成・レビュー・直しの3人分で 2.5 が目安。記憶や外部サービスは変えない",name:"budget",type:"number",value:((r.plan||{}).review==="none"?"1":"2.5"),step:"0.1",min:"0.1",max:"20",required:true}]});
   if(o)api("/api/task/run",{id:r.ID,budget:String(o.budget),review:o.review});}
 async function editPlan(r){const o=await dialog({title:`${r.ID} の進め方`,icon:"eye",fields:[{label:"レビュー",name:"review",type:"select",value:(r.plan||{}).review||"auto",options:reviewOptions(r)},{label:"理由（任意）",name:"reason",value:(r.plan||{}).reason||""}]});
   if(o)api("/api/task/plan",{id:r.ID,review:o.review,reason:o.reason});}
@@ -503,7 +503,7 @@ function reviewBadge(r){const v=(r.review||{}).verdict||"";if(!v)return "";const
   return `<span class="badge ${ok?"t-ok":fixed?"t-info":"t-warn"}" title="${esc(v)}">${ic(ok||fixed?"badge-check":"alert")}${esc(who)} ${ok?"OK":fixed?"指摘→修正済":"指摘あり"}${r.review.left?"・残りあり":""}</span>`;}
 async function showReport(r){const x=await fetch("/api/task/result?id="+encodeURIComponent(r.ID)).then(j=>j.json());const d=$("#dlg");d.classList.add("wide");
   const st=x.status||{};const failed=st.state==="failed"||st.state==="unknown";const closed=isClosed(r);
-  d.innerHTML=`<form method="dialog"><h2>${ic("file")}${esc(r.ID)} の報告 <span class="muted" style="font-weight:500;font-size:13px">${esc(r.who)}${st.end?" ・ "+new Date(st.end*1000).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""}</span></h2>
+  d.innerHTML=`<form method="dialog"><h2>${ic("file")}${esc(r.ID)} の報告 <span class="muted" style="font-weight:500;font-size:13px">${esc(r.who)}${st.cost_usd!=null?" ・ "+st.cost_usd.toFixed(2)+" USD":""}${st.end?" ・ "+new Date(st.end*1000).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""}</span></h2>
     ${x.text?md(x.text):empty(failed?"報告が書かれずに終わりました（下のログを見てください）":"まだ報告がありません","file")}
     ${failed||(!x.text&&(x.log||[]).length)?`<pre class="small muted" style="white-space:pre-wrap;max-height:180px;overflow:auto">${esc((x.log||[]).join(String.fromCharCode(10)))}</pre>`:""}
     <div class="actions"><button type="button" class="btn" data-x>${ic("x")}閉じる</button>${x.text&&!closed?`<button type="button" class="btn primary" data-ok>${ic("check")}承認して完了</button>`:""}</div></form>`;

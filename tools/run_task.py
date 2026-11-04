@@ -16,8 +16,9 @@ run_task.py ── エージェントに任せたタスク（約束台帳の「�
 状態：memory/task-results/C-007.json（running / done / failed・終了コード・時刻）、実行ログ：C-007.log
 安全：無人実行（AI_AGENCY_UNATTENDED=1）。許すのは読み取り・調べもの（Web 検索）・サブエージェント・結果ファイルへの書き込みだけ。
       外部への送信・作成は、普段の会話で「常に許可」したもの以外は自動で拒否される。完了にするのは人（ボードの「承認して完了」）。
-費用：1回あたり --budget で打ち切る。既定は環境変数 MAX_BUDGET_USD、無ければ レビューなし 1 USD・レビューあり 2 USD
-      （作成→レビュー→直しの3人分。実測：@pm 作成＋@qa レビューで 1.5 USD では直しまで届かなかった）。
+費用：1回あたり --budget で打ち切る。既定は環境変数 MAX_BUDGET_USD、無ければ レビューなし 1 USD・レビューあり 2.5 USD
+      （作成→レビュー→直しの3人分。実測：@pm 作成＋@qa レビューは 1.5・2 USD では直しまで届かず、2.5 USD で一巡）。
+      実際にかかった額は状態ファイルの cost_usd（CLI の --output-format json の total_cost_usd）。
 """
 
 from __future__ import annotations
@@ -136,7 +137,28 @@ def build_command(cid: str, budget: float, review: str = "auto") -> list[str]:
     if not exe:
         raise ValueError("claude コマンドが見つからない（Claude Code の CLI をインストールし PATH を通す）")
     return [exe, "-p", f"/run-task {cid} --review {review}", "--allowedTools", *allowed_tools(),
-            "--max-budget-usd", f"{budget:g}", "--no-session-persistence"]
+            "--max-budget-usd", f"{budget:g}", "--no-session-persistence", "--output-format", "json"]
+
+
+def _parse_output(stdout: str) -> dict:
+    try:
+        out = json.loads(stdout or "")
+        return out if isinstance(out, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def cost_of(stdout: str) -> float | None:
+    """--output-format json の total_cost_usd（実際にかかった額）。"""
+    c = _parse_output(stdout).get("total_cost_usd")
+    return round(float(c), 2) if isinstance(c, (int, float)) else None
+
+
+def summarize_output(stdout: str) -> str:
+    out = _parse_output(stdout)
+    if not out:
+        return (stdout or "").strip()
+    return str(out.get("result") or out.get("subtype") or "").strip()
 
 
 def run_foreground(root: Path, cid: str, budget: float, child: bool = False) -> int:
@@ -149,14 +171,20 @@ def run_foreground(root: Path, cid: str, budget: float, child: bool = False) -> 
     with open(rd / f"{cid}.log", "w", encoding="utf-8") as log:
         log.write(f"[{time.strftime('%Y-%m-%d %H:%M')}] start {cid}\n")
         log.flush()
+        cost = None
         try:
-            code = subprocess.run(cmd, cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL).returncode
+            r = subprocess.run(cmd, cwd=root, env=env, stdout=subprocess.PIPE, stderr=log, stdin=subprocess.DEVNULL,
+                               text=True, encoding="utf-8", errors="replace")
+            code = r.returncode
+            log.write(summarize_output(r.stdout) + "\n")
+            cost = cost_of(r.stdout)
         except OSError as e:
             log.write(f"起動できない: {e}\n")
             code = 127
-        log.write(f"[{time.strftime('%Y-%m-%d %H:%M')}] exit {code}\n")
+        log.write(f"[{time.strftime('%Y-%m-%d %H:%M')}] exit {code}" + (f" cost {cost:.2f} USD" if cost is not None else "") + "\n")
     has_result = (rd / f"{cid}.md").exists()
-    write_status(root, cid, state="done" if code == 0 and has_result else "failed", end=round(time.time(), 1), exit=code)
+    write_status(root, cid, state="done" if code == 0 and has_result else "failed", end=round(time.time(), 1), exit=code,
+                 cost_usd=cost)
     return code
 
 
@@ -193,7 +221,7 @@ def default_budget(review: str = "none") -> float:
             return float(os.environ["MAX_BUDGET_USD"])
     except ValueError:
         pass
-    return 1.0 if review == "none" else 2.0
+    return 1.0 if review == "none" else 2.5
 
 
 def main() -> None:

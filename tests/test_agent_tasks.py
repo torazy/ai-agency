@@ -242,8 +242,13 @@ class ReviewPlanTest(TempRepo):
         import os
         os.environ.pop("MAX_BUDGET_USD", None)
         self.assertEqual(self.rt.default_budget("none"), 1.0)
-        self.assertEqual(self.rt.default_budget("qa"), 2.0)
-        self.assertEqual(self.rt.default_budget("auto"), 2.0)
+        self.assertEqual(self.rt.default_budget("qa"), 2.5)
+        self.assertEqual(self.rt.default_budget("auto"), 2.5)
+        out = '{"type":"result","subtype":"success","result":"C-001：要点","total_cost_usd":1.8364}'
+        self.assertEqual(self.rt.cost_of(out), 1.84)
+        self.assertEqual(self.rt.summarize_output(out), "C-001：要点")
+        self.assertIsNone(self.rt.cost_of("plain text"))
+        self.assertEqual(self.rt.summarize_output("plain text"), "plain text")
 
 
 class BoardGuardTest(TempRepo):

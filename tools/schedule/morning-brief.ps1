@@ -1,6 +1,6 @@
 # Run the morning brief unattended (called from Windows Task Scheduler).
 # This file is ASCII-only on purpose: Windows PowerShell 5.1 reads BOM-less UTF-8 as the ANSI code page.
-# Japanese docs: README.md / USAGE.md "定期実行の登録".
+# Docs (Japanese): README.md and USAGE.md, section on scheduled runs.
 #
 # Register once (weekdays 08:30):
 #   schtasks /Create /TN "ai-agency morning brief" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 08:30 `

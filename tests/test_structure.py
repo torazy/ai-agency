@@ -70,7 +70,6 @@ class StructureTest(unittest.TestCase):
         lj = json.loads((REPO / ".claude/launch.json").read_text(encoding="utf-8"))
         for c in lj.get("configurations", []):
             self.assertNotEqual(c.get("runtimeExecutable"), "python", c)
-        self.assertNotIn(b"\r", (REPO / "tools/py.sh").read_bytes().replace(b"\r\n", b"\n") if False else b"")
 
     def test_hooks_point_to_existing_scripts(self):
         st = json.loads((REPO / ".claude/settings.json").read_text(encoding="utf-8"))

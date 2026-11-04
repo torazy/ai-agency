@@ -28,5 +28,5 @@ Thumbs.db
 
 # 本体メンテナンス層（tools/dev/enable-maintenance.py が本体フォルダにだけ生成する。インスタンスには存在させない）
 .ai-agency-template
-CLAUDE.local.md
-.claude/skills/maint-*/
+/CLAUDE.local.md
+/.claude/skills/maint-*/

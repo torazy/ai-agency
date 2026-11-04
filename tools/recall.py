@@ -308,11 +308,12 @@ def find_hits(root: Path, terms: list[str], types: set[str] | None = None, proje
                 continue
             # 全部の語が同じ行に揃う行（表なら同じ約束・同じ判断事例）
             together = [k for k, x in enumerate(nbody) if all(any(v in x for v in vs) for vs in variants)]
-            is_table = sum(1 for x in body if x.startswith("|")) > len(body) / 2
+            # 当たった行がすべて表の行なのに同じ行に揃わない ＝ 別々の約束・事例に語が散っているだけ
+            in_table_only = all(body[k].lstrip().startswith("|") for k in matched_lines)
             ntrail = norm(sec.trail)
             heading_hits = sum(1 for vs in variants if any(v in ntrail for v in vs))
-            if len(variants) > 1 and is_table and not together and not heading_hits:
-                continue  # 大きな表で語が別々の行に散っているだけ（無関係な行どうしの偶然の一致）
+            if len(variants) > 1 and in_table_only and not together and not heading_hits:
+                continue
             score = sum(min(c, 5) for c in per_term)
             score += 3 * heading_hits
             if len(variants) > 1 and together:

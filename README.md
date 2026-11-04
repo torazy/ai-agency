@@ -47,8 +47,8 @@ ai-agency/
 ├── .mcp.json                 # MCP 設定（github / backlog / brave-search）
 ├── .claude/
 │   ├── agents/               # 専門家×7＋汎用秘書（人格本体。/consult が Agent ツールで並列召集）
-│   ├── commands/             # /setup /intake /consult /discuss /simulate /incident /morning-brief /review-decisions /propose-delegation
-│   ├── skills/               # 28スキル（intake-and-file, commitment-track, person-model-update, *-review 等）
+│   ├── commands/             # /setup /intake /update /consult /discuss /simulate /incident /morning-brief /review-decisions /propose-delegation
+│   ├── skills/               # 32スキル（intake-and-file, commitment-track, person-model-update, *-review 等）
 │   └── settings.json         # permissions.deny＋SessionStart/PreToolUse/PostToolUse フック
 ├── memory/
 │   ├── dashboard.md          # 稼働登録簿（CLAUDE.md がインポート・100行上限）
@@ -62,6 +62,8 @@ ai-agency/
 │   ├── projects/{name}/      # プロジェクト別ナレッジ
 │   ├── people/               # 人物情報＋人物モデル（判断事例ログ・反応予測の検証）
 │   └── task-log/             # 操作実績（gitignore・フックが自動記録）
+├── tests/                    # 自動テスト（unittest。記録・検索・点検・フック・ボード API・構造。fixtures/memory は雛形の写し）
+├── .github/workflows/test.yml # push / PR で Windows・Linux の両方でテスト
 └── tools/
     ├── mem.py                    # memory/ への決定的な追記 CLI（inbox / commitment / person / decision / check / migrate）
     ├── recall.py                 # 探す・読む・点検する（読み取り専用。find / who / map / show / review。段階的開示の道具）

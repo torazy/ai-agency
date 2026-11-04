@@ -121,7 +121,14 @@ LAST_OK: list[str] = []  # ライブラリ利用時に ok() の文言を拾う�
 
 def ok(msg: str) -> None:
     LAST_OK.append(msg)
-    print(f"📝 記録: {msg}")
+    line = f"📝 記録: {msg}"
+    try:
+        print(line)
+    except UnicodeEncodeError:  # ライブラリとして cp932 等の端末から呼ばれたとき。記録自体は済んでいるので UTF-8 のまま書き出す
+        buf = getattr(sys.stdout, "buffer", None)
+        if buf is not None:
+            buf.write((line + "\n").encode("utf-8"))
+            buf.flush()
 
 
 def fail(msg: str, code: int = 1) -> None:

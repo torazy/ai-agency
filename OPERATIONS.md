@@ -91,6 +91,10 @@ git merge upstream/main
 
 ## 5. 本体側の変更規律（本体メンテナ向け）
 
+- **自動テスト**：`python -m unittest discover -s tests -t tests`（標準ライブラリのみ）。push と PR のたびに GitHub Actions が
+  Windows / Linux × Python 3.11 / 3.12 で回す。テストは `tests/fixtures/memory/`（雛形の写し）の上で動き、リポジトリの `memory/`
+  には触らないので、インスタンスで回しても実データは読まない
+
 - **本体フォルダではメンテナンス層を有効化する**（Claude Code）：`python tools/dev/enable-maintenance.py` を1回実行。
   製品の CLAUDE.md・フック・スキル・MCP を本体フォルダでだけ機械的に止め（`.claude/settings.local.json`）、
   メンテナ向けの `CLAUDE.local.md` と `.claude/skills/maint-*` を置く。生成物はすべて gitignore 済みで

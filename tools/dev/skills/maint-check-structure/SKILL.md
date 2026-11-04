@@ -9,6 +9,10 @@ description: 本体メンテ用。正典（CLAUDE.md・.claude/agents・.claude/
 
 ## 手順
 
+0. **まず自動テスト**：`python -m unittest discover -s tests -t tests`。下の 1〜5 の大半は `tests/test_structure.py` が
+   機械的に確かめる（frontmatter・コマンド一覧・CLAUDE.md の行数・フックの参照先・JSON・ps1 の ASCII・雛形と fixture の一致）。
+   テストで拾えない意味の整合（節番号の参照・残存参照・名簿との一致）を以下で目視する
+
 1. **エージェント**：`.claude/agents/*.md` の各ファイルに frontmatter（`name`・`description`）と本文があるか。
    `skills:` に書かれたスキル名が `.claude/skills/{name}/SKILL.md` として存在するか。
    `memory/team/roster.md` の名簿と handle が一致するか（`CLAUDE.md` §1 の専門家一覧とも）。

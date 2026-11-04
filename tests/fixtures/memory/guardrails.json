@@ -1,0 +1,51 @@
+{
+  "version": 2,
+  "description": "物理ガードレールの正典リスト。tools/hooks/guardrail.py が PreToolUse（Bash / PowerShell）で deny.patterns（正規表現・部分一致・大文字小文字無視）を照合し、一致したツール呼び出しをモデルの判断に関係なくブロックする（exit 2）。.claude/settings.json の permissions.deny はこれと対になる静的ルール（変更時は両方を直す）。ユーザーの明示承認なしに編集しない。",
+  "deny": [
+    {
+      "id": "data-destruction",
+      "reason": "データ削除・破壊的操作は明示承認なしに禁止（delegation.md 禁止事項）",
+      "patterns": [
+        "rm\\s+-rf",
+        "\\bDROP\\s+(TABLE|DATABASE)\\b",
+        "\\bDELETE\\s+FROM\\b",
+        "\\bTRUNCATE\\b",
+        "git\\s+push\\s+.*--force",
+        "git\\s+reset\\s+--hard",
+        "Remove-Item\\s+.*-Recurse",
+        "del\\s+/[sq]"
+      ]
+    },
+    {
+      "id": "prod-deploy",
+      "reason": "本番環境へのデプロイは明示承認なしに禁止（delegation.md 禁止事項）",
+      "patterns": [
+        "deploy.*prod",
+        "kubectl\\s+.*\\bapply\\b.*prod",
+        "terraform\\s+apply",
+        "serverless\\s+deploy",
+        "firebase\\s+deploy"
+      ]
+    },
+    {
+      "id": "credential-change",
+      "reason": "認証情報の変更は明示承認なしに禁止（delegation.md 禁止事項）",
+      "patterns": [
+        "\\bpasswd\\b",
+        "rotate.*(secret|key|token|credential)",
+        "aws\\s+iam\\s+.*(create|update|delete).*(key|credential)"
+      ]
+    },
+    {
+      "id": "external-share",
+      "reason": "社外への情報共有・送信は明示承認なしに禁止（delegation.md 禁止事項）。許可された送信は @chief が事前提示→承認で行う。",
+      "patterns": [
+        "curl\\s+.*\\|\\s*(sh|bash)"
+      ]
+    }
+  ],
+  "auto_approve": {
+    "description": "delegation.md のレベルを上げると、ここに『確認不要』の操作カテゴリが追加される。/propose-delegation が task-log の承認実績（operation-logger.py が自動記録）を見て昇格を提案し、ユーザー承認後に追記する。現状は空（Level 1＝全確認）。",
+    "categories": []
+  }
+}

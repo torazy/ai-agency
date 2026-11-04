@@ -1,0 +1,23 @@
+name: test
+
+# 記憶の道具（mem.py / recall.py）・フック・ボードの API・配布物の構造を、push と PR のたびに確かめる。
+# 標準ライブラリだけ（unittest）なので依存のインストールは無い。Windows も回す（文字コード・改行・PowerShell 由来の不具合を拾うため）。
+on:
+  push:
+  pull_request:
+
+jobs:
+  unittest:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: unittest
+        run: python -m unittest discover -s tests -t tests -v

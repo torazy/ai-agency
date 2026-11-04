@@ -18,7 +18,7 @@
 |---|---|---|
 | 1 | `/setup` オンボーディング、PostToolUse 自動記録（Stop 廃止）、SessionStart で育成状態注入、能力地図を実行時発見に、4スキルの手段非依存化 | ✅ 2026-11-04 完了（9b46869・ca98ad2） |
 | 1.5 | 本体メンテナンス層（`tools/dev/`：CLAUDE.local・settings.local・maint-* スキル・メンテ用メモリ）。製品を本体フォルダで止める | ✅ 2026-11-04 |
-| 2 | `/update` 相当：接続済みコネクタ（メール・カレンダー・チャット）から約束・人物観察を拾う（貼り付け依存を脱する）。約束台帳を表の直接編集から小さな CLI（`tools/mem.py` 等）経由の追記に変え、壊れ方を減らす。操作ログ分類の精度向上（heredoc 本文のマッチ、`git -c … commit` の見逃し） | 🔲 未着手 |
+| 2 | `/update` 相当：接続済みコネクタ（メール・カレンダー・チャット）から約束・人物観察を拾う（貼り付け依存を脱する）。約束台帳を表の直接編集から小さな CLI（`tools/mem.py` 等）経由の追記に変え、壊れ方を減らす。操作ログ分類の精度向上（heredoc 本文のマッチ、`git -c … commit` の見逃し） | ✅ 2026-11-04（台帳の CLI 化・ログ分類は第2b段、`/update` は第4段で実装） |
 | 3 | 専門家の周辺スキル：anthropics/knowledge-work-plugins の legal / finance / product-management / human-resources を @legal / @accountant / @pm / @hr に紐付け。リポジトリ内の research-report・deliverable-create はホストに同等スキル（deep-research・docs・pptx 等）があれば委譲する形に | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
 | 4 | `/morning-brief` を定期実行に乗せ、Claude Duet 的な「本人がいない間も動く」体験に。承認ゲートは delegation.md のまま | ✅ 2026-11-04（/update コマンド・mem.py sync・inbox の重複防止・/morning-brief --unattended → memory/briefs/・tools/schedule の ps1/sh・ログの unattended 区別・起動フックとボードへの表示・/setup Step 6 をローカル定期実行に） |
 
@@ -53,6 +53,18 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 2d-2 | **ボードの見た目**（ユーザー要望 2026-11-04）：おしゃれでかっこよく。①エージェント（`.claude/agents/*.md` の frontmatter に `icon:`／絵文字 or SVG）と人物（人物ファイルの基本情報に `アイコン:`）にアイコンを設定でき、ボードと会話の見出しで使う ②操作ボタン・状態・種別にアイコン（状態変更・期限・分類・承認、受けた/出した/自分、Lv バッジ）③案件カードに進捗や期限の図（期限までのバー、約束の件数リング）④タイポグラフィ・余白・カードの階層を整える。外部依存なしのまま（インライン SVG アイコンセット） | ✅ 2026-11-04（agents `icon:`・人物 `アイコン`＋`person set-icon`・`/api/agents`・チームタブ・期限バー・完了リング・Lv メーター・SVG スプライト 50 個・dialog 化・ライト/ダーク切替・モバイル対応。テストインスタンスでブラウザ確認済） |
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
 | 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | ✅ 2026-11-04（/update コマンド・mem.py sync・inbox の重複防止・/morning-brief --unattended → memory/briefs/・tools/schedule の ps1/sh・ログの unattended 区別・起動フックとボードへの表示・/setup Step 6 をローカル定期実行に） |
+
+## 自動テストと CI（2026-11-04）
+
+- `tests/`（unittest・標準ライブラリのみ・38件・約15秒）：mem.py（inbox の重複防止・約束・dropped・人物の呼び名とアイコン・決定・sync・migrate の冪等）、
+  recall.py（名前解決・別名展開・表は同じ行・絞り込み・過去分・show・map・点検の検出と上限・雛形で点検0件）、フック（ガードレール・操作ログの分類と
+  unattended・起動時の注入）、ボード API（読み取り・書き込みが mem.py 経由）、構造（frontmatter・コマンド一覧・CLAUDE.md 220行以内・フック参照・
+  JSON・ps1 の ASCII・雛形と fixture の一致）
+- 固定データは `tests/fixtures/memory/`（雛形の写し）。インスタンスに配布されても実データを読まない
+- `.github/workflows/test.yml`：push / PR で Windows・Linux × Python 3.11・3.12
+- テストが見つけた不具合：mem.py の ok() がライブラリとして cp932 の端末から呼ばれると絵文字で UnicodeEncodeError（ボードを
+  関数として使うと記録後に 500）→ UTF-8 で書き出すよう修正。recall.py の「表は同じ行」判定が小さな表で効かない → 当たった行が
+  すべて表の行かで判定するよう修正
 
 ## テストインスタンスの観察（2026-11-04・CLAUDE.md を 186 行に整理した後・OK）
 

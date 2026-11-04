@@ -614,8 +614,8 @@ def propose(root: Path, what: str, why: str, evidence: str, effect: str, who: st
     p = proposals_path(root)
     lines = read(p)
     rows = table_rows(lines, "提案")
-    if key != "観察" and any(r.get("起因") == key for r in rows):
-        return None   # 同じ変化からは二度提案しない
+    if key != "観察" and any(r.get("起因") == esc(key) for r in rows):
+        return None   # 同じ変化からは二度提案しない（表のセルでは「|」が「／」になるので、書いた形で比べる）
     if any(r.get("何をするか") == esc(what) and not r.get("判定") for r in rows):
         return None
     sid = mem.next_id(lines, "S", root)

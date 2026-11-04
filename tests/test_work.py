@@ -108,6 +108,10 @@ class WorkTest(TempRepo):
         self.assertEqual(items, {"フォロー", "期限"})                                  # C-003 のフォロー日・C-002 の期限が近い
         self.assertEqual(len(json.loads(self.work("scan", "--json", "--propose").stdout)["proposed"]), 2)
         self.assertEqual(json.loads(self.work("scan", "--json", "--propose").stdout)["proposed"], [])
+        # 判定済み（要承認）になった後も、同じ起因からは二度提案しない（実地で S-004 と S-007 が重複した）
+        self.work("decide", "S-001", "ask", "--reason", "人の判断")
+        self.work("decide", "S-002", "ask", "--reason", "人の判断")
+        self.assertEqual(json.loads(self.work("scan", "--json", "--propose").stdout)["proposed"], [])
 
     def test_settings_limits_status_tick(self):
         lim = self.w.limits(self.root)

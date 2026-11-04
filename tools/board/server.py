@@ -60,6 +60,7 @@ def load_run_task():
 
 
 run_task = load_run_task()
+work = run_task.work
 
 
 def api_knowledge(root: Path) -> dict:
@@ -281,12 +282,29 @@ def review_of(md: str) -> dict:
 
 
 def api_task_result(root: Path, cid: str) -> dict:
-    """任せたタスクの報告（memory/task-results/{C-ID}.md）と実行の状態・ログの末尾。"""
+    """任せたタスクの最新の報告（memory/work/results/{実行ID}.md）・状態・ログの末尾・作業記録（途中の変更・引き継ぎ・実行履歴）。"""
     if not re.fullmatch(r"C-\d{3,}", cid or ""):
         return {"error": "ID が不正"}
-    rd = run_task.results_dir(root)
-    log = text(rd / f"{cid}.log").splitlines()[-15:]
-    return {"id": cid, "text": text(rd / f"{cid}.md"), "status": run_task.read_status(root, cid), "log": log}
+    st = run_task.read_status(root, cid)
+    rid = st.get("run", "")
+    log = text(run_task.state_path(root, rid, "log")).splitlines()[-15:] if rid else []
+    t = work.read_task(root, cid)
+    return {"id": cid, "run": rid, "text": text(run_task.results_dir(root) / f"{rid}.md") if rid else "", "status": st, "log": log,
+            "notes": t.get("notes", []), "handoff": t.get("handoff", ""), "runs": t.get("runs", []), "order": t.get("order", {}),
+            "refs": t.get("refs", [])}
+
+
+def api_work(root: Path) -> dict:
+    """チームの自動運転：上限と今日の費用、実行中、確認待ちの実行、変化、提案（未判定・要承認・最近の判定）。"""
+    st = work.status(root)
+    props = work.proposal_rows(root)
+    last = {}
+    try:
+        last = json.loads((work.state_dir(root) / "last-dispatch.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
+    return {**st, "proposals": props[::-1][:40], "last_dispatch": last.get("when", ""),
+            "dispatch_log": text(root / "memory" / "briefs" / "dispatch.md")[-4000:]}
 
 
 def unattended_status(root: Path) -> dict:
@@ -319,6 +337,10 @@ def api_activity(root: Path) -> dict:
 def api_commitments(root: Path) -> dict:
     rows = mem.commitment_rows(root) if (root / "memory" / "commitments.md").exists() else []
     runs = agent_runs(root)
+    try:
+        changes_all = work.changes(root)
+    except Exception:  # noqa: BLE001 ── 変化の検知に失敗してもタスク一覧は出す
+        changes_all = []
     out = []
     for r in rows:
         d = dict(r)
@@ -333,12 +355,13 @@ def api_commitments(root: Path) -> dict:
             d["assignee"] = "self"
         mine = [x for x in runs if r.get("ID") in x["tasks"]]
         d["runs"] = len(mine)
-        # 無人で着手させたもの（tools/run_task.py）の状態と報告
+        # 作業セッション（tools/run_task.py）の最新の実行・報告・関連情報の変化
         task = run_task.read_status(root, r.get("ID", "")) if d["assignee"] == "agent" else {}
         d["task_run"] = task
-        d["has_result"] = d["assignee"] == "agent" and (run_task.results_dir(root) / f"{r.get('ID')}.md").exists()
+        d["has_result"] = bool(task.get("has_result"))
         d["plan"] = task.get("plan") or {}
-        d["review"] = review_of(text(run_task.results_dir(root) / f"{r.get('ID')}.md")) if d["has_result"] else {}
+        d["review"] = review_of(text(run_task.results_dir(root) / f"{task.get('run')}.md")) if d["has_result"] else {}
+        d["changes"] = sorted({c["kind"] for c in changes_all if c["task"] == r.get("ID")})
         open_ = r.get("状態") not in mem.CLOSED
         if task.get("state") == "running" or any(x["state"] in ("running", "background") for x in mine):
             d["agent_state"] = "running"
@@ -478,7 +501,8 @@ FIELD_RULES = {
     "term": (r".{1,60}", "1〜60字"), "meaning": (r".{1,300}", "1〜300字"), "aliases": (r".{1,120}", "1〜120字"),
     "scope": (r".{1,80}", "1〜80字"), "effective": (r"\d{4}-\d{2}-\d{2}", "YYYY-MM-DD"),
     "kind_term": (r"略語|社内用語|コードネーム|あだ名|業界用語", "略語 / 社内用語 / コードネーム / あだ名 / 業界用語"),
-    "rid": (r"R-\d{3,}", "R-001 の形"),
+    "rid": (r"R-\d{3,}", "R-001 の形"), "sid": (r"S-\d{3,}", "S-001 の形"),
+    "decision": (r"adopt|hold|reject|merge|ask", "adopt / hold / reject / merge / ask"), "task": (r"C-\d{3,}", "C-001 の形"),
     "budget": (r"\d{1,2}(\.\d{1,2})?", "USD の数値"),
     "review": (r"auto|none|@?[a-z0-9][a-z0-9-]*", "auto / none / レビュアーの handle"), "reason": (r".{1,200}", "1〜200字"),
 }
@@ -490,7 +514,8 @@ REQUIRED = {
     "/api/person/observe": ["ident", "situation", "judgment"], "/api/person/icon": ["ident", "icon"],
     "/api/person/note": ["ident", "situation", "insight"], "/api/decision/status": ["project", "status"],
     "/api/term/add": ["term", "meaning"], "/api/rule/add": ["content", "source"], "/api/rule/confirm": ["rid"],
-    "/api/task/run": ["id"], "/api/task/plan": ["id", "review"],
+    "/api/task/run": ["id"], "/api/task/plan": ["id", "review"], "/api/task/stop": ["id"], "/api/task/approve": ["id"],
+    "/api/proposal/decide": ["sid", "decision", "reason"], "/api/proposal/adopt": ["sid", "who"],
 }
 
 
@@ -537,14 +562,47 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
             res = run_mem(mem.commitment_set_follow, root, g("id", ""), g("follow", ""))
         elif path == "/api/task/run":
             try:
-                review = g("review") or run_task.plan_of(root, g("id", "")).get("review", "auto")
-                budget = float(g("budget") or run_task.default_budget(review.lstrip("@")))
-                if not 0 < budget <= 20:
+                budget = float(g("budget")) if g("budget") else None
+                if budget is not None and not 0 < budget <= 20:
                     raise ValueError("上限は 0〜20 USD")
                 info = run_task.launch(root, g("id", ""), budget, g("review") or None)
-            except ValueError as e:
+            except (ValueError, work.MemError) as e:
                 return 400, {"ok": False, "error": str(e)}
-            res = {"ok": True, "message": f"{info['id']} を {info['agent']} に着手させた（上限 {budget:g} USD）。終わると報告が届く"}
+            res = {"ok": True, "message": f"{info['run']} を {info['agent']} の作業セッションで起動（上限 {info['budget']:g} USD）。終わると報告が届く"}
+        elif path == "/api/task/stop":
+            try:
+                rid = run_task.stop(root, g("id", ""), g("reason", "") or "ボードで停止")
+            except (ValueError, work.MemError) as e:
+                return 400, {"ok": False, "error": str(e)}
+            res = {"ok": True, "message": f"{rid} を止めた"}
+        elif path == "/api/task/approve":
+            # 人の承認：最新の実行を受け入れ（古い条件なら断る）、約束を完了に
+            st = run_task.read_status(root, g("id", ""))
+            if not st.get("has_result"):
+                return 400, {"ok": False, "error": "報告が無い"}
+            try:
+                if not st.get("verdict", "").startswith("受け入れ"):
+                    label = work.accept(root, st["run"], "accept", "人が承認")
+                    if label != "受け入れ":
+                        return 400, {"ok": False, "error": f"{st['run']} は{label}で作られた。新しい条件でやり直す（やり直させる）"}
+            except work.MemError as e:
+                return 400, {"ok": False, "error": str(e)}
+            res = run_mem(mem.commitment_set_state, root, g("id", ""), "done")
+        elif path == "/api/proposal/decide":
+            res = run_mem(work.decide, root, g("sid", ""), g("decision", ""), g("task", ""), g("reason", ""))
+        elif path == "/api/proposal/adopt":
+            # 人が提案を採用：担当（@handle）に任せる約束を足し、提案を採用に
+            row = next((x for x in work.proposal_rows(root) if x.get("ID") == g("sid")), None)
+            if not row:
+                return 400, {"ok": False, "error": f"{g('sid')} が無い"}
+            ns = Namespace(kind="given", content=g("content") or row.get("何をするか", ""), who=g("who", ""), due=g("due"),
+                           follow=None, rel=g("rel"), state=None)
+            res = run_mem(mem.commitment_add, root, ns)
+            if res.get("ok"):
+                m = re.search(r"C-\d{3,}", res.get("message", ""))
+                if m:
+                    run_mem(work.decide, root, g("sid"), "adopt", m.group(0), "人がボードで採用")
+                    res["message"] += f"／{g('sid')} を採用"
         elif path == "/api/task/plan":
             try:
                 plan = run_task.set_plan(root, g("id", ""), g("review", ""), g("reason", ""))
@@ -584,7 +642,7 @@ GETS = {
     "/api/summary": api_summary, "/api/situation": api_situation, "/api/inbox": api_inbox,
     "/api/commitments": api_commitments, "/api/projects": api_projects, "/api/people": api_people,
     "/api/decisions": api_decisions, "/api/oplog": api_oplog, "/api/agents": api_agents, "/api/brief": api_brief,
-    "/api/review": api_review, "/api/knowledge": api_knowledge, "/api/activity": api_activity,
+    "/api/review": api_review, "/api/knowledge": api_knowledge, "/api/activity": api_activity, "/api/work": api_work,
 }
 
 

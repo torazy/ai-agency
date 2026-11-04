@@ -18,6 +18,7 @@ memory/task-log/
 # 無人実行の生成物（朝のブリーフ・任せたタスクの報告・取り込み範囲）。再生成でき、端末ごとの状態
 memory/briefs/
 memory/task-results/
+memory/work/.state/
 memory/sync-state.json
 
 # OS

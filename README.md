@@ -47,7 +47,7 @@ ai-agency/
 ├── .mcp.json                 # MCP 設定（github / backlog / brave-search）
 ├── .claude/
 │   ├── agents/               # 専門家×7＋汎用秘書（人格本体。/consult が Agent ツールで並列召集）
-│   ├── commands/             # /setup /intake /update /consult /discuss /simulate /incident /morning-brief /run-task /review-decisions /propose-delegation
+│   ├── commands/             # /setup /intake /update /consult /discuss /simulate /incident /morning-brief /scout /dispatch /run-task /review-decisions /propose-delegation
 │   ├── skills/               # 32スキル（intake-and-file, commitment-track, person-model-update, *-review 等）
 │   └── settings.json         # permissions.deny＋SessionStart/PreToolUse/PostToolUse フック
 ├── memory/
@@ -98,7 +98,8 @@ ai-agency/
 | 情報をファイリング | `/intake`（または会議メモ等を貼って「ファイリングして」） |
 | 忘れずに覚えさせる | 「覚えておいて」＋内容（分類前に inbox へ即時保存され、分類後に記録先が報告される。迷えば1行で確認される） |
 | タスク・指示を記録 | 「〇〇やっておく」「部長に△△を頼まれた」「鈴木さんに□□を依頼した」と言うだけ |
-| エージェントに任せる | 「競合3社の料金を @generalist に調べさせて」→ 約束台帳に担当つきで載り、ボードの「タスク」で稼働が見える。ボードの「着手させる」（または `/run-task C-007`）で無人で進め、結果を読んで「承認して完了」 |
+| 先回りして仕事を回す | 依頼が無くても、`/scout` が予定・期限・進捗・情報の変化から必要な仕事を根拠つきで提案し、`/dispatch` が採否と担当を決めて作業セッションを起動・結果を確認する。定期実行（下）に載せると自動で回る。最初は「提案と割り振り案まで」で、着手は人が承認（`memory/work/settings.md` の「自動で着手」） |
+| エージェントに任せる | 「競合3社の料金を @generalist に調べさせて」→ 約束台帳に担当つきで載り、ボードの「タスク」で稼働が見える。ボードの「着手させる」（または `python tools/run_task.py C-007`）でタスクごとに独立した作業セッションを起動し、結果を読んで「承認して完了」 |
 | 今日の状況を把握 | `/morning-brief`（平日の朝に無人で回しておくと、`memory/briefs/` に用意され、拾った約束は台帳に追記済み・要確認だけ inbox に残る） |
 | つながったサービスから取り込む | `/update`（カレンダー・メール・チャット等から前回以降の約束・依頼・人物の反応を拾い、秘書が記録して事後報告。確認が要るものだけ1問） |
 | 専門家を強くする | 「@legal を強くしたい」→ knowledge-work-plugins（legal / finance / human-resources / product-management）を承認制で導入。入れなくても動く |
@@ -123,6 +124,11 @@ ai-agency/
 無人実行は `/morning-brief --unattended`：コネクタから前回以降の約束・依頼を拾い、確信のあるものは台帳等に**追記**、要確認だけ inbox に残す。
 外部への送信や既存行の書き換えはしない。結果は `memory/briefs/{日付}.md` に残り、次に会話を始めると件数が知らされ、ボードの「今日」にも出る。
 週次の `/review-decisions`・`/propose-delegation`、月次の `memory-maintenance` も同じ仕組みで登録できる。
+
+**定期の見直し（チームの自動運転）**：`tools/schedule/dispatch.ps1`（Windows）／`dispatch.sh`（macOS・Linux）を15分ごとに登録する
+（コマンド例は各スクリプト冒頭）。実際の間隔・同時に動かす件数・1日の費用上限・自動で着手するかは `memory/work/settings.md`
+（秘書に「1時間ごと、同時に2件まで、1日5ドルまで」と頼めば書き換える）。1回ごとに、変化の確認 → 提案の選別 → 委任範囲の仕事の
+起動 → 終わった実行の確認まで進め、`memory/briefs/dispatch.md` に記録する。人の判断が要るものはボードの「提案」と起動時の案内に出る。
 
 ---
 

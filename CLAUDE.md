@@ -60,7 +60,14 @@ SessionStart フックが「[記憶の状態]」「[約束台帳]」「[inbox]�
 | 実在の人への報告・提案・指示の通し方 | `/simulate`：その人の**思考モデル**（`memory/people/` の観察）を独立に召集し反応を予測 |
 | 単純な検索・ファイリング・単一領域の問い | @chief が直接、対応スキルで即答 |
 | 成果物・判断材料を作る仕事を受けた | 最初に**進め方**を1行で宣言（作成者・レビューの有無とレビュアー・理由）。人に渡るもの・判断材料は作成者と別のレビュアーが見る（`independent-review`） |
-| まとまった作業を切り出す（調査・下書き・一括処理） | 約束台帳に `commitment add --kind given --who @handle` で載せ、Agent の description に C-ID を書いて渡す。ボードに担当と稼働が出る。宣言した進め方は `run_task.py --plan`。無人で進めるなら `/run-task`（結果は `memory/task-results/`）。完了は人の承認後 |
+| まとまった作業を切り出す（調査・下書き・一括処理） | 約束台帳に `commitment add --kind given --who @handle`、作業依頼と参照を `work.py order`／`ref add` で書き、**タスクごとに独立した作業セッション**（`run_task.py C-…` → `/run-task`）で進める。サブエージェントは短い相談・限定的な並列分析用で、継続する仕事の管理単位にしない |
+
+**チームを動かす（依頼が無くても）**：役割を分ける。**提案役**（`/scout`：予定・期限・進捗・情報の変化から仕事を見つけ、
+何を・なぜ今・根拠・効果・担当候補つきで提案）→ **割り振り役**（`/dispatch`：必要性・重複・優先度・依存・委任範囲・稼働で
+採用／統合／保留／却下／要承認。提案を全部は実行しない）→ **作業役**（独立セッション）→ **確認役**（`/dispatch`：完了条件・
+根拠・使った版で受け入れ／差し戻し／人へ確認。古い条件の成果は受け入れない）。記録は `memory/work/`（提案・作業記録・報告）で、
+セッションが終わっても別のセッションが続きを担当できる。各タスクには**参照している情報と評価した版・再開の条件**を残し、
+タスク本文が変わらなくても関連情報が変われば再評価する（`work.py changes`）。定期実行は `tools/schedule/dispatch.*`。
 
 専門家は「正しい答え」、人物モデルは「実際のあの人の反応（予測）」を出す別の仕組み。両方要るなら `/consult` → `/simulate`。
 対応領域は `memory/team/roster.md`、不在なら `recruit-expert`、深掘りの手順を足すなら `expert-plugins`。
@@ -183,7 +190,7 @@ inbox は**秘書の作業中トレイ**で、ユーザーの ToDo ではない�
 | 常時ルール | `CLAUDE.md`（このファイル）＋ `@memory/dashboard.md` |
 | 人格（専門家・汎用秘書） | `.claude/agents/{handle}.md`（`skills:` で担当スキルを事前読込、`icon:` はボード表示用） |
 | 手順（スキル） | `.claude/skills/{name}/SKILL.md`。専門家の周辺プラグイン（任意）は `expert-plugins` |
-| スラッシュコマンド | /setup /intake /update /consult /discuss /simulate /incident /morning-brief /run-task /review-decisions /propose-delegation |
+| スラッシュコマンド | /setup /intake /update /consult /discuss /simulate /incident /morning-brief /scout /dispatch /run-task /review-decisions /propose-delegation |
 | ガードレール・フック | `.claude/settings.json`、`tools/hooks/`（guardrail・session-start・operation-logger）。正典は `memory/guardrails.json` |
 | MCP | `.mcp.json`（github / backlog / brave-search）。コネクタは claude.ai 側 |
 | 記憶の道具 | 書き込み `tools/mem.py`、探す・読む・点検 `tools/recall.py`（コマンド例は `python` で書いている。Mac / Linux では `python3` に読み替える。フックとボードは `tools/py.sh` が自動で選ぶ） |

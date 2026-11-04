@@ -121,7 +121,7 @@ class BoardActivityTest(TempRepo):
 
 
 class RunTaskTest(TempRepo):
-    """tools/run_task.py：着手の検査・状態・ボードからの起動（claude は起動しない）。"""
+    """tools/run_task.py：着手の検査・実行履歴・上限・停止・ボードからの起動（claude は起動しない）。"""
 
     def setUp(self):
         super().setUp()
@@ -129,6 +129,16 @@ class RunTaskTest(TempRepo):
         self.mem("commitment", "add", "--kind", "given", "--who", "@pm", "--content", "スケジュール案", "--due", d(5))
         self.mem("commitment", "add", "--kind", "task", "--content", "自分の作業", "--due", d(5))
         self.rt = self.load("tools/run_task.py", "run_task_t")
+        self.rt.work.mem.ok = lambda m: None
+        self.rt.shutil.which = lambda name: "claude"
+
+    def fake_run(self, cid="C-001", result="完了", cost=0.5, report=True):
+        rid = self.rt.work.run_start(self.root, cid)
+        if result != "実行中":
+            self.rt.work.run_end(self.root, rid, result, cost)
+        if report:
+            self.write(f"memory/work/results/{rid}.md", f"# {rid}\n\n## 結論\n- 3案\n")
+        return rid
 
     def test_check_task(self):
         self.assertEqual(self.rt.check_task(self.root, "C-001")["相手"], "@pm")
@@ -136,11 +146,13 @@ class RunTaskTest(TempRepo):
             with self.assertRaises(ValueError) as cm:
                 self.rt.check_task(self.root, cid)
             self.assertIn(why, str(cm.exception))
-        self.rt.write_status(self.root, "C-001", state="running", start=time.time())
+        rid = self.fake_run(result="実行中", report=False)
+        self.rt.state_path(self.root, rid).parent.mkdir(parents=True, exist_ok=True)
+        self.rt.state_path(self.root, rid).write_text(json.dumps({"start": time.time()}), encoding="utf-8")
         with self.assertRaises(ValueError):
             self.rt.check_task(self.root, "C-001")                      # 二重起動しない
         self.rt.check_task(self.root, "C-001", child=True)              # 起動した本人は通す
-        self.rt.write_status(self.root, "C-001", start=time.time() - 4 * 3600)
+        self.rt.state_path(self.root, rid).write_text(json.dumps({"start": time.time() - 4 * 3600}), encoding="utf-8")
         self.assertEqual(self.rt.read_status(self.root, "C-001")["state"], "unknown")
         self.mem("commitment", "set-state", "C-001", "done")
         with self.assertRaises(ValueError):
@@ -151,50 +163,99 @@ class RunTaskTest(TempRepo):
 
     def test_allowed_tools_stay_read_only(self):
         tools = self.rt.allowed_tools()
-        self.assertIn("Edit(memory/task-results/**)", tools)
-        self.assertFalse([t for t in tools if t.startswith(("Write", "Edit")) and t != "Edit(memory/task-results/**)"])
-        self.assertFalse([t for t in tools if t.startswith("Bash(") and "mem.py" in t
+        self.assertIn("Edit(memory/work/results/**)", tools)
+        self.assertFalse([t for t in tools if t.startswith(("Write", "Edit")) and t != "Edit(memory/work/results/**)"])
+        self.assertFalse([t for t in tools if t.startswith(("Bash(", "PowerShell(")) and "mem.py" in t
                           and not any(op in t for op in ("list", "check", "show"))])
+        self.assertFalse([t for t in tools if t.startswith(("Bash(", "PowerShell(")) and "work.py" in t
+                          and not any(op in t for op in ("show", "note", "handoff", "status"))])
+        self.assertFalse([t for t in tools if "run_task.py" in t])            # 作業セッションは他の作業を起動しない
         self.assertNotIn("Bash", tools)
+        self.assertNotIn("PowerShell", tools)
+        cmd = self.rt.build_command("C-001", "C-001-R2", 1, "qa")
+        self.assertEqual(cmd[2], "/run-task C-001 --run C-001-R2 --review qa")
 
-    def test_board_run_and_result(self):
+    def test_capacity_limits(self):
+        p = self.root / "memory/work/settings.md"
+        p.write_text(p.read_text(encoding="utf-8").replace("| 同時実行の上限 | 2 |", "| 同時実行の上限 | 1 |")
+                     .replace("| 1日の費用上限（USD） | 10 |", "| 1日の費用上限（USD） | 3 |"), encoding="utf-8")
+        self.rt.check_capacity(self.root, 2.5)
+        self.fake_run(cost=1.0)
+        with self.assertRaisesRegex(ValueError, "1日の上限"):
+            self.rt.check_capacity(self.root, 2.5)                      # 1.0 + 2.5 > 3
+        self.mem("commitment", "add", "--kind", "given", "--who", "@pm", "--content", "別件", "--due", d(5))
+        self.fake_run("C-003", result="実行中", report=False)
+        with self.assertRaisesRegex(ValueError, "同時実行"):
+            self.rt.check_capacity(self.root, 0.5)
+
+    def test_stop_marks_run(self):
+        rid = self.fake_run(result="実行中", report=False)
+        self.rt.state_path(self.root, rid).parent.mkdir(parents=True, exist_ok=True)
+        self.rt.state_path(self.root, rid).write_text(json.dumps({"start": time.time(), "pid": 999999}), encoding="utf-8")
+        self.assertEqual(self.rt.stop(self.root, "C-001", "新しい条件"), rid)
+        t = self.rt.work.read_task(self.root, "C-001")
+        self.assertEqual(t["runs"][-1]["結果"], "停止")
+        self.assertIn("新しい条件", t["notes"][-1])
+        with self.assertRaises(ValueError):
+            self.rt.stop(self.root, "C-001")
+
+    def test_board_run_approve_and_result(self):
         srv = self.load("tools/board/server.py", "board_runtask")
+        srv.mem.ok = lambda m: srv.mem.LAST_OK.append(m)
         calls = []
-        real = srv.run_task.launch
-        srv.run_task.launch = lambda root, cid, budget, review=None: (
-            calls.append((cid, budget)), real.__globals__["check_task"](root, cid), {"id": cid, "agent": "@pm", "budget": budget})[-1]
+        srv.run_task.launch = lambda root, cid, budget=None, review=None: (
+            calls.append((cid, budget)), {"id": cid, "run": cid + "-R1", "agent": "@pm", "budget": budget or 1})[-1]
         self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "0.5"})[0], 200)
         self.assertEqual(calls, [("C-001", 0.5)])
-        self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-002"})[0], 400)       # 自分のタスク
         self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "50"})[0], 400)
         self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "abc"})[0], 400)
-        # 報告が届くと「確認待ち」、失敗はログつき
-        self.rt.write_status(self.root, "C-001", state="done", start=time.time() - 60, end=time.time(), exit=0)
-        self.write("memory/task-results/C-001.md", "# C-001 スケジュール案\n\n## 結論\n- 3案\n")
+        self.assertEqual(srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})[0], 400)   # 報告が無い
+        rid = self.fake_run()
         row = next(r for r in srv.api_commitments(self.root)["rows"] if r["ID"] == "C-001")
         self.assertEqual((row["has_result"], row["agent_state"]), (True, "review"))
-        self.assertIn("3案", srv.api_task_result(self.root, "C-001")["text"])
+        res = srv.api_task_result(self.root, "C-001")
+        self.assertIn("3案", res["text"])
+        self.assertEqual(res["run"], rid)
         self.assertEqual(srv.api_task_result(self.root, "../x"), {"error": "ID が不正"})
-        self.rt.write_status(self.root, "C-001", state="running", start=time.time())
+        self.assertEqual(srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})[0], 200)
+        self.assertTrue(self.rt.work.read_task(self.root, "C-001")["runs"][-1]["判定"].startswith("受け入れ"))
+        self.assertEqual(next(r for r in self.mem_rows() if r["ID"] == "C-001")["状態"], "done")
+
+    def mem_rows(self):
+        return self.rt.mem.commitment_rows(self.root)
+
+    def test_approve_refuses_stale_result(self):
+        srv = self.load("tools/board/server.py", "board_stale")
+        srv.mem.ok = lambda m: srv.mem.LAST_OK.append(m)
+        self.write("memory/projects/x/status.md", "# s\n\n## 見積\n- 未着\n")
+        self.rt.work.ref_add(self.root, "C-001", "memory/projects/x/status.md#見積", "前提", "見積")
+        self.fake_run()
+        self.write("memory/projects/x/status.md", "# s\n\n## 見積\n- 120万\n")
+        code, res = srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})
+        self.assertEqual(code, 400)
+        self.assertIn("古い条件", res["error"])
+        self.assertEqual(next(r for r in self.mem_rows() if r["ID"] == "C-001")["状態"], "open")
         row = next(r for r in srv.api_commitments(self.root)["rows"] if r["ID"] == "C-001")
-        self.assertEqual(row["agent_state"], "running")
+        self.assertEqual(row["changes"], ["見直し"])
 
-    def test_session_start_mentions_waiting_reports(self):
-        self.write("memory/task-results/C-001.md", "# 報告\n")
-        self.write("memory/task-results/C-002.md", "# 自分のタスクには付かない想定だが、未完了なら出る\n")
-        self.mem("commitment", "set-state", "C-002", "done")
+    def test_session_start_mentions_waiting_reports_and_proposals(self):
+        rid = self.fake_run()
+        self.rt.work.propose(self.root, "会議の準備", "定例が前倒し", "カレンダー", "慌てない", "@pm")
         out = self.run_py("tools/hooks/session-start.py").stdout
-        self.assertIn("[任せたタスク] 報告が届いて確認待ち：C-001（", out)
-        self.assertIn("承認済みで記憶への反映待ち：C-002。", out)                      # 完了にしたが、まだ記憶に入れていない
-        self.assertEqual(self.run_py("tools/run_task.py", "--applied", "C-002").returncode, 0)
-        self.assertNotEqual(self.run_py("tools/run_task.py", "--applied", "C-003").returncode, 0)
+        self.assertIn(f"[任せたタスク] 報告が届いて確認待ち：{rid}（", out)
+        self.assertIn("[提案] 人の判断待ち 0 件・未判定 1 件", out)
+        self.rt.work.accept(self.root, rid, "accept")
+        self.mem("commitment", "set-state", "C-001", "done")
         out = self.run_py("tools/hooks/session-start.py").stdout
-        self.assertNotIn("反映待ち", out)
+        self.assertIn(f"承認済みで記憶への反映待ち：{rid}。", out)
+        self.assertEqual(self.run_py("tools/run_task.py", "--applied", "C-001").returncode, 0)
+        self.assertNotEqual(self.run_py("tools/run_task.py", "--applied", "C-002").returncode, 0)
+        self.assertNotIn("反映待ち", self.run_py("tools/hooks/session-start.py").stdout)
 
-    def test_cli_rejects_without_claude_side_effects(self):
+    def test_cli_rejects_without_side_effects(self):
         r = self.run_py("tools/run_task.py", "C-002")
         self.assertNotEqual(r.returncode, 0)
-        self.assertFalse((self.root / "memory/task-results/C-002.json").exists())
+        self.assertFalse((self.root / "memory/work/tasks/C-002.md").exists())
 
 
 class ReviewPlanTest(TempRepo):
@@ -206,28 +267,30 @@ class ReviewPlanTest(TempRepo):
             self.write(f".claude/agents/{h}.md", f"---\nname: {h}\n---\n")
         self.mem("commitment", "add", "--kind", "given", "--who", "@pm", "--content", "スケジュール案", "--due", d(5))
         self.rt = self.load("tools/run_task.py", "run_task_plan")
+        self.rt.work.mem.ok = lambda m: None
 
-    def test_plan_validation_and_command(self):
+    def test_plan_validation_is_kept_in_work_order(self):
         out = self.run_py("tools/run_task.py", "--plan", "C-001", "--review", "@qa", "--reason", "部長に出す", check=True).stdout
         self.assertIn("レビュー @qa（部長に出す）", out)
-        self.assertEqual(self.rt.plan_of(self.root, "C-001")["review"], "qa")
+        self.assertEqual(self.rt.plan_of(self.root, "C-001"), {"review": "qa", "reason": "部長に出す"})
+        self.assertIn("| レビュー | qa（部長に出す） |", self.read("memory/work/tasks/C-001.md"))     # 作業依頼に残る
         for bad in ("pm", "nobody", "../x"):                                  # 作成者自身・いない・不正
             self.assertNotEqual(self.run_py("tools/run_task.py", "--plan", "C-001", "--review", bad).returncode, 0)
         self.assertEqual(self.rt.plan_of(self.root, "C-001")["review"], "qa")  # 失敗しても前の進め方は残る
-        self.rt.shutil.which = lambda name: "claude"
-        cmd = self.rt.build_command("C-001", 1, self.rt.plan_of(self.root, "C-001")["review"])
-        self.assertEqual(cmd[2], "/run-task C-001 --review qa")
         self.rt.set_plan(self.root, "C-001", "none")
-        self.assertEqual(self.rt.plan_of(self.root, "C-001"), {"review": "none", "reason": "", "set": self.rt.time.strftime("%Y-%m-%d")})
+        self.assertEqual(self.rt.plan_of(self.root, "C-001"), {"review": "none", "reason": ""})
 
     def test_board_plan_and_review_badge(self):
         srv = self.load("tools/board/server.py", "board_plan")
+        srv.mem.ok = lambda m: srv.mem.LAST_OK.append(m)
         self.assertEqual(srv.do_post(self.root, "/api/task/plan", {"id": "C-001", "review": "qa", "reason": "社外"})[0], 200)
         self.assertEqual(srv.do_post(self.root, "/api/task/plan", {"id": "C-001", "review": "pm"})[0], 400)
         self.assertEqual(srv.do_post(self.root, "/api/task/plan", {"id": "C-001", "review": "a b"})[0], 400)
         row = next(r for r in srv.api_commitments(self.root)["rows"] if r["ID"] == "C-001")
         self.assertEqual(row["plan"]["review"], "qa")
-        self.write("memory/task-results/C-001.md", "# C-001\n\n## 結論\nx\n\n## レビュー\n"
+        rid = self.rt.work.run_start(self.root, "C-001")
+        self.rt.work.run_end(self.root, rid, "完了", 1.0)
+        self.write(f"memory/work/results/{rid}.md", "# C-001\n\n## 結論\nx\n\n## レビュー\n"
                    "- レビュアー: @qa ／ 判定: 要修正 → 修正済み（1回）\n- 指摘と対応:\n  - [重大] 根拠 → 追記\n- 残った指摘: 表の単位\n")
         row = next(r for r in srv.api_commitments(self.root)["rows"] if r["ID"] == "C-001")
         self.assertEqual(row["review"], {"reviewer": "@qa", "verdict": "要修正 → 修正済み（1回）", "left": True})
@@ -241,14 +304,36 @@ class ReviewPlanTest(TempRepo):
     def test_default_budget_counts_review(self):
         import os
         os.environ.pop("MAX_BUDGET_USD", None)
-        self.assertEqual(self.rt.default_budget("none"), 1.0)
-        self.assertEqual(self.rt.default_budget("qa"), 2.5)
-        self.assertEqual(self.rt.default_budget("auto"), 2.5)
+        self.assertEqual(self.rt.default_budget(self.root, "none"), 1.0)
+        self.assertEqual(self.rt.default_budget(self.root, "qa"), 2.5)
+        self.assertEqual(self.rt.default_budget(self.root, "auto"), 2.5)
         out = '{"type":"result","subtype":"success","result":"C-001：要点","total_cost_usd":1.8364}'
         self.assertEqual(self.rt.cost_of(out), 1.84)
         self.assertEqual(self.rt.summarize_output(out), "C-001：要点")
         self.assertIsNone(self.rt.cost_of("plain text"))
         self.assertEqual(self.rt.summarize_output("plain text"), "plain text")
+
+
+class ProposalBoardTest(TempRepo):
+    def setUp(self):
+        super().setUp()
+        self.write(".claude/agents/pm.md", "---\nname: pm\n---\n")
+        self.srv = self.load("tools/board/server.py", "board_props")
+        self.srv.mem.ok = lambda m: self.srv.mem.LAST_OK.append(m)
+        self.srv.work.propose(self.root, "定例の資料準備", "定例が前倒し", "カレンダー", "当日慌てない", "@pm")
+        self.srv.work.propose(self.root, "古い比較表の見直し", "料金改定", "ベンダーのお知らせ", "誤った比較を出さない", "@pm")
+
+    def test_adopt_hold_and_work_api(self):
+        code, res = self.srv.do_post(self.root, "/api/proposal/adopt", {"sid": "S-001", "who": "@pm", "due": d(3)})
+        self.assertEqual(code, 200, res)
+        self.assertIn("C-001", self.read("memory/commitments.md"))
+        self.assertEqual(self.srv.work.proposal_rows(self.root)[0]["判定"], "採用→C-001")
+        self.assertEqual(self.srv.do_post(self.root, "/api/proposal/decide", {"sid": "S-002", "decision": "hold", "reason": "来週"})[0], 200)
+        self.assertEqual(self.srv.do_post(self.root, "/api/proposal/decide", {"sid": "S-002", "decision": "hold"})[0], 400)
+        w = self.srv.api_work(self.root)
+        self.assertEqual(w["limits"]["max_running"], 2)
+        self.assertEqual([p["ID"] for p in w["proposals"]], ["S-002", "S-001"])
+        self.assertEqual(w["proposals_open"], [])
 
 
 class BoardGuardTest(TempRepo):

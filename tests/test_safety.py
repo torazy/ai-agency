@@ -55,7 +55,7 @@ class ConcurrencyTest(TempRepo):
 
     def test_no_temp_or_lock_left(self):
         self.mem("inbox", "add", "x")
-        leftovers = [p.name for p in (self.root / "memory").rglob(".*") if p.is_file()]
+        leftovers = [p.name for p in (self.root / "memory").rglob(".*") if p.is_file() and p.name != ".gitkeep"]
         self.assertEqual(leftovers, [])
 
 
@@ -140,6 +140,20 @@ class UnattendedTest(TempRepo):
             r = self.run_py("tools/mem.py", *args, env=env)
             self.assertNotEqual(r.returncode, 0, args)
             self.assertIn("無人実行", r.stderr)
+
+    def test_dispatch_allows_only_records_and_sessions(self):
+        spec = __import__("importlib.util").util.spec_from_file_location("dispatch_t", self.root / "tools/schedule/dispatch.py")
+        mod = __import__("importlib.util").util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        tools = mod.allowed_tools()
+        self.assertFalse([t for t in tools if "mem.py *" in t or "set-state" in t or "set-content" in t])
+        self.assertFalse([t for t in tools if t.startswith(("Write", "Edit")) and t != "Edit(memory/briefs/**)"])
+        self.assertNotIn("Bash", tools)
+        self.assertTrue(all(b < 128 for b in (self.root / "tools/schedule/dispatch.ps1").read_bytes()))
+        (self.root / ".ai-agency-template").write_text("", encoding="utf-8")
+        r = self.run_py("tools/schedule/dispatch.py", "--force")      # 本体では何もしない（claude を呼ばない）
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("本体", r.stdout)
 
     def test_schedule_scripts_do_not_allow_whole_mem_py(self):
         for name in ("morning-brief.ps1", "morning-brief.sh"):

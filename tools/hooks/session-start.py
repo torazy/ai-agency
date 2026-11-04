@@ -28,6 +28,10 @@ def read(path: Path) -> str:
         return ""
 
 
+def _cells(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")] if line.startswith("|") else []
+
+
 def main() -> None:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -131,24 +135,30 @@ def main() -> None:
                 f"：今日中 {count('🔴')} 件・見ておく {count('🟡')} 件。取り込みで記録したものと確認待ちはブリーフ末尾にある。"
             )
 
-    # エージェントに任せたタスクの報告（tools/run_task.py → memory/task-results/）。未完了の約束のものだけ
-    rdir = mem / "task-results"
-    waiting = sorted(f.stem for f in rdir.glob("C-*.md") if f.stem in open_ids) if rdir.exists() else []
+    # チームの仕事（memory/work/）：作業セッションの報告・承認後の反映・提案
+    waiting, approved = [], []
+    for f in sorted((mem / "work" / "tasks").glob("C-*.md")) if (mem / "work" / "tasks").exists() else []:
+        runs = [c for c in (_cells(ln) for ln in read(f).split("## 実行履歴")[-1].split("\n## ")[0].splitlines())
+                if c and re.fullmatch(r"C-\d{3,}-R\d+", c[0])]
+        if not runs or len(runs[-1]) < 8:
+            continue
+        rid, result, verdict, applied = runs[-1][0], runs[-1][3], runs[-1][6], runs[-1][7]
+        if f.stem in open_ids and result == "完了" and not verdict.startswith(("受け入れ", "差し戻し", "古い条件")):
+            waiting.append(rid)
+        elif f.stem in done_ids and result == "完了" and not applied:
+            approved.append(rid)
     if waiting:
-        lines.append(f"[任せたタスク] 報告が届いて確認待ち：{', '.join(waiting[:8])}（memory/task-results/）。"
+        lines.append(f"[任せたタスク] 報告が届いて確認待ち：{', '.join(waiting[:8])}（memory/work/results/）。"
                      "要点を伝えて承認を1問で聞き、承認後に報告の「記憶に入れる候補」を記録する（/run-task の末尾）。")
-    approved = []
-    for f in sorted(rdir.glob("C-*.md")) if rdir.exists() else []:
-        if f.stem in done_ids:
-            try:
-                applied = json.loads((rdir / f"{f.stem}.json").read_text(encoding="utf-8")).get("applied")
-            except (OSError, ValueError):
-                applied = None
-            if not applied:
-                approved.append(f.stem)
     if approved:
         lines.append(f"[任せたタスク] 承認済みで記憶への反映待ち：{', '.join(approved[:8])}。報告の「記憶に入れる候補」を記録し、"
                      "`python tools/run_task.py --applied C-…` で反映済みにする（/run-task の末尾）。")
+    props = [c for c in (_cells(ln) for ln in read(mem / "work" / "proposals.md").splitlines()) if c and re.fullmatch(r"S-\d{3,}", c[0])]
+    asks = [c[0] for c in props if len(c) > 8 and c[8].startswith("要承認")]
+    fresh = [c[0] for c in props if len(c) > 8 and not c[8]]
+    if asks or fresh:
+        lines.append(f"[提案] 人の判断待ち {len(asks)} 件{'（' + ', '.join(asks[:5]) + '）' if asks else ''}・未判定 {len(fresh)} 件"
+                     "（memory/work/proposals.md）。要承認は要点を伝えて採否を聞く。未判定は /dispatch で割り振る。")
 
     # 記憶の点検（recall.py review の結果。毎朝のブリーフが作る）。7日以内で要対応があれば件数だけ伝える
     review = read(mem / "briefs" / "review.md")

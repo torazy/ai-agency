@@ -38,6 +38,7 @@ mem.py ── memory/ への「決定的な追記」CLI。
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import functools
 import json
 import os
@@ -1038,6 +1039,11 @@ def migrate(root: Path) -> None:
     if not (root / "memory" / "inbox.md").exists():
         inbox_path(root)
         changed.append("inbox.md を作成")
+    # チームの仕事の記録（memory/work/：提案・作業記録・報告・自動運転の設定）
+    _spec = importlib.util.spec_from_file_location("work_for_migrate", Path(__file__).resolve().parent / "work.py")
+    _work = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_work)
+    changed += [f"{n} を作成" for n in _work.ensure_work(root)]
     for name in ("glossary.md", "rules.md"):
         if not (root / "memory" / "knowledge" / name).exists():
             knowledge_path(root, name)

@@ -416,7 +416,7 @@ function dialog({title,icon="pen",fields,submit="保存"}){return new Promise(re
 /* ------------------------------------------------------------ state & render */
 let S={},cur="today",tick=0;
 async function refresh(){
-  const keys=["summary","situation","inbox","commitments","projects","people","decisions","oplog","agents","brief","review","knowledge","activity"];
+  const keys=["summary","situation","inbox","commitments","projects","people","decisions","oplog","agents","brief","review","knowledge","activity","work"];
   const vals=await Promise.all(keys.map(k=>fetch("/api/"+k).then(r=>r.json()).catch(e=>({error:String(e)}))));
   S=Object.fromEntries(keys.map((k,i)=>[k,vals[i]]));
   const sum=S.summary,name=val(sum.name),nick=val(sum.nickname);
@@ -430,7 +430,7 @@ async function refresh(){
   renderNav();renderTeamStrip();
   renderToday();renderCommitments();renderInbox();renderProjects();renderPeople();renderDecisions();renderKnowledge();renderTeam();renderLog();
 }
-function counts(){const {open,urgent,proposed}=S.derived;return {today:urgent.length,commitments:open.length,inbox:(S.inbox.pending||[]).length,projects:(S.projects.projects||[]).length,people:(S.people.people||[]).length,decisions:proposed.length,knowledge:((S.knowledge.terms||[]).length+(S.knowledge.rules||[]).filter(r=>r["状態"]==="有効").length),team:((S.activity||{}).running||[]).length,log:(S.oplog.items||[]).length};}
+function counts(){const {open,urgent,proposed}=S.derived;return {today:urgent.length+((S.work||{}).proposals_open||[]).filter(p=>String(p["判定"]||"").startsWith("要承認")).length,commitments:open.length,inbox:(S.inbox.pending||[]).length,projects:(S.projects.projects||[]).length,people:(S.people.people||[]).length,decisions:proposed.length,knowledge:((S.knowledge.terms||[]).length+(S.knowledge.rules||[]).filter(r=>r["状態"]==="有効").length),team:((S.activity||{}).running||[]).length,log:(S.oplog.items||[]).length};}
 function renderNav(){const c=counts();$("#nav").innerHTML=TABS.map(([k,l,i])=>{const n=c[k];const hot=k==="today"&&n>0?"hot":(k==="inbox"||k==="decisions")&&n>0?"warm":"";return `<button data-tab="${k}" class="${k===cur?"active":""}">${ic(i)}<span class="lbl">${l}</span>${n?`<span class="cnt ${hot}">${n}</span>`:""}</button>`;}).join("");
   $("#nav").querySelectorAll("button").forEach(b=>b.onclick=()=>show(b.dataset.tab));}
 function renderTeamStrip(){const ag=S.agents.agents||[];$("#team-n").textContent=`${ag.length}名`;$("#team-strip").innerHTML=ag.map(a=>`<span data-team="${esc(a.handle)}">${avatar(a.icon,"@"+a.handle,"sm",a.handle)}</span>`).join("");$("#team-strip").querySelectorAll("[data-team]").forEach(el=>el.onclick=()=>show("team"));}
@@ -441,6 +441,7 @@ function renderToday(){
   $("#tab-today").innerHTML=`<div class="kpis">${kpi(urgent.length,"期限3日以内・フォロー到来","alert",urgent.length?"t-danger":"t-ok")}${kpi(open.length,"未完了の約束","check-square","t-accent")}${kpi(inbox.length,"inbox 未分類","inbox",inbox.length?"t-warn":"t-muted")}${kpi(proposed.length,"未承認の提案","lightbulb",proposed.length?"t-warn":"t-muted")}</div>
   ${S.brief&&S.brief.markdown?`<details class="card" style="margin-bottom:14px" ${S.brief.age<=1?"open":""}><summary>${ic("chevron")}${ic("sun")}朝のブリーフ <span class="muted" style="font-weight:500">${esc(S.brief.date)}${S.brief.age===0?"（今日）":S.brief.age===1?"（昨日）":`（${S.brief.age}日前）`} ・ 無人実行</span></summary>${md(S.brief.markdown)}</details>`:""}
   <div class="grid-2">
+    <div class="card"><div class="card-h">${ic("lightbulb")}チームからの提案<span class="n">${(S.work.proposals_open||[]).length}</span><span class="right">${act("すべて","chevron",()=>show("team"),"ghost")}</span></div>${proposalList(S.work.proposals_open||[],5)}</div>
     <div class="card"><div class="card-h">${ic("alert")}いま動くべき約束<span class="n">${urgent.length}</span></div>${urgent.length?urgent.map(comItem).join(""):empty("期限間近・フォロー到来の約束はありません","check")}</div>
     <div class="card"><div class="card-h">${ic("lightbulb")}未承認の提案<span class="n">${proposed.length}</span></div>${proposed.length?proposed.map(decItem).join(""):empty("承認待ちの提案はありません","badge-check")}</div>
     <div class="card"><div class="card-h">${ic("inbox")}inbox 未分類<span class="n">${inbox.length}</span></div>${inbox.length?inbox.map(inboxItem).join(""):empty("未分類の記憶はありません","inbox")}</div>
@@ -456,6 +457,29 @@ function reviewList(){const fs=S.review.findings||[];if(!fs.length)return empty(
   return top.map(f=>`<div class="item"><div class="av sm" style="--h:${hue(f.area)}">${ic(AREA_ICON[f.area]||"tag")}</div><div class="body"><div class="ttl"><span class="badge ${f.auto?"t-ok":"t-warn"}">${ic(f.auto?"wrench":"message")}${f.auto?"秘書が直す":"確認"}</span><span>${esc(f.area)}</span></div>
     <div style="color:var(--fg-2);font-size:12.5px;margin-top:2px">${esc(f.detail)}</div><div class="meta"><span class="mono">${esc(f.target)}</span><span>→ ${esc(f.action)}</span></div></div></div>`).join("")
     +(fs.length>top.length?`<div class="muted small" style="margin-top:8px">ほか ${fs.length-top.length} 件。会話で「記憶を見直して」と言うと秘書が直します</div>`:`<div class="muted small" style="margin-top:8px">会話で「記憶を見直して」と言うと秘書が直します</div>`);}
+
+/* --- チームの自動運転：提案・割り振り --- */
+const DEC_T={"採用":"t-ok","統合":"t-info","保留":"t-muted","却下":"t-muted","要承認":"t-warn"};
+function propBadge(p){const v=p["判定"]||"";if(!v)return `<span class="badge t-accent">${ic("lightbulb")}未判定</span>`;const k=Object.keys(DEC_T).find(x=>v.startsWith(x))||"";return `<span class="badge ${DEC_T[k]||"t-muted"}" title="${esc(p["判定理由"]||"")}">${esc(v)}</span>`;}
+function proposalItem(p,withActs=true){const open=!p["判定"]||String(p["判定"]).startsWith("要承認");
+  return `<div class="item">${avatar("lightbulb",p["担当候補"]||"","sm",p["担当候補"]||"p")}<div class="body"><div class="ttl">${propBadge(p)}<span>${esc(p["何をするか"])}</span></div>
+  <div style="color:var(--fg-2);font-size:12.5px;margin-top:2px">${ic("clock")} ${esc(p["なぜ今"])} ・ 効果：${esc(p["期待する効果"])}</div>
+  <div class="meta"><span class="mono">${esc(p.ID)}</span><span>${ic("tag")} ${esc(p["根拠"])}</span><span>${ic("user")} ${esc(p["担当候補"])}</span>${p["判定理由"]?`<span>→ ${esc(p["判定理由"])}</span>`:""}</div>
+  ${withActs&&open?`<div class="acts">${act("採用して任せる","check",()=>adoptProposal(p),"primary")}${act("保留","clock",()=>decideProposal(p,"hold"))}${act("却下","x",()=>decideProposal(p,"reject"),"ghost")}</div>`:""}</div></div>`;}
+function proposalList(ps,n){return ps.length?ps.slice(0,n).map(p=>proposalItem(p)).join("")+(ps.length>n?`<div class="muted small" style="margin-top:8px">ほか ${ps.length-n} 件（チームタブ）</div>`:""):empty("判断待ちの提案はありません。定期の見直し（/dispatch）や /scout が見つけるとここに出ます","lightbulb");}
+async function adoptProposal(p){const ags=(S.agents.agents||[]).filter(a=>a.handle!=="chief");const cand=String(p["担当候補"]||"").match(/@([a-z0-9-]+)/);
+  const o=await dialog({title:`${p.ID} を採用して任せる`,icon:"check",submit:"採用",fields:[{label:"内容",name:"content",value:p["何をするか"],required:true},
+    {label:"担当",name:"who",type:"select",value:cand&&ags.some(a=>a.handle===cand[1])?"@"+cand[1]:"@generalist",options:ags.map(a=>["@"+a.handle,"@"+a.handle])},{label:"期限",name:"due",type:"date"}]});
+  if(o)api("/api/proposal/adopt",{sid:p.ID,who:o.who,content:o.content,due:o.due||undefined});}
+async function decideProposal(p,decision){const o=await dialog({title:`${p.ID} を${decision==="hold"?"保留":"却下"}`,icon:decision==="hold"?"clock":"x",fields:[{label:"理由",name:"reason",required:true,placeholder:decision==="hold"?"例：前工程が終わってから":"例：既に C-002 で扱っている"}]});
+  if(o)api("/api/proposal/decide",{sid:p.ID,decision,reason:o.reason});}
+function autopilotCard(){const W=S.work||{};const L=W.limits||{};const runs=W.running||[];
+  return `<div class="card" style="margin-bottom:14px"><div class="card-h">${ic("activity")}チームの自動運転<span class="n">${runs.length}/${L.max_running||"—"} 実行中</span><span class="right">${L.auto_start?'<span class="badge t-ok">自動で着手：委任範囲</span>':'<span class="badge t-muted">自動で着手：しない（提案まで）</span>'}</span></div>
+  <div class="meta" style="gap:6px 16px;margin-bottom:8px"><span>${ic("clock")} 間隔 ${L.interval_min||"—"} 分 ・ 最終 ${esc(W.last_dispatch||"未実行")}</span><span>${ic("chart")} 今日の費用 ${(W.spent_today||0).toFixed(2)} / ${L.daily_usd||"—"} USD</span><span>${ic("eye")} 未確認の実行 ${(W.unjudged_runs||[]).length}</span><span>${ic("bolt")} 関連情報の変化 ${(W.changes||[]).length}</span></div>
+  ${(W.changes||[]).length?`<div class="small" style="margin-bottom:8px">${W.changes.slice(0,6).map(c=>`<div>${ic("bolt")} <span class="mono">${esc(c.task)}</span> ${esc(c.kind)}：${esc(c.label||c.place)} <span class="muted">${esc(c.old)}→${esc(c.new)}</span></div>`).join("")}</div>`:""}
+  <details><summary class="small">${ic("lightbulb")}提案の履歴（${(W.proposals||[]).length}）</summary>${(W.proposals||[]).slice(0,20).map(p=>proposalItem(p)).join("")||empty("まだ提案はありません","lightbulb")}</details>
+  ${W.dispatch_log?`<details style="margin-top:8px"><summary class="small">${ic("file")}直近の割り振りの記録（memory/briefs/dispatch.md）</summary>${md(W.dispatch_log)}</details>`:""}
+  <div class="muted small" style="margin-top:8px">設定は memory/work/settings.md（間隔・同時実行の上限・1日の費用上限・自動で着手）。会話で「1時間ごと・同時に2件まで」と頼めば秘書が書き換えます。</div></div>`;}
 
 /* --- 検索（recall.py find と同じ） --- */
 function hl(text,terms){let t=esc(text);terms.filter(Boolean).forEach(w=>{const e=esc(w).replace(/[.*+?^${}()|[\]\\]/g,"\\$&");t=t.replace(new RegExp(e,"gi"),m=>`<mark>${m}</mark>`);});return t;}
@@ -487,6 +511,9 @@ const agentOf=h=>(S.agents.agents||[]).find(a=>a.handle===String(h||"").replace(
 function assigneeAvatar(r,size="sm"){if(r.assignee==="agent"){const a=agentOf(r.who);return avatar(a?a.icon:"sparkles",r.who,size,String(r.who).replace(/^@/,""));}
   if(r.assignee==="person")return avatar("",r.who,size,r.who);return avatar("user","自分",size,"me");}
 function assigneeLabel(r){return r.assignee==="agent"?`${esc(r.who)}（エージェント）`:r.assignee==="person"?`${esc(r.who)} に依頼`:r.kind==="received"?`自分（${esc(r.who)}から）`:"自分";}
+const CHG={"再開":["t-info","待ちが解消"],"着手":["t-info","着手条件を満たした"],"見直し":["t-warn","根拠が変わった"],"実行中に変化":["t-warn","実行中に前提が変化"],"完了済みの見直し":["t-warn","完了後に根拠が変化"]};
+function changeBadges(r){return (r.changes||[]).map(k=>`<span class="badge ${(CHG[k]||["t-muted"])[0]}" title="関連情報の変化（${esc(k)}）。割り振り役が影響を判断する">${ic("bolt")}${esc((CHG[k]||[0,k])[1])}</span>`).join("");}
+async function stopTask(r){const o=await dialog({title:`${r.ID} の作業を止める`,icon:"x",submit:"止める",fields:[{label:"理由（作業記録の途中の変更に残る）",name:"reason",placeholder:"例：会議が前倒しになり条件が変わった"}]});if(o)api("/api/task/stop",{id:r.ID,reason:o.reason||"ボードで停止"});}
 function agentBadge(r){return r.agent_state==="running"?`<span class="badge t-ok live">稼働中</span>`:r.agent_state==="review"?`<span class="badge t-warn">${ic("eye")}確認待ち</span>`:r.agent_state==="failed"?`<span class="badge t-danger">${ic("alert")}失敗</span>`:"";}
 function reviewOptions(r){const me=String(r.who).replace(/^@/,"");
   return [["auto","秘書が難易度で判断"],["none","レビューなし"],...(S.agents.agents||[]).filter(a=>a.handle!=="chief"&&a.handle!==me).map(a=>[a.handle,`@${a.handle} がレビュー`])];}
@@ -503,17 +530,22 @@ function reviewBadge(r){const v=(r.review||{}).verdict||"";if(!v)return "";const
   return `<span class="badge ${ok?"t-ok":fixed?"t-info":"t-warn"}" title="${esc(v)}">${ic(ok||fixed?"badge-check":"alert")}${esc(who)} ${ok?"OK":fixed?"指摘→修正済":"指摘あり"}${r.review.left?"・残りあり":""}</span>`;}
 async function showReport(r){const x=await fetch("/api/task/result?id="+encodeURIComponent(r.ID)).then(j=>j.json());const d=$("#dlg");d.classList.add("wide");
   const st=x.status||{};const failed=st.state==="failed"||st.state==="unknown";const closed=isClosed(r);
-  d.innerHTML=`<form method="dialog"><h2>${ic("file")}${esc(r.ID)} の報告 <span class="muted" style="font-weight:500;font-size:13px">${esc(r.who)}${st.cost_usd!=null?" ・ "+st.cost_usd.toFixed(2)+" USD":""}${st.end?" ・ "+new Date(st.end*1000).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""}</span></h2>
+  const runs=x.runs||[];const vb=st.verdict?`<span class="badge ${/^受け入れ/.test(st.verdict)?"t-ok":/古い条件|差し戻し/.test(st.verdict)?"t-warn":"t-info"}">${ic("badge-check")}確認役：${esc(st.verdict)}</span>`:"";
+  d.innerHTML=`<form method="dialog"><h2>${ic("file")}${esc(x.run||r.ID)} の報告 ${vb} <span class="muted" style="font-weight:500;font-size:13px">${esc(r.who)}${st.cost_usd!=null?" ・ "+st.cost_usd.toFixed(2)+" USD":""}${st.end?" ・ "+new Date(st.end*1000).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""}</span></h2>
     ${x.text?md(x.text):empty(failed?"報告が書かれずに終わりました（下のログを見てください）":"まだ報告がありません","file")}
     ${failed||(!x.text&&(x.log||[]).length)?`<pre class="small muted" style="white-space:pre-wrap;max-height:180px;overflow:auto">${esc((x.log||[]).join(String.fromCharCode(10)))}</pre>`:""}
+    ${(x.notes||[]).length?`<details><summary class="small">${ic("bolt")}途中の変更（${x.notes.length}）</summary><ul class="small">${x.notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul></details>`:""}
+    ${x.handoff?`<details><summary class="small">${ic("file")}引き継ぎ</summary><div class="small" style="white-space:pre-wrap">${esc(x.handoff)}</div></details>`:""}
+    ${runs.length>1?`<details><summary class="small">${ic("clock")}実行履歴（${runs.length}）</summary><div class="tscroll"><table class="small"><tr><th>実行ID</th><th>開始</th><th>結果</th><th>費用</th><th>判定</th></tr>${runs.map(u=>`<tr><td class="mono">${esc(u["実行ID"])}</td><td>${esc(u["開始"])}</td><td>${esc(u["結果"])}</td><td>${esc(u["費用"])}</td><td>${esc(u["判定"])}</td></tr>`).join("")}</table></div></details>`:""}
     <div class="actions"><button type="button" class="btn" data-x>${ic("x")}閉じる</button>${x.text&&!closed?`<button type="button" class="btn primary" data-ok>${ic("check")}承認して完了</button>`:""}</div></form>`;
-  $("[data-x]",d).onclick=()=>d.close();const ok=$("[data-ok]",d);if(ok)ok.onclick=()=>{d.close();api("/api/commitment/state",{id:r.ID,state:"done"});};
+  $("[data-x]",d).onclick=()=>d.close();const ok=$("[data-ok]",d);if(ok)ok.onclick=()=>{d.close();api("/api/task/approve",{id:r.ID});};
   d.onclose=()=>d.classList.remove("wide");d.showModal();}
 async function editContent(r){const o=await dialog({title:`${r.ID} の内容を書き換える`,icon:"pen",fields:[{label:"内容",name:"content",value:r.content,required:true}]});if(o&&o.content)api("/api/commitment/content",{id:r.ID,content:o.content});}
 function taskCard(r){return `<div class="tcard ${r.assignee==="agent"?"agent":""}"><div class="top">${assigneeAvatar(r)}<div class="ct">${esc(r.content)}</div></div>
-  <div class="meta"><span class="mono">${esc(r.ID)}</span><span>${assigneeLabel(r)}</span>${due(r["期限"],r.due_in)}${val(r["関連"])?`<span class="chip">${ic("tag")}${esc(r["関連"].replace(/`/g,""))}</span>`:""}${agentBadge(r)}${reviewBadge(r)}${r.assignee==="agent"&&!isClosed(r)&&!r.has_result?actRaw(ic("eye")+esc(planLabel(r.plan)),()=>editPlan(r),"chip"):""}</div>
+  <div class="meta"><span class="mono">${esc(r.ID)}</span><span>${assigneeLabel(r)}</span>${due(r["期限"],r.due_in)}${val(r["関連"])?`<span class="chip">${ic("tag")}${esc(r["関連"].replace(/`/g,""))}</span>`:""}${agentBadge(r)}${reviewBadge(r)}${changeBadges(r)}${r.assignee==="agent"&&!isClosed(r)&&!r.has_result?actRaw(ic("eye")+esc(planLabel(r.plan)),()=>editPlan(r),"chip"):""}</div>
   ${r.assignee==="agent"&&(r.has_result||r.agent_state==="failed")?`<div class="acts">${act(r.has_result?"報告を見る":"ログを見る",r.has_result?"file":"alert",()=>showReport(r),r.has_result&&!isClosed(r)?"primary":"")}</div>`:""}
   ${r.assignee==="agent"&&!isClosed(r)&&r.agent_state!=="running"&&!S.summary.is_template?`<div class="acts">${act(r.has_result?"やり直させる":"着手させる","sparkles",()=>runTask(r),"ghost")}</div>`:""}
+  ${r.assignee==="agent"&&(r.task_run||{}).state==="running"?`<div class="acts">${act("止める","x",()=>stopTask(r),"ghost")}</div>`:""}
   <div class="acts">${stateSeg(r)}${act("","pen",()=>editContent(r),"icon")}${act("","calendar",()=>editDue(r),"icon")}</div></div>`;}
 function renderCommitments(){
   const all=S.commitments.rows||[];
@@ -622,7 +654,7 @@ function activityList(n){const A=S.activity||{};const rows=[...(A.running||[]),.
 function renderTeam(){const ag=S.agents.agents||[];const by=(S.activity||{}).by_agent||{};
   const status=h=>{const b=by[h];if(!b)return `<span class="muted small">${ic("clock")} まだ動いていない</span>`;return b.running?`<span class="badge t-ok live">稼働中 ${b.running}</span> <span class="muted small">${esc(b.last_desc)}</span>`:`<span class="muted small">${ic("clock")} 最終 ${esc(b.last)} ・ 今日 ${b.today} 回</span>`;};
   const tasksOf=h=>(S.commitments.rows||[]).filter(r=>r.assignee==="agent"&&String(r.who).replace(/^@/,"")===h&&!isClosed(r));
-  $("#tab-team").innerHTML=`<div class="card" style="margin-bottom:14px"><div class="card-h">${ic("activity")}最近の動き<span class="n">${((S.activity||{}).running||[]).length} 稼働中</span><span class="right">会話の中で起動されたエージェント（フックが記録）</span></div>${activityList(15)}</div>
+  $("#tab-team").innerHTML=`${autopilotCard()}<div class="card" style="margin-bottom:14px"><div class="card-h">${ic("activity")}最近の動き<span class="n">${((S.activity||{}).running||[]).length} 稼働中</span><span class="right">会話の中で起動されたエージェント（フックが記録）</span></div>${activityList(15)}</div>
   <div class="grid">${ag.map(a=>`<div class="card agent"><div class="head">${avatar(a.icon,"@"+a.handle,"lg",a.handle)}<div style="flex:1;min-width:0"><h3>@${esc(a.handle)}</h3><div class="role">${esc(val(a.role)||"—")}</div></div>${a.handle==="chief"?`<span class="badge t-accent">${ic("crown")}司会</span>`:""}</div>
     <div style="margin-top:8px">${a.handle==="chief"?`<span class="muted small">会話の相手。記憶へ書くのは @chief だけ</span>`:status(a.handle)}</div>
     ${tasksOf(a.handle).length?`<div style="margin-top:8px">${tasksOf(a.handle).map(r=>`<div class="small">${ic("check-square")} <span class="mono muted">${esc(r.ID)}</span> ${esc(r.content)} ${agentBadge(r)}</div>`).join("")}</div>`:""}

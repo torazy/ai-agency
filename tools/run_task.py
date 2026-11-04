@@ -183,7 +183,16 @@ def default_budget(root: Path, review: str = "auto") -> float:
     return lim["run_usd"] if review == "none" else lim["run_usd_review"]
 
 
+MIN_BUDGET_USD = 0.5   # 作業セッションは起動だけで約 0.3 USD 使う（実測）。それ未満の上限では報告も残らない
+
+
+def check_budget(budget: float) -> None:
+    if not MIN_BUDGET_USD <= budget <= 20:
+        raise ValueError(f"1回の上限は {MIN_BUDGET_USD:g}〜20 USD（作業セッションは起動だけで約 0.3 USD 使い、それ未満では報告も残らない）")
+
+
 def check_capacity(root: Path, budget: float) -> None:
+    check_budget(budget)
     lim = work.limits(root)
     running = work.running_runs(root)
     if len(running) >= lim["max_running"]:
@@ -244,6 +253,9 @@ def run_foreground(root: Path, cid: str, rid: str, budget: float) -> int:
     has_result = (results_dir(root) / f"{rid}.md").exists()
     result = "完了" if code == 0 and has_result else ("上限で打ち切り" if "budget" in subtype else "失敗")
     work.run_end(root, rid, result, cost)
+    if result == "上限で打ち切り" and not has_result:   # 報告が無いと次の実行も人も手がかりが無いので、作業記録に残す
+        work.note(root, cid, f"{rid} は上限 {budget:g} USD で打ち切られ、報告が残っていない"
+                  f"（費用 {cost if cost is not None else '不明'} USD）。上限を上げるか、作業を分けてやり直す")
     return code
 
 
@@ -343,8 +355,8 @@ def main() -> None:
             return
         if not a.id:
             ap.error("ID（C-007 など）が必要")
-        if a.budget is not None and not 0 < a.budget <= 20:
-            sys.exit("--budget は 0〜20 USD")
+        if a.budget is not None:
+            check_budget(a.budget)
         if a.dry_run:
             check_task(root, a.id)
             b = a.budget if a.budget is not None else default_budget(root, plan_of(root, a.id).get("review", "auto"))

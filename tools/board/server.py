@@ -563,8 +563,8 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
         elif path == "/api/task/run":
             try:
                 budget = float(g("budget")) if g("budget") else None
-                if budget is not None and not 0 < budget <= 20:
-                    raise ValueError("上限は 0〜20 USD")
+                if budget is not None:
+                    run_task.check_budget(budget)
                 info = run_task.launch(root, g("id", ""), budget, g("review") or None)
             except (ValueError, work.MemError) as e:
                 return 400, {"ok": False, "error": str(e)}

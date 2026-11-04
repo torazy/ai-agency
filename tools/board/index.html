@@ -520,7 +520,7 @@ function reviewOptions(r){const me=String(r.who).replace(/^@/,"");
 function planLabel(p){const v=(p||{}).review;return !v||v==="auto"?"レビュー：秘書が判断":v==="none"?"レビューなし":`レビュー：@${v}`;}
 async function runTask(r){const o=await dialog({title:`${r.ID} を ${r.who} に着手させる`,icon:"sparkles",submit:"着手させる",
     fields:[{label:"レビュー（作った本人とは別のエージェントが見る）",name:"review",type:"select",value:(r.plan||{}).review||"auto",options:reviewOptions(r)},
-            {label:"1回の上限（USD）。レビューありは作成・レビュー・直しの3人分で 2.5 が目安。記憶や外部サービスは変えない",name:"budget",type:"number",value:((r.plan||{}).review==="none"?"1":"2.5"),step:"0.1",min:"0.1",max:"20",required:true}]});
+            {label:"1回の上限（USD）。レビューありは作成・レビュー・直しの3人分で 2.5 が目安。記憶や外部サービスは変えない",name:"budget",type:"number",value:((r.plan||{}).review==="none"?"1":"2.5"),step:"0.1",min:"0.5",max:"20",required:true}]});
   if(o)api("/api/task/run",{id:r.ID,budget:String(o.budget),review:o.review});}
 async function editPlan(r){const o=await dialog({title:`${r.ID} の進め方`,icon:"eye",fields:[{label:"レビュー",name:"review",type:"select",value:(r.plan||{}).review||"auto",options:reviewOptions(r)},{label:"理由（任意）",name:"reason",value:(r.plan||{}).reason||""}]});
   if(o)api("/api/task/plan",{id:r.ID,review:o.review,reason:o.reason});}

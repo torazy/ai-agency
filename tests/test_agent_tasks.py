@@ -1,6 +1,7 @@
 """エージェントに任せるタスク（約束台帳の @handle）と、エージェントの動きの記録（agent-activity フック → ボード）。"""
 
 import json
+import sys
 import time
 import unittest
 
@@ -188,6 +189,21 @@ class RunTaskTest(TempRepo):
         with self.assertRaisesRegex(ValueError, "同時実行"):
             self.rt.check_capacity(self.root, 0.5)
 
+    def test_budget_floor_and_cut_off_leaves_note(self):
+        for b in (0.1, 0.49, 20.5):
+            with self.assertRaisesRegex(ValueError, "0.5〜20"):
+                self.rt.launch(self.root, "C-001", b)
+        self.assertFalse((self.root / "memory/work/tasks/C-001.md").exists() and self.rt.work.read_task(self.root, "C-001")["runs"])
+        # 上限で打ち切られて報告が無いときは、作業記録の途中の変更に残す（実地：0.1 USD で起動だけで 0.30 使い報告なし）
+        out = json.dumps({"subtype": "error_max_budget_usd", "total_cost_usd": 0.3})
+        self.rt.build_command = lambda *a, **k: [sys.executable, "-c", f"print({out!r}); raise SystemExit(1)"]
+        self.rt.work.ensure_task(self.root, "C-001")
+        rid = self.rt.work.run_start(self.root, "C-001")
+        self.rt.run_foreground(self.root, "C-001", rid, 0.5)
+        t = self.rt.work.read_task(self.root, "C-001")
+        self.assertEqual((t["runs"][-1]["結果"], t["runs"][-1]["費用"]), ("上限で打ち切り", "0.30"))
+        self.assertIn("報告が残っていない", t["notes"][-1])
+
     def test_stop_marks_run(self):
         rid = self.fake_run(result="実行中", report=False)
         self.rt.state_path(self.root, rid).parent.mkdir(parents=True, exist_ok=True)
@@ -208,6 +224,7 @@ class RunTaskTest(TempRepo):
         self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "0.5"})[0], 200)
         self.assertEqual(calls, [("C-001", 0.5)])
         self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "50"})[0], 400)
+        self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "0.1"})[0], 400)
         self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "abc"})[0], 400)
         self.assertEqual(srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})[0], 400)   # 報告が無い
         rid = self.fake_run()

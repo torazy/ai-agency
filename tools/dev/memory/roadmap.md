@@ -65,6 +65,10 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 - テストが見つけた不具合：mem.py の ok() がライブラリとして cp932 の端末から呼ばれると絵文字で UnicodeEncodeError（ボードを
   関数として使うと記録後に 500）→ UTF-8 で書き出すよう修正。recall.py の「表は同じ行」判定が小さな表で効かない → 当たった行が
   すべて表の行かで判定するよう修正
+- CI で見つかった不具合：operation-logger がタスクログの見出しを strftime('%Y年%m月') で作っており、Windows・Python 3.11・英語ロケールで
+  UnicodeEncodeError（フックが毎回 exit 1）→ 数値から組み立てる。recall map の呼び名を集合から上位5件だけ出しており実行ごとに並びが変わった
+  → 順序を固定。CI は3回目で Windows・Linux × 3.11・3.12 すべて成功（e8f6e61 → 2回の修正）
+- 作業中に見つかった不具合：.gitignore の `CLAUDE.local.md` がどの階層にも効き、メンテ層の正本 tools/dev/CLAUDE.local.md が未追跡だった → ルート直下に限定
 
 ## テストインスタンスの観察（2026-11-04・CLAUDE.md を 186 行に整理した後・OK）
 

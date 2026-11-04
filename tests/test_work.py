@@ -128,6 +128,29 @@ class WorkTest(TempRepo):
         self.assertEqual(self.work("tick", check=False).returncode, 0)
         self.assertEqual(self.work("tick", check=False).returncode, 1)                 # 間隔が来ていない
 
+    def test_pending_and_idle_dispatch_skips_claude(self):
+        pd = json.loads(self.work("pending", "--json").stdout)
+        self.assertTrue(pd["work"] and pd["observe"])                                  # 期限の近い C-002 → 提案（未判定）
+        self.assertEqual(len(pd["proposed"]), 1)
+        self.work("decide", pd["undecided"][0], "ask", "--reason", "人の判断")
+        pd = self.w.pending(self.root)
+        self.assertEqual((pd["proposed"], pd["undecided"], pd["work"]), ([], [], False))  # 要承認は割り振り役の仕事ではない
+        sd = self.root / "memory/work/.state"
+        sd.mkdir(parents=True, exist_ok=True)
+        (sd / "last-dispatch.json").write_text(json.dumps({"observed_at": __import__("time").time()}), encoding="utf-8")
+        self.assertFalse(self.w.pending(self.root)["observe"])                           # 観察の間隔（8時間）が来ていない
+        self.assertTrue(self.w.tick(self.root))
+        self.assertIn("observed_at", json.loads((sd / "last-dispatch.json").read_text(encoding="utf-8")))  # tick が消さない
+        # 定期実行：仕事も観察も無ければ claude を起動しない（PATH から外し、起動しようとしたら失敗するようにして確かめる）
+        (self.root / ".ai-agency-template").unlink(missing_ok=True)
+        (sd / "last-dispatch.json").write_text(json.dumps({"observed_at": __import__("time").time()}), encoding="utf-8")
+        import os
+        import sys
+        r = self.run_py("tools/schedule/dispatch.py", env={"PATH": os.path.dirname(sys.executable)})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        last = json.loads((sd / "last-dispatch.json").read_text(encoding="utf-8"))
+        self.assertEqual((last.get("skipped"), last.get("cost_usd")), ("仕事なし", 0))
+
     def test_unattended_allows_work_records_but_not_applied(self):
         env = {"AI_AGENCY_UNATTENDED": "1"}
         self.assertEqual(self.work("propose", "--what", "a", "--why", "b", "--evidence", "c", "--effect", "d", "--who", "@pm", env=env).returncode, 0)

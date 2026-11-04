@@ -4,7 +4,7 @@ description: 割り振り役＋確認役（定期の見直しの本体）。変�
 
 # /dispatch ── 割り振り役・確認役（定期の見直し）
 
-ユーザー入力：`/dispatch`（無人は `/dispatch --unattended`。`--dry-run` で判断だけして起動しない）
+ユーザー入力：`/dispatch`（無人は `/dispatch --unattended`。`--dry-run` で判断だけして起動しない。`--no-observe` で観察を省く）
 
 入力（引数）: $ARGUMENTS
 
@@ -28,7 +28,7 @@ python tools/work.py changes --propose    # 関連情報の変化 → 提案（�
 python tools/work.py scan --propose       # フォロー日・期限が近いのに未着手 → 提案
 ```
 
-続けて `/scout` の 2〜3 で観察による提案を足す（無人でも行う。多くても7件）。
+続けて `/scout` の 2〜3 で観察による提案を足す（無人でも行う。多くても7件）。`--no-observe` のときは省く（定期実行は観察の間隔が来た回だけ観察する。仕事も観察も無い回は、tools/schedule/dispatch.py が `work.py pending` で確かめて Claude を起動しない）。
 
 ## 2. 確認役：終わった実行を確かめる（未確認の実行ごと）
 

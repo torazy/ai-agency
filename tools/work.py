@@ -87,6 +87,7 @@ SETTINGS_DEFAULT = {
     "1回の上限（USD・レビューなし）": "1",
     "1回の上限（USD・レビューあり）": "2.5",
     "自動で着手": "しない",
+    "観察の間隔（時間）": "8",
 }
 SETTINGS_SKELETON = """# チームの自動運転の設定（work/settings.md）
 
@@ -102,6 +103,7 @@ SETTINGS_SKELETON = """# チームの自動運転の設定（work/settings.md）
 | 1回の上限（USD・レビューなし） | 1 | 作業セッション1回の上限 |
 | 1回の上限（USD・レビューあり） | 2.5 | 作成・レビュー・直しの3人分 |
 | 自動で着手 | しない | しない／委任範囲 |
+| 観察の間隔（時間） | 8 | 変化も確認待ちも無い回は Claude を起動しない（費用0）。観察による提案（/scout）はこの間隔でだけ行う |
 """
 PROPOSALS_SKELETON = """# 提案（work/proposals.md）
 
@@ -221,7 +223,7 @@ def limits(root: Path) -> dict:
     return {"interval_min": _num(s["実行間隔（分）"], 60), "max_running": int(_num(s["同時実行の上限"], 2)),
             "daily_usd": _num(s["1日の費用上限（USD）"], 10), "run_usd": _num(s["1回の上限（USD・レビューなし）"], 1),
             "run_usd_review": _num(s["1回の上限（USD・レビューあり）"], 2.5),
-            "auto_start": s["自動で着手"].strip() == "委任範囲"}
+            "auto_start": s["自動で着手"].strip() == "委任範囲", "observe_h": _num(s["観察の間隔（時間）"], 8)}
 
 
 # ---------------------------------------------------------------- versions
@@ -750,12 +752,30 @@ def tick(root: Path) -> bool:
     if time.time() - last < lim["interval_min"] * 60 - 30:
         return False
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps({"at": time.time(), "when": mem.now_hm()}), encoding="utf-8")
+    p.write_text(json.dumps({**_last(root), "at": time.time(), "when": mem.now_hm()}, ensure_ascii=False), encoding="utf-8")
     return True
 
 
+def _last(root: Path) -> dict:
+    try:
+        return json.loads((state_dir(root) / "last-dispatch.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def pending(root: Path) -> dict:
+    """トークンを使わずに分かる、割り振り役・確認役の仕事。機械的な提案はここで足してしまう（重複はしない）。
+    何も無く観察の間隔も来ていなければ、定期の見直しは Claude を起動しない（空振りに費用を使わない）。"""
+    made = propose_from_changes(root) + propose_from_scan(root)
+    undecided = [r["ID"] for r in proposal_rows(root) if r.get("ID", "").startswith("S-") and not r.get("判定")]
+    unjudged = [r.get("実行ID", "") for r in unjudged_runs(root)]
+    observe = time.time() - _last(root).get("observed_at", 0) >= limits(root)["observe_h"] * 3600 - 60
+    return {"proposed": made, "undecided": undecided, "unjudged": unjudged, "observe": observe,
+            "work": bool(undecided or unjudged)}
+
+
 # ---------------------------------------------------------------- CLI
-UNATTENDED_OK = {"order", "ref", "changes", "scan", "propose", "decide", "note", "handoff", "accept", "status", "tick", "show"}
+UNATTENDED_OK = {"order", "ref", "changes", "scan", "propose", "decide", "note", "handoff", "accept", "status", "tick", "show", "pending"}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -790,6 +810,7 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("status"); s.add_argument("--json", action="store_true")
     s = sub.add_parser("show"); s.add_argument("id")
     sub.add_parser("tick")
+    s = sub.add_parser("pending"); s.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     root = a.root.resolve()
     if getattr(a, "json", False):   # JSON だけを出す（記録のメッセージを混ぜない）
@@ -839,6 +860,10 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(read_task(root, a.id), ensure_ascii=False, indent=1))
         elif a.cmd == "tick":
             sys.exit(0 if tick(root) else 1)
+        elif a.cmd == "pending":
+            pd = pending(root)
+            print(json.dumps(pd, ensure_ascii=False) if a.json else
+                  f"未判定の提案 {len(pd['undecided'])}・未確認の実行 {len(pd['unjudged'])}・観察 {'する' if pd['observe'] else 'まだ'}")
     except MemError as e:
         print(f"❌ {e}", file=sys.stderr)
         sys.exit(1)

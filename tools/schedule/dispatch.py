@@ -9,6 +9,8 @@ dispatch.py ── 定期の見直し（/dispatch --unattended）を無人で1�
 登録：Windows は dispatch.ps1、macOS / Linux は dispatch.sh の冒頭を参照（どちらもこのファイルを呼ぶだけ）。
 前提：このフォルダを一度 Claude Code で開いて「信頼」済み。claude と python（Mac は python3）が PATH にある。
 出力：memory/briefs/dispatch.md（割り振りの記録・gitignore）、実行ログ memory/work/.state/dispatch.log。
+空振りしない：先にトークンを使わずに確かめ（work.py pending：変化・期限からの提案を足し、未判定の提案と未確認の実行を数える）、
+      どちらも無く観察の間隔（work/settings.md）も来ていなければ Claude を起動しない（費用0）。
 安全：AI_AGENCY_UNATTENDED=1。許すのは読み取り、work.py（記録）、run_task.py（作業セッションの起動・停止）、
       mem.py の追記と読み取り、memory/briefs/ への書き込みだけ。外部への送信・作成は、普段の会話で「常に許可」したもの以外は拒否。
       同時に2つ走らないようロックする。費用は1回の上限（既定 1.5 USD）と work/settings.md の1日の上限で抑える。
@@ -49,12 +51,24 @@ def allowed_tools() -> list[str]:
     return tools
 
 
-def build_command(budget: float) -> list[str]:
+def build_command(budget: float, observe: bool = True) -> list[str]:
     exe = shutil.which("claude")
     if not exe:
         raise SystemExit("claude コマンドが見つからない（Claude Code の CLI をインストールし PATH を通す）")
-    return [exe, "-p", "/dispatch --unattended", "--allowedTools", *allowed_tools(),
+    prompt = "/dispatch --unattended" + ("" if observe else " --no-observe")
+    return [exe, "-p", prompt, "--allowedTools", *allowed_tools(),
             "--max-budget-usd", f"{budget:g}", "--no-session-persistence", "--output-format", "json"]
+
+
+def _save_last(sd: Path, **fields) -> None:
+    st = sd / "last-dispatch.json"
+    try:
+        last = json.loads(st.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        last = {}
+    last.update(fields)
+    sd.mkdir(parents=True, exist_ok=True)
+    st.write_text(json.dumps(last, ensure_ascii=False), encoding="utf-8")
 
 
 def main() -> None:
@@ -86,7 +100,11 @@ def main() -> None:
         return
     if not a.force and not work.tick(root):
         return   # 間隔が来ていない
+    pd = work.pending(root)
     sd = work.state_dir(root)
+    if not a.force and not pd["work"] and not pd["observe"]:
+        _save_last(sd, finished=time.strftime("%Y-%m-%d %H:%M"), exit=0, cost_usd=0, skipped="仕事なし")
+        return   # 判断することが無い：Claude を起動しない
     sd.mkdir(parents=True, exist_ok=True)
     lock = sd / "dispatch.lock"
     try:
@@ -100,11 +118,13 @@ def main() -> None:
         lock.unlink()
         return main()
     try:
-        cmd = build_command(a.budget)
+        observe = pd["observe"] or a.force
+        cmd = build_command(a.budget, observe)
         env = dict(os.environ, AI_AGENCY_UNATTENDED="1", PYTHONUTF8="1")
         (root / "memory" / "briefs").mkdir(parents=True, exist_ok=True)
         with open(sd / "dispatch.log", "w", encoding="utf-8") as log:
-            log.write(f"[{time.strftime('%Y-%m-%d %H:%M')}] start\n")
+            log.write(f"[{time.strftime('%Y-%m-%d %H:%M')}] start（未判定の提案 {len(pd['undecided'])}・"
+                      f"未確認の実行 {len(pd['unjudged'])}・観察 {'する' if observe else 'しない'}）\n")
             log.flush()
             r = subprocess.run(cmd, cwd=root, env=env, stdout=subprocess.PIPE, stderr=log, stdin=subprocess.DEVNULL,
                                text=True, encoding="utf-8", errors="replace")
@@ -117,13 +137,9 @@ def main() -> None:
             work.record_cost(root, "dispatch", cost)   # 1日の費用上限に数える
             log.write(f"[{time.strftime('%Y-%m-%d %H:%M')}] exit {r.returncode}"
                       + (f" cost {cost:.2f} USD" if isinstance(cost, (int, float)) else "") + "\n")
-        st = sd / "last-dispatch.json"
-        try:
-            last = json.loads(st.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            last = {}
-        last.update(exit=r.returncode, cost_usd=cost if isinstance(cost, (int, float)) else None, finished=time.strftime("%Y-%m-%d %H:%M"))
-        st.write_text(json.dumps(last, ensure_ascii=False), encoding="utf-8")
+        extra = {"observed_at": time.time()} if observe and r.returncode == 0 else {}
+        _save_last(sd, exit=r.returncode, cost_usd=cost if isinstance(cost, (int, float)) else None,
+                   finished=time.strftime("%Y-%m-%d %H:%M"), skipped="", **extra)
         sys.exit(r.returncode)
     finally:
         try:

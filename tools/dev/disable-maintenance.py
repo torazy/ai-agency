@@ -41,6 +41,15 @@ def main() -> None:
     for d in (ROOT / ".claude" / "skills").glob("maint-*"):
         if d.is_dir():
             shutil.rmtree(d)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("enable_maintenance", ROOT / "tools" / "dev" / "enable-maintenance.py")
+    en = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(en)
+    hd = en._hooks_dir(ROOT)
+    for name in en.GIT_HOOKS if hd else []:
+        h = hd / name
+        if h.exists() and en.HOOK_MARK in h.read_text(encoding="utf-8", errors="replace"):
+            h.unlink()
 
     print("[disable-maintenance] メンテナンス層を取り除きました。新しいセッションから製品（秘書）が動きます。")
 

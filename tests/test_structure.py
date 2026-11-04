@@ -91,7 +91,8 @@ class StructureTest(unittest.TestCase):
         dev = REPO / "tools" / "dev"
         if not dev.exists():
             self.skipTest("インスタンスでは tools/dev を消していてもよい")
-        for rel in ("CLAUDE.local.md", "enable-maintenance.py", "disable-maintenance.py",
+        for rel in ("claude-local.md", "enable-maintenance.py", "disable-maintenance.py", "maint.py", "isolation.json",
+                    "DESIGN.md", "memory/maint-state.md",
                     "skills/maint-check-structure/SKILL.md", "skills/maint-test-instance/SKILL.md"):
             self.assertTrue((dev / rel).exists(), f"tools/dev/{rel} が無い")
 

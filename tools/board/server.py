@@ -269,15 +269,15 @@ def review_of(md: str) -> dict:
     sec = m.group(1)
     who = re.search(r"レビュアー[:：]\s*(@[a-z0-9-]+|なし)", sec)
     verdict = re.search(r"判定[:：]\s*([^\n／|]+)", sec)
-    rest = re.search(r"残った指摘[:：]\s*(.+)", sec)
+    rests = re.findall(r"残った指摘[^:：\n]*[:：][ \t]*(.*)", sec)
     if verdict:
-        v = verdict.group(1).strip()
+        v = verdict.group(1).replace("*", "").strip()
     elif (who and who.group(1) == "なし") or re.search(r"レビュー[:：]\s*なし", sec):
         v = "なし"
     else:
         v = ""
     return {"reviewer": who.group(1) if who else "", "verdict": v,
-            "left": bool(rest and not rest.group(1).strip().startswith("なし"))}
+            "left": any(not r.strip().startswith("なし") for r in rests)}   # 「残った指摘（重大）:」の下に箇条書きの形も
 
 
 def api_task_result(root: Path, cid: str) -> dict:
@@ -537,7 +537,8 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
             res = run_mem(mem.commitment_set_follow, root, g("id", ""), g("follow", ""))
         elif path == "/api/task/run":
             try:
-                budget = float(g("budget") or run_task.default_budget())
+                review = g("review") or run_task.plan_of(root, g("id", "")).get("review", "auto")
+                budget = float(g("budget") or run_task.default_budget(review.lstrip("@")))
                 if not 0 < budget <= 20:
                     raise ValueError("上限は 0〜20 USD")
                 info = run_task.launch(root, g("id", ""), budget, g("review") or None)

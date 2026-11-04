@@ -233,6 +233,17 @@ class ReviewPlanTest(TempRepo):
         self.assertEqual(row["review"], {"reviewer": "@qa", "verdict": "要修正 → 修正済み（1回）", "left": True})
         self.assertEqual(srv.review_of("## レビュー\n- レビュアー: なし ／ 判定: なし（下調べ）\n- 残った指摘: なし\n")["left"], False)
         self.assertEqual(srv.review_of("## 結論\nx\n"), {})
+        # 実際の報告で出た形：判定が太字、「残った指摘（重大）:」の下に箇条書き
+        r = srv.review_of("## レビュー\n- レビュアー: @qa ／ 判定: **要修正 → 未修正**（上限）\n- 残った指摘（重大）:\n  1. 矛盾\n"
+                          "- 残った指摘（軽微）:\n  - 単位\n")
+        self.assertEqual((r["verdict"], r["left"]), ("要修正 → 未修正（上限）", True))
+
+    def test_default_budget_counts_review(self):
+        import os
+        os.environ.pop("MAX_BUDGET_USD", None)
+        self.assertEqual(self.rt.default_budget("none"), 1.0)
+        self.assertEqual(self.rt.default_budget("qa"), 2.0)
+        self.assertEqual(self.rt.default_budget("auto"), 2.0)
 
 
 class BoardGuardTest(TempRepo):

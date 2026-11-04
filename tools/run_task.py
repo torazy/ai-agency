@@ -16,7 +16,8 @@ run_task.py ── エージェントに任せたタスク（約束台帳の「�
 状態：memory/task-results/C-007.json（running / done / failed・終了コード・時刻）、実行ログ：C-007.log
 安全：無人実行（AI_AGENCY_UNATTENDED=1）。許すのは読み取り・調べもの（Web 検索）・サブエージェント・結果ファイルへの書き込みだけ。
       外部への送信・作成は、普段の会話で「常に許可」したもの以外は自動で拒否される。完了にするのは人（ボードの「承認して完了」）。
-費用：1回あたり --budget（既定は環境変数 MAX_BUDGET_USD、無ければ 1 USD）で打ち切る。
+費用：1回あたり --budget で打ち切る。既定は環境変数 MAX_BUDGET_USD、無ければ レビューなし 1 USD・レビューあり 2 USD
+      （作成→レビュー→直しの3人分。実測：@pm 作成＋@qa レビューで 1.5 USD では直しまで届かなかった）。
 """
 
 from __future__ import annotations
@@ -185,11 +186,14 @@ def launch(root: Path, cid: str, budget: float, review: str | None = None) -> di
     return {"id": cid, "agent": row.get("相手"), "budget": budget, "review": plan_of(root, cid).get("review", "auto")}
 
 
-def default_budget() -> float:
+def default_budget(review: str = "none") -> float:
+    """レビューを付けるなら作成・レビュー・直しの3人分を見込む。"""
     try:
-        return float(os.environ.get("MAX_BUDGET_USD", "1"))
+        if os.environ.get("MAX_BUDGET_USD"):
+            return float(os.environ["MAX_BUDGET_USD"])
     except ValueError:
-        return 1.0
+        pass
+    return 1.0 if review == "none" else 2.0
 
 
 def main() -> None:
@@ -231,7 +235,7 @@ def main() -> None:
         return
     if not a.id:
         ap.error("ID（C-007 など）が必要")
-    budget = a.budget if a.budget is not None else default_budget()
+    budget = a.budget if a.budget is not None else default_budget(plan_of(root, a.id).get("review", "auto"))
     if not 0 < budget <= 20:
         sys.exit("--budget は 0〜20 USD")
     try:

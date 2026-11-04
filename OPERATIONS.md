@@ -39,6 +39,7 @@ ai-agency（本体・テンプレート）          ← ツールの進化はこ
    git clone https://github.com/torazy/ai-agency.git ai-agency-{name}
    cd ai-agency-{name}
    git remote rename origin upstream
+   git remote set-url --push upstream DISABLED   # インスタンスの記憶を誤って本体へ push しないための安全策
    gh repo create ai-agency-{name} --private --source . --remote origin --push
    ```
    ※ GitHub の [Use this template] でも作れるが、履歴が切れるため初回だけ

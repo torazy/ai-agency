@@ -99,3 +99,11 @@ class TempRepo(unittest.TestCase):
 
 def dump(obj) -> str:
     return json.dumps(obj, ensure_ascii=False)
+
+
+def ev_json(tool: str, command: str | None = None, file_path: str | None = None, mode: str = "default",
+            hook: str = "PostToolUse", sid: str = "abcdef1234") -> str:
+    """フックに渡すイベント JSON（Bash は command、Write/Edit は file_path）。"""
+    inp = {"command": command} if command is not None else {"file_path": file_path}
+    return json.dumps({"tool_name": tool, "tool_input": inp, "hook_event_name": hook,
+                       "permission_mode": mode, "session_id": sid}, ensure_ascii=False)

@@ -51,6 +51,17 @@
         ]
       }
     ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python tools/hooks/permission-marker.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "mcp__.*|Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit",

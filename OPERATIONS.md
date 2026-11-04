@@ -92,6 +92,10 @@ git merge upstream/main
 
 ## 5. 本体側の変更規律（本体メンテナ向け）
 
+- **既存インスタンスへの移行（2026-11-04 の保存の安全性対応）**：本体を merge したら `python tools/mem.py migrate` を1回。
+  決定に ID（D-001…）が振られる。以後の承認は ID で指定する。操作ログの「承認済」は確認画面が出たものだけになる
+  （それより前の記録は昇格の根拠に使わない）
+
 - **自動テスト**：`python -m unittest discover -s tests -t tests`（標準ライブラリのみ）。push と PR のたびに GitHub Actions が
   Windows / Linux × Python 3.11 / 3.12 で回す。テストは `tests/fixtures/memory/`（雛形の写し）の上で動き、リポジトリの `memory/`
   には触らないので、インスタンスで回しても実データは読まない

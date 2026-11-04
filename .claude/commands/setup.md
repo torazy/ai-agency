@@ -40,6 +40,8 @@ description: 初回オンボーディング。対話でユーザー・判断基�
 2. 接続に失敗しているサーバー（例：`CONNECTION_CLOSED`）は**報告し**、`.env` と MCP 設定の確認を案内する
    （勝手に設定変更しない）
 3. `memory/service-capabilities.md` の「**観測記録**」表に、**ホスト×サービスで1行ずつ**追記/更新する
+4. claude.ai コネクタのツール名に出るアカウント固有 ID（`mcp__{ID}__…`）を、`tools/hooks/operation-log.json` の
+   `server_aliases` に読みやすい名前（gmail・google-calendar 等）で登録する（操作ログが読みやすくなる。インスタンスだけの設定）
    （列：ホスト｜サービス｜手段｜観測日｜備考。同じホスト×サービスの古い行は上書き）
 
 出力例：

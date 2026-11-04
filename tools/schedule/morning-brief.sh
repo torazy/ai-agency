@@ -19,11 +19,15 @@ mkdir -p memory/briefs
 export AI_AGENCY_UNATTENDED=1   # operation-logger が「承認済」ではなく「自動実行[unattended]」と記録する
 LOG=memory/briefs/_last-run.log
 echo "[$(date '+%Y-%m-%d %H:%M')] start" > "$LOG"
+# 追記系と読み取りの mem.py だけを許す（mem.py 自身も AI_AGENCY_UNATTENDED の間は書き換えを拒否する）
+ALLOWED=("Read" "Glob" "Grep" "Edit(memory/briefs/**)"
+         "Bash(python tools/recall.py *)" "Bash(python3 tools/recall.py *)")
+for op in "inbox add" "inbox list" "commitment add" "commitment list" "person observe" "person note" \
+          "sync mark" "sync show" "check"; do
+  ALLOWED+=("Bash(python tools/mem.py ${op}*)" "Bash(python3 tools/mem.py ${op}*)")
+done
 claude -p "/morning-brief --unattended" \
-  --allowedTools "Read" "Glob" "Grep" \
-    "Bash(python tools/mem.py *)" "Bash(python3 tools/mem.py *)" \
-    "Bash(python tools/recall.py *)" "Bash(python3 tools/recall.py *)" \
-    "Edit(memory/briefs/**)" \
+  --allowedTools "${ALLOWED[@]}" \
   --max-budget-usd "$BUDGET" --no-session-persistence >> "$LOG" 2>&1
 code=$?
 echo "[$(date '+%Y-%m-%d %H:%M')] exit $code" >> "$LOG"

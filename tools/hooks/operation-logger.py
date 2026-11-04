@@ -15,10 +15,12 @@ stdin: フックイベント JSON（tool_name / tool_input / hook_event_name / s
 stdout: JSON のみ（{"suppressOutput": true}）。診断は stderr。失敗しても exit 0（記録はベストエフォート）。
 """
 
+import hashlib
 import json
 import os
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -85,7 +87,10 @@ def classify(tool_name: str, tool_input: dict, cfg: dict, root: Path):
         server, tool = m.group(1), m.group(2)
         server = cfg.get("server_aliases", {}).get(server, server)
         verbs = cfg.get("mcp_write_verbs", "")
-        if verbs and re.search(verbs, tool, re.IGNORECASE):
+        # 自作サーバーはツール名にサーバー名を前置することがある（backlog_create_issue）。前置を外して動詞を見る
+        bare = re.sub(rf"^{re.escape(m.group(1))}[_-]", "", tool, flags=re.IGNORECASE)
+        bare = re.sub(rf"^{re.escape(server)}[_-]", "", bare, flags=re.IGNORECASE)
+        if verbs and (re.search(verbs, tool, re.IGNORECASE) or re.search(verbs, bare, re.IGNORECASE)):
             return f"{server}:{tool}", describe_target(tool_input, cfg)
         return None, None
 
@@ -140,6 +145,37 @@ def classify(tool_name: str, tool_input: dict, cfg: dict, root: Path):
     return None, None
 
 
+PROMPT_KEEP_SEC = 2 * 3600
+
+
+def input_hash(tool_input) -> str:
+    return hashlib.sha1(json.dumps(tool_input, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+
+
+def take_prompt(root: Path, sid: str, tool: str, tool_input) -> bool:
+    """permission-marker.py が残した「確認画面が出た」印のうち、この呼び出しに当たるものを1つ消費する。"""
+    path = root / "memory" / "task-log" / ".prompted.json"
+    try:
+        items = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    now, h, hit = time.time(), input_hash(tool_input), None
+    keep = []
+    for x in items if isinstance(items, list) else []:
+        if now - float(x.get("ts", 0)) >= PROMPT_KEEP_SEC:
+            continue
+        if hit is None and x.get("sid") == sid and x.get("tool") == tool and x.get("h") == h:
+            hit = x
+            continue
+        keep.append(x)
+    if hit is not None or len(keep) != len(items):
+        try:
+            path.write_text(json.dumps(keep, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+    return hit is not None
+
+
 def append_log(root: Path, line: str, now: datetime) -> Path:
     log_dir = root / "memory" / "task-log"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -175,16 +211,23 @@ def main() -> None:
     category, target = classify(tool_name, tool_input, cfg, root)
     # Bash は複数ヒットをリストで返す。単一ヒットと同じ経路に揃える
     entries = category if isinstance(category, list) else ([(category, target)] if category else [])
+    # 「承認済」＝確認画面が実際に出て、ユーザーが通したもの（permission-marker.py の印と一致）。
+    # 確認画面が出ずに通ったものは、通常モードなら「自動許可」（許可ルールで通過）、auto/acceptEdits/bypass なら「自動実行」。
+    # /propose-delegation は承認済だけを昇格の根拠に数える
+    sid_full = str(event.get("session_id", ""))
+    prompted = take_prompt(root, sid_full, tool_name, tool_input) if entries and hook_event != "PostToolUseFailure" else False
     for category, target in entries:
-        # 「承認済」はユーザーが確認モードで通したもの。auto / acceptEdits / bypass で通ったものは
-        # 「自動実行」として区別する（/propose-delegation は承認済だけを昇格根拠に数える）
         mode = str(event.get("permission_mode", "") or "")
         if os.environ.get("AI_AGENCY_UNATTENDED"):
             mode = "unattended"  # tools/schedule/ の無人実行。人が承認したわけではないので承認済に数えない
         if hook_event == "PostToolUseFailure":
             status = "失敗"
-        elif mode in ("", "default", "plan"):
+        elif mode == "unattended":
+            status = "自動実行[unattended]"
+        elif prompted:
             status = "承認済"
+        elif mode in ("", "default", "plan"):
+            status = "自動許可"
         else:
             status = f"自動実行[{mode}]"
         now = datetime.now()

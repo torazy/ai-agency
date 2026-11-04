@@ -21,7 +21,7 @@ mem.py ── memory/ への「決定的な追記」CLI。
   python tools/mem.py person predict kakuu-ichiro-kakuu-corp-bucho --case "..." --prediction "..." --verify-date 2026-11-20
   python tools/mem.py decision add --project kintai-saas --title "..." --content "..." --reason "..." \
          --impact "..." --prediction "..." --verify-date 2026-12-01 [--status proposed|decided] [--revoke "..."]
-  python tools/mem.py decision set-status kintai-saas "<タイトル>" decided
+  python tools/mem.py decision set-status kintai-saas D-003 decided   # ID（または題名の完全一致）で指定
   python tools/mem.py person add-alias kakuu-ichiro-kakuu-corp-bucho "部長"   # 呼び名（recall.py の名前解決）
   python tools/mem.py check
   （探す・読む・点検するは tools/recall.py。このファイルは書き込み専用）
@@ -34,9 +34,14 @@ mem.py ── memory/ への「決定的な追記」CLI。
 from __future__ import annotations
 
 import argparse
+import functools
 import json
+import os
 import re
 import sys
+import tempfile
+import threading
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -63,9 +68,96 @@ def read(path: Path) -> list[str]:
     return path.read_text(encoding="utf-8").splitlines()
 
 
-def write(path: Path, lines: list[str]) -> None:
+def write_text_atomic(path: Path, text: str) -> None:
+    """一時ファイルに書いてから置き換える。読み手は「前の内容」か「新しい内容」のどちらかだけを見る（途中の空ファイルを見ない）。"""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        for _ in range(100):  # Windows では読み手が開いている間 replace が失敗するので少し待つ
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                time.sleep(0.02)
+        raise MemError(f"{path.name} を置き換えられない（他のプログラムが開いている）")
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def write(path: Path, lines: list[str]) -> None:
+    write_text_atomic(path, "\n".join(lines).rstrip("\n") + "\n")
+
+
+# 書き込みの排他。ボード（複数スレッド）・Claude の CLI・無人実行が同じ markdown に書くので、
+# 「ロック → 読む → 変える → 原子的に書く → 解放」を1単位にする。プロセス間は memory/.mem.lock、スレッド間は RLock。
+LOCK_WAIT_SEC = 20
+LOCK_STALE_SEC = 120
+_THREAD_LOCK = threading.RLock()
+_DEPTH = threading.local()
+
+
+def _acquire_file_lock(root: Path) -> Path:
+    lock = root / "memory" / ".mem.lock"
+    deadline = time.time() + LOCK_WAIT_SEC
+    while True:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            with os.fdopen(fd, "w") as f:
+                f.write(f"{os.getpid()} {time.time():.0f}\n")
+            return lock
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > LOCK_STALE_SEC:  # 落ちたプロセスの置き土産
+                    os.remove(lock)
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.time() > deadline:
+                raise MemError("memory/ が他の書き込みでロック中（20秒待っても空かない）。少し待って再実行する")
+            time.sleep(0.02)
+
+
+def locked(fn):
+    """memory/ を書き換える関数に付ける。入れ子で呼ばれても1回だけロックする。"""
+    @functools.wraps(fn)
+    def wrapper(root: Path, *args, **kwargs):
+        with _THREAD_LOCK:
+            depth = getattr(_DEPTH, "n", 0)
+            lock = _acquire_file_lock(root) if depth == 0 else None
+            _DEPTH.n = depth + 1
+            try:
+                return fn(root, *args, **kwargs)
+            finally:
+                _DEPTH.n = depth
+                if lock is not None:
+                    try:
+                        os.remove(lock)
+                    except FileNotFoundError:
+                        pass
+    return wrapper
+
+
+DATE_ARG_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def check_date(value: str | None, label: str, allow_none: bool = True) -> str | None:
+    """期限・フォロー日は YYYY-MM-DD か「なし」。「来週」「明日」のような相対表現は呼び出し側で日付に直す。"""
+    if value is None or value == "":
+        return None
+    if allow_none and value in ("なし", "-"):
+        return "なし"
+    if not DATE_ARG_RE.match(value):
+        fail(f"{label} は YYYY-MM-DD で指定する（「{value}」は不可。相対表現は日付に直してから渡す）")
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        fail(f"{label}「{value}」は存在しない日付")
+    return value
 
 
 def find_section(lines: list[str], heading_substr: str) -> int:
@@ -101,14 +193,25 @@ def append_row(lines: list[str], header_idx: int, end_idx: int, row: list[str]) 
     return lines[:header_idx + 2] + body + [new_row] + lines[end_idx:]
 
 
-def next_id(lines: list[str], prefix: str) -> str:
-    """表の行（| …）とリスト項目（- [ ] / - [x]）に現れる ID だけを数える（説明文中の例 C-001 は無視）。"""
-    nums = [
+def _ids_in(lines: list[str], prefix: str) -> list[int]:
+    return [
         int(m.group(1))
         for ln in lines
         if ln.startswith("|") or ln.startswith("- [")
         for m in re.finditer(rf"\b{re.escape(prefix)}-(\d{{3,}})\b", ln)
     ]
+
+
+def next_id(lines: list[str], prefix: str, root: Path | None = None) -> str:
+    """表の行（| …）とリスト項目（- [ ] / - [x]）に現れる ID だけを数える（説明文中の例 C-001 は無視）。
+    root を渡すと memory/ 配下の archive/ も数える（退避した ID を再利用しない）。"""
+    nums = _ids_in(lines, prefix)
+    if root is not None:
+        for f in (root / "memory").rglob("archive/*.md"):
+            try:
+                nums += _ids_in(f.read_text(encoding="utf-8").splitlines(), prefix)
+            except OSError:
+                pass
     return f"{prefix}-{(max(nums) + 1) if nums else 1:03d}"
 
 
@@ -157,7 +260,12 @@ def inbox_path(root: Path) -> Path:
     return p
 
 
+@locked
 def inbox_add(root: Path, text: str, source: str) -> None:
+    if not (text or "").strip():
+        fail("inbox に入れる内容が空")
+    if len(text) > 1000:
+        fail("inbox の1件は1000字まで（長文は memos/ にファイルで置き、inbox には要点とパス）")
     p = inbox_path(root)
     lines = read(p)
     # 同じ文面が未分類に残っていれば足さない（/update の無人取り込みを何度回しても inbox が膨らまないように）
@@ -167,7 +275,7 @@ def inbox_add(root: Path, text: str, source: str) -> None:
         if m and norm(m.group(2)) == norm(esc(text)):
             ok(f"inbox {m.group(1)} に同じ内容が未分類で残っている（追加しない）")
             return
-    iid = next_id(lines, "I")
+    iid = next_id(lines, "I", root)
     sec = find_section(lines, "未分類")
     if sec < 0:
         fail("inbox.md に『## 未分類』が無い")
@@ -185,6 +293,7 @@ def inbox_add(root: Path, text: str, source: str) -> None:
     ok(f"inbox {iid} に保存（未分類）。分類したら `mem.py inbox resolve {iid} --to <記録先>`")
 
 
+@locked
 def inbox_resolve(root: Path, iid: str, to: str) -> None:
     p = inbox_path(root)
     lines = read(p)
@@ -234,7 +343,7 @@ def commitments_path(root: Path) -> Path:
     return p
 
 
-def ensure_id_column(lines: list[str], header_idx: int, end_idx: int) -> tuple[list[str], int]:
+def ensure_id_column(lines: list[str], header_idx: int, end_idx: int, root: Path | None = None) -> tuple[list[str], int]:
     """表に ID 列が無ければ先頭に挿入し、既存行に ID を振る（旧雛形からの移行）。end_idx は変わらない。"""
     hdr = cells(lines[header_idx])
     if hdr and hdr[0] == "ID":
@@ -245,7 +354,7 @@ def ensure_id_column(lines: list[str], header_idx: int, end_idx: int) -> tuple[l
         if PLACEHOLDER_RE.match(lines[i]):
             lines[i] = "| （未登録） |" + " |" * len(hdr)
         else:
-            cid = next_id(lines, "C")
+            cid = next_id(lines, "C", root)
             lines[i] = f"| {cid} " + lines[i].strip()
     return lines, end_idx
 
@@ -269,7 +378,14 @@ def ensure_rel_column(lines: list[str], header_idx: int, end_idx: int) -> list[s
     return lines
 
 
+@locked
 def commitment_add(root: Path, a: argparse.Namespace) -> None:
+    if a.kind not in KIND_SECTION:
+        fail(f"種別は {list(KIND_SECTION)} のいずれか")
+    if not (a.content or "").strip():
+        fail("--content（内容）が空")
+    a.due = check_date(a.due, "--due（期限）")
+    a.follow = check_date(a.follow, "--follow（フォロー日）", allow_none=False)
     p = commitments_path(root)
     lines = read(p)
     sec = find_section(lines, KIND_SECTION[a.kind])
@@ -278,9 +394,9 @@ def commitment_add(root: Path, a: argparse.Namespace) -> None:
     h, e = find_table(lines, sec)
     if h < 0:
         fail(f"『{KIND_SECTION[a.kind]}』節に表が無い")
-    lines, e = ensure_id_column(lines, h, e)
+    lines, e = ensure_id_column(lines, h, e, root)
     lines = ensure_rel_column(lines, h, e)
-    cid = next_id(lines, "C")
+    cid = next_id(lines, "C", root)
     rel = (a.rel or "-").strip("`")
     state = a.state or "open"
     if state not in STATES:
@@ -312,6 +428,7 @@ def touch_updated(lines: list[str]) -> list[str]:
     return lines
 
 
+@locked
 def _commitment_update_cell(root: Path, cid: str, column: str, value: str, label: str) -> None:
     """ID で行を特定し、ヘッダ名 column のセルを value に置き換える。"""
     p = commitments_path(root)
@@ -339,10 +456,14 @@ def commitment_set_state(root: Path, cid: str, state: str) -> None:
 
 
 def commitment_set_due(root: Path, cid: str, due: str) -> None:
+    due = check_date(due, "期限") or "なし"
     _commitment_update_cell(root, cid, "期限", due, "期限")
 
 
 def commitment_set_follow(root: Path, cid: str, follow: str) -> None:
+    follow = check_date(follow, "フォロー日", allow_none=False)
+    if not follow:
+        fail("フォロー日が空")
     _commitment_update_cell(root, cid, "フォロー日", follow, "フォロー日")
 
 
@@ -409,6 +530,7 @@ def sync_show(root: Path, as_json: bool) -> None:
         print(f"{src:12s} {at}")
 
 
+@locked
 def sync_mark(root: Path, source: str, at: str | None) -> None:
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,30}", source):
         fail("source は英小文字の短い名前（calendar / gmail / slack / backlog / github など）")
@@ -417,11 +539,12 @@ def sync_mark(root: Path, source: str, at: str | None) -> None:
         fail("--at は YYYY-MM-DD または YYYY-MM-DDTHH:MM")
     st = sync_load(root)
     st[source] = at
-    sync_path(root).write_text(json.dumps(st, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_text_atomic(sync_path(root), json.dumps(st, ensure_ascii=False, indent=2) + "\n")
     ok(f"{source} の取り込みを {at} まで済みとして記録")
 
 
 # ---------------------------------------------------------------- people
+@locked
 def person_new(root: Path, a: argparse.Namespace) -> None:
     """_template.md から人物ファイルを作る。識別子は {姓}-{名}-{所属略称}-{役職略称}（役職不明なら部署略称）。"""
     ident = a.ident.removesuffix(".md")
@@ -458,20 +581,30 @@ def person_new(root: Path, a: argparse.Namespace) -> None:
     ok(f"人物ファイルを作成: {dst.relative_to(root).as_posix()}（成熟度 Lv0。dashboard.md の人物表への追加は別途）")
 
 
+IDENT_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)+$")
+
+
 def person_path(root: Path, ident: str) -> Path:
-    ident = ident.removesuffix(".md")
-    if "/" in ident or "\\" in ident:
-        p = root / ident
-        if not p.suffix:
-            p = p.with_suffix(".md")
-    else:
-        p = root / "memory" / "people" / f"{ident}.md"
+    ident = (ident or "").strip().removesuffix(".md")
+    if "/" in ident or "\\" in ident:  # memory/people/{識別子}.md の形で渡されたとき
+        ident = ident.replace("\\", "/").rsplit("/", 1)[-1]
+    if not IDENT_RE.match(ident):
+        fail(f"人物の識別子が不正: 「{ident}」（英小文字・数字・ハイフン。例: tanaka-kenji-abc-corp-cfo）")
+    p = root / "memory" / "people" / f"{ident}.md"
     if not p.exists():
         fail(f"人物ファイルが無い: {p}（_template.md から作成し、識別子を記録してください）")
     return p
 
 
-def person_append(root: Path, ident: str, heading: str, row: list[str], label: str) -> None:
+def _norm_cell(s: str) -> str:
+    return re.sub(r"\s+", "", esc(s or ""))
+
+
+@locked
+def person_append(root: Path, ident: str, heading: str, row: list[str], label: str) -> bool:
+    """表に1行足す。日付以外の主要な欄（2〜3列目）が同じ行が既にあれば足さない（同じ観察の二重記録を防ぐ）。"""
+    if not all((c or "").strip() for c in row[1:3]):
+        fail(f"{label}の主要な欄が空")
     p = person_path(root, ident)
     lines = read(p)
     sec = find_section(lines, heading)
@@ -480,13 +613,22 @@ def person_append(root: Path, ident: str, heading: str, row: list[str], label: s
     h, e = find_table(lines, sec)
     if h < 0:
         fail(f"『{heading}』に表が無い")
+    key = [_norm_cell(c) for c in row[1:3]]
+    for ln in lines[h + 2:e]:
+        c = cells(ln)
+        if len(c) >= 3 and [_norm_cell(x) for x in c[1:3]] == key:
+            ok(f"{p.name} の{label}に同じ内容が既にある（追加しない）")
+            return False
     lines = append_row(lines, h, e, row)
     write(p, lines)
     ok(f"{p.name} の{label}に追記")
+    return True
 
 
+@locked
 def person_observe(root: Path, a: argparse.Namespace) -> None:
-    person_append(root, a.ident, "判断事例ログ", [today(), a.situation, a.judgment, a.reason or "（不明）"], "判断事例ログ")
+    if not person_append(root, a.ident, "判断事例ログ", [today(), a.situation, a.judgment, a.reason or "（不明）"], "判断事例ログ"):
+        return
     # 成熟度の再評価の目安を出す
     p = person_path(root, a.ident)
     lines = read(p)
@@ -497,6 +639,7 @@ def person_observe(root: Path, a: argparse.Namespace) -> None:
         print(f"   判断事例が {n} 件。成熟度 Lv2 以上の要件を満たす（人物ファイルの成熟度行を確認）")
 
 
+@locked
 def person_add_alias(root: Path, ident: str, alias: str) -> None:
     """基本情報の「呼び名」に追加する（無ければ関係の種別の直後に作る）。tools/recall.py の名前解決に使う。"""
     alias = alias.strip()
@@ -524,6 +667,7 @@ def person_add_alias(root: Path, ident: str, alias: str) -> None:
     ok(f"{p.name} に呼び名「{alias}」を追加")
 
 
+@locked
 def person_set_icon(root: Path, ident: str, icon: str) -> None:
     """基本情報の「アイコン」行を更新する（無ければ関係の種別の直後に挿入）。絵文字1つかボードのアイコン名。"""
     icon = icon.strip()
@@ -564,13 +708,59 @@ def decisions_path(root: Path, project: str) -> Path:
     return p
 
 
+DECISION_HEAD_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}): (.*)$")
+DECISION_ID_RE = re.compile(r"^- \*\*ID\*\*: (D-\d{3,})\s*$")
+
+
+def next_decision_id(root: Path) -> str:
+    """決定の ID は全案件・過去分を通して一意（D-001…）。"""
+    nums = []
+    for f in (root / "memory" / "projects").rglob("*.md") if (root / "memory" / "projects").exists() else []:
+        if f.name.startswith("decisions") or "archive" in f.parts:
+            try:
+                nums += [int(m.group(1)[2:]) for m in map(DECISION_ID_RE.match, f.read_text(encoding="utf-8").splitlines()) if m]
+            except OSError:
+                pass
+    return f"D-{(max(nums) + 1) if nums else 1:03d}"
+
+
+def _decision_blocks(lines: list[str]) -> list[dict]:
+    """decisions.md の各ブロック：見出し行・終端・題名・ID・状態行の位置。"""
+    blocks = []
+    for i, ln in enumerate(lines):
+        m = DECISION_HEAD_RE.match(ln)
+        if m:
+            blocks.append({"head": i, "title": m.group(2).strip(), "id": None, "status": None})
+    for k, b in enumerate(blocks):
+        end = blocks[k + 1]["head"] if k + 1 < len(blocks) else len(lines)
+        b["end"] = end
+        for j in range(b["head"] + 1, end):
+            if lines[j].startswith("## "):
+                b["end"] = j
+                break
+            mid = DECISION_ID_RE.match(lines[j])
+            if mid:
+                b["id"] = mid.group(1)
+            if lines[j].startswith("- **状態**:") and b["status"] is None:
+                b["status"] = j
+    return blocks
+
+
+@locked
 def decision_add(root: Path, a: argparse.Namespace) -> None:
+    if not (a.title or "").strip():
+        fail("--title が空")
+    a.verify_date = check_date(a.verify_date, "--verify-date（検証日）", allow_none=False)
     p = decisions_path(root, a.project)
+    if any(re.sub(r"\s+", "", b["title"]) == re.sub(r"\s+", "", a.title) for b in _decision_blocks(read(p))):
+        fail(f"「{a.title}」と同じ題の決定が既にある（同じ件なら set-status、別件なら題を変える）")
     status = "提案（未承認）" if a.status == "proposed" else "決定"
+    did = next_decision_id(root)
     block = [
         "",
         f"## {today()}: {a.title}",
         f"- **状態**: {status}",
+        f"- **ID**: {did}",
         f"- **決定内容**: {a.content}",
         f"- **決定理由**: {a.reason}",
         f"- **影響範囲**: {a.impact or '（未記入）'}",
@@ -581,31 +771,43 @@ def decision_add(root: Path, a: argparse.Namespace) -> None:
     ]
     lines = read(p) + block
     write(p, lines)
-    ok(f"{a.project}/decisions.md に「{a.title}」を{status}として記録（検証日 {a.verify_date}）")
+    ok(f"{a.project}/decisions.md に {did}「{a.title}」を{status}として記録（検証日 {a.verify_date}）")
 
 
-def decision_set_status(root: Path, project: str, title: str, status: str) -> None:
-    p = decisions_path(root, project)
-    lines = read(p)
+@locked
+def decision_set_status(root: Path, project: str, key: str, status: str) -> None:
+    """key は決定の ID（D-001）か、題名の完全一致。部分一致では更新しない（「CRM導入」で「CRM導入見送り」を承認しない）。"""
     label = {"proposed": "提案（未承認）", "decided": "決定", "verified": "検証済"}.get(status)
     if not label:
         fail("状態は proposed / decided / verified")
-    for i, ln in enumerate(lines):
-        if ln.startswith("## ") and title in ln:
-            for j in range(i + 1, min(i + 12, len(lines))):
-                if lines[j].startswith("- **状態**:"):
-                    lines[j] = f"- **状態**: {label}（{today()}）"
-                    write(p, lines)
-                    ok(f"「{title}」の状態を {label} に")
-                    return
-            lines.insert(i + 1, f"- **状態**: {label}（{today()}）")
-            write(p, lines)
-            ok(f"「{title}」に状態 {label} を追加")
-            return
-    fail(f"「{title}」が見つからない")
+    p = root / "memory" / "projects" / project / "decisions.md"
+    if not p.exists():
+        fail(f"案件 {project} に decisions.md が無い")
+    lines = read(p)
+    blocks = _decision_blocks(lines)
+    key = (key or "").strip()
+    if re.fullmatch(r"D-\d{3,}", key):
+        hit = [b for b in blocks if b["id"] == key]
+    else:
+        nk = re.sub(r"\s+", "", key)
+        hit = [b for b in blocks if re.sub(r"\s+", "", b["title"]) == nk]
+    if not hit:
+        near = [f"{b['id'] or '（IDなし）'}「{b['title']}」" for b in blocks if key and key in b["title"]]
+        fail(f"「{key}」に完全一致する決定が無い" + (f"。候補: {' / '.join(near)}（ID で指定する）" if near else ""))
+    if len(hit) > 1:
+        fail(f"「{key}」に当たる決定が {len(hit)} 件ある: " + " / ".join(f"{b['id'] or '（IDなし）'}「{b['title']}」" for b in hit) + "。ID で指定する")
+    b = hit[0]
+    new = f"- **状態**: {label}（{today()}）"
+    if b["status"] is not None:
+        lines[b["status"]] = new
+    else:
+        lines.insert(b["head"] + 1, new)
+    write(p, lines)
+    ok(f"{b['id'] or ''}「{b['title']}」の状態を {label} に")
 
 
 # ---------------------------------------------------------------- migrate
+@locked
 def migrate(root: Path) -> None:
     """旧雛形からの移行：commitments.md の3表に ID 列を足し、既存行に ID を振る。inbox.md が無ければ作る。冪等。"""
     changed = []
@@ -621,7 +823,7 @@ def migrate(root: Path) -> None:
             if h < 0:
                 continue
             before = lines[h]
-            lines, _ = ensure_id_column(lines, h, e)
+            lines, _ = ensure_id_column(lines, h, e, root)
             lines = ensure_rel_column(lines, h, e)
             touched |= lines[h] != before
         if touched:
@@ -653,6 +855,32 @@ def migrate(root: Path) -> None:
         if added:
             write(d, out)
             changed.append(f"{d.parent.name}/decisions.md に状態行を {added} 件補完")
+    # 決定に ID が無ければ振る（日付順・全案件で一意）。部分一致の誤承認を防ぐため set-status は ID 指定が基本
+    pending = []
+    for d in sorted((root / "memory" / "projects").glob("*/decisions.md")) if (root / "memory" / "projects").exists() else []:
+        for b in _decision_blocks(read(d)):
+            if not b["id"]:
+                pending.append((read(d)[b["head"]][3:13], str(d)))
+    if pending:
+        counter = int(next_decision_id(root)[2:])
+        for path_s in sorted({ps for _, ps in pending}, key=lambda x: min(dt for dt, ps in pending if ps == x)):
+            d = Path(path_s)
+            lines = read(d)
+            out, n = [], 0
+            blocks = {b["head"]: b for b in _decision_blocks(lines)}
+            for i, ln in enumerate(lines):
+                out.append(ln)
+                b = blocks.get(i)
+                if b and not b["id"] and b["status"] is None:
+                    out.append(f"- **ID**: D-{counter:03d}")
+                    counter += 1
+                    n += 1
+                elif any(bb["status"] == i and not bb["id"] for bb in blocks.values()):
+                    out.append(f"- **ID**: D-{counter:03d}")
+                    counter += 1
+                    n += 1
+            write(d, out)
+            changed.append(f"{d.parent.name}/decisions.md の決定 {n} 件に ID を付与")
     print("📝 移行: " + ("、".join(changed) if changed else "変更なし（既に最新）"))
 
 
@@ -736,7 +964,8 @@ def main(argv: list[str] | None = None) -> None:
         s.add_argument(opt, required=True)
     s.add_argument("--impact"); s.add_argument("--revoke")
     s.add_argument("--status", choices=["proposed", "decided"], default="proposed")
-    s = de.add_parser("set-status"); s.add_argument("project"); s.add_argument("title"); s.add_argument("status")
+    s = de.add_parser("set-status"); s.add_argument("project"); s.add_argument("key", help="決定の ID（D-001）か題名の完全一致")
+    s.add_argument("status")
 
     sy = sub.add_parser("sync", help="/update の取り込み済み範囲（memory/sync-state.json）").add_subparsers(dest="sub", required=True)
     s = sy.add_parser("show"); s.add_argument("--json", action="store_true")
@@ -754,9 +983,18 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
 
+# 無人実行（AI_AGENCY_UNATTENDED）で許すのは「追記」と読み取りだけ。既存行の書き換え・状態変更・新規人物・決定はしない
+APPEND_ONLY = {("inbox", "add"), ("commitment", "add"), ("person", "observe"), ("person", "note"), ("sync", "mark")}
+READ_ONLY = {("inbox", "list"), ("commitment", "list"), ("sync", "show"), ("check", None)}
+
+
 def dispatch(root: Path, a: argparse.Namespace) -> None:
     if not (root / "memory").is_dir():
         fail(f"{root} に memory/ が無い（--root を確認）")
+    if os.environ.get("AI_AGENCY_UNATTENDED"):
+        op = (a.cmd, getattr(a, "sub", None))
+        if op not in APPEND_ONLY | READ_ONLY:
+            fail(f"無人実行では `{' '.join(x for x in op if x)}` はできない（追記と読み取りだけ）。人がいるときに行う")
 
     if a.cmd == "inbox":
         {"add": lambda: inbox_add(root, a.text, a.source),
@@ -777,7 +1015,7 @@ def dispatch(root: Path, a: argparse.Namespace) -> None:
          "predict": lambda: person_predict(root, a)}[a.sub]()
     elif a.cmd == "decision":
         {"add": lambda: decision_add(root, a),
-         "set-status": lambda: decision_set_status(root, a.project, a.title, a.status)}[a.sub]()
+         "set-status": lambda: decision_set_status(root, a.project, a.key, a.status)}[a.sub]()
     elif a.cmd == "sync":
         {"show": lambda: sync_show(root, a.json),
          "mark": lambda: sync_mark(root, a.source, a.at)}[a.sub]()

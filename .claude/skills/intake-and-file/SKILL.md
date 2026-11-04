@@ -93,10 +93,11 @@ description: ユーザーが外部情報（会議メモ、Slack会話、仕様�
 
 **決定事項 (`decisions.md`)** ── `python tools/mem.py decision add --project {slug} --title … --content … --reason …
 --prediction … --verify-date … [--status proposed|decided]` で追記する（既定は `提案（未承認）`。ユーザーが承認したら
-`decision set-status {slug} "{title}" decided`）。生成される書式：
+`decision set-status {slug} {D-ID} decided`。ID は全案件で一意で、出力に出る。題名で指定するなら完全一致）。生成される書式：
 ```markdown
 ## YYYY-MM-DD: {決定の要約}
 - **状態**: 提案（未承認）/ 決定 / 検証済
+- **ID**: D-001
 - **決定内容**: 
 - **決定理由**: 
 - **影響範囲**: 

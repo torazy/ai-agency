@@ -75,7 +75,9 @@ class DecisionAndSyncTest(TempRepo):
                  "--reason", "r", "--prediction", "p", "--verify-date", d(30))
         path = "memory/projects/kintai-saas/decisions.md"
         self.assertIn("- **状態**: 提案（未承認）", self.read(path))
-        self.mem("decision", "set-status", "kintai-saas", "クラウド型", "decided")
+        self.assertIn("- **ID**: D-001", self.read(path))
+        self.assertNotEqual(self.mem("decision", "set-status", "kintai-saas", "クラウド型", "decided", check=False).returncode, 0)  # 部分一致では動かない
+        self.mem("decision", "set-status", "kintai-saas", "D-001", "decided")
         self.assertIn("- **状態**: 決定", self.read(path))
 
     def test_sync_mark_and_show(self):

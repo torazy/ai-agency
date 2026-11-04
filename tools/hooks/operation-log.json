@@ -71,14 +71,7 @@
     }
   ],
   "server_aliases": {
-    "$comment": "claude.ai コネクタは mcp__{アカウント固有ID}__ の形で現れる。読みやすいカテゴリ名にしたいときにここで別名を付ける（/setup の棚卸しで判明したIDを登録。未登録ならIDのまま記録される）。",
-    "5b4a5dba-0a12-411e-b2a0-4a2a71e378cb": "gmail",
-    "68665b93-1c62-4f05-8812-12ecfa5cfd87": "google-calendar",
-    "6ea7d68f-c703-432d-a84a-59e9b6bab461": "google-drive",
-    "0c4e0ef3-0ea6-4bf4-9531-c3449c82779e": "notion",
-    "f9ac0333-3721-4792-b571-bd56c0518c54": "box",
-    "1a59c906-04da-521d-bda7-7f71b9f9e01c": "claude-docs",
-    "4043105e-e6cb-4522-b39f-ea304d429189": "figma"
+    "$comment": "claude.ai のコネクタは mcp__{アカウント固有ID}__ の形で現れる。読みやすいカテゴリ名にしたいときにここで別名を付ける（/setup の棚卸しで、そのインスタンスの ID を登録する。本体には登録しない）。未登録なら ID のまま記録される。例: \"0000aaaa-…\": \"gmail\""
   },
   "target_keys_priority": [
     "owner",

@@ -30,3 +30,7 @@ Thumbs.db
 .ai-agency-template
 /CLAUDE.local.md
 /.claude/skills/maint-*/
+
+# 書き込みのロックと一時ファイル（mem.py）
+memory/.mem.lock
+memory/**/.*.tmp

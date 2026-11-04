@@ -108,7 +108,7 @@ legal / generalist）。人格・共通規則・担当スキルはエージェ�
 
 ## Step 7: 学習を記録する
 - 統合で導いた推奨を `python tools/mem.py decision add --project {slug} --title … --prediction … --verify-date … --status proposed`
-  で **提案（未承認）** として記録する。ユーザーが採用したら `decision set-status {slug} "{title}" decided`
+  で **提案（未承認）** として記録する。ユーザーが採用したら `decision set-status {slug} {D-ID} decided`（ID は decision add の出力に出る。題名の部分一致では更新しない）
   （/review-decisions が検証するのは決定だけ。ユーザーの承認前に「決定」と書かない）
 - 専門家間の対立パターン・どの観点が効いたかを `memory/insights.md` に記録
 

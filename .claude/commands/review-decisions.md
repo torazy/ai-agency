@@ -30,7 +30,7 @@ description: 過去の決定（decisions.md）のうち検証日が到来した�
 ## Step 3: 学びを記録する
 - `memory/insights.md` に「予測が外れたパターン」「効いた判断軸」を追記する。
 - 関係する専門家領域の傾向（例：@accountant の見積りが楽観的になりがち 等）も記録する。
-- 当該 decisions.md の項目に「**検証済（{判定}・{日付}）**」を追記する。
+- 当該 decisions.md の項目を `python tools/mem.py decision set-status {slug} {D-ID} verified` で検証済にし、「**検証結果**」行に判定を書く。
 - 人物反応予測の場合：該当人物ファイルの検証テーブルに実際の反応・判定・学びを追記し、
   的中実績に応じてモデル成熟度を再評価する（`person-model-update` スキルの基準）。
 

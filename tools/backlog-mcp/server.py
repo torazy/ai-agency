@@ -58,7 +58,7 @@ async def _post(path: str, body: dict[str, Any]) -> Any:
         resp = await client.post(
             f"{_base_url()}{path}",
             params={"apiKey": _API_KEY},
-            json=body,
+            data=body,  # Backlog API v2 は application/x-www-form-urlencoded（JSON 本文は受け付けない）
         )
         resp.raise_for_status()
         return resp.json()
@@ -70,7 +70,7 @@ async def _patch(path: str, body: dict[str, Any]) -> Any:
         resp = await client.patch(
             f"{_base_url()}{path}",
             params={"apiKey": _API_KEY},
-            json=body,
+            data=body,  # 同上（form 形式）
         )
         resp.raise_for_status()
         return resp.json()

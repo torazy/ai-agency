@@ -24,7 +24,8 @@ description: 接続済みのコネクタ（カレンダー・メール・チャ�
 python tools/mem.py sync show --json
 ```
 サービスごとの前回取り込み時刻から今までを見る（記録が無ければ直近7日。`--since` があればそれを優先）。
-一度に見るのは**サービスごとに最大30件**。超える分は「古い順に取りこぼしあり」と報告して次回に回す。
+一度に見るのは**サービスごとに最大30件**で、**古い順に**処理する。30件で打ち切ったときは、最後に処理した項目の日時までだけを
+「済み」にする（Step 6）。残りは次回の範囲に入る（現在時刻まで済みにすると取りこぼす）。
 
 ## Step 2: 今あるものを読む（重複判定の材料）
 
@@ -69,7 +70,8 @@ python tools/mem.py sync show --json
 
 ## Step 6: 範囲を進めて報告
 
-見終わったサービスごとに `python tools/mem.py sync mark {calendar|gmail|slack|backlog|github}` を実行する
+見終わったサービスごとに `python tools/mem.py sync mark {calendar|gmail|slack|backlog|github}` を実行する。
+**30件で打ち切った**サービスは `--at {最後に処理した項目の日時 YYYY-MM-DDTHH:MM}` を付ける（付けないと現在時刻まで済みになる）
 （失敗・未接続のサービスは進めない）。
 
 ```

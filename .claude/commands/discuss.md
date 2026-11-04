@@ -112,7 +112,7 @@ description: テーマを与え、専門家（AIチーム）と実在人物の�
 1. **議事録**：`memory/projects/{slug}/meetings/YYYY-MM-DD-discuss-{topic}.md` に Step 6 の統合と、
    参加者ごとのラウンド別要約（各3行以内）を保存する（案件が無ければ `memory/memos/`）。全文は保存しない
 2. **提案**：`python tools/mem.py decision add --project {slug} --title … --prediction … --verify-date … --status proposed`
-   （ユーザーが採用したら `decision set-status … decided`）。`--verify-date` は「結果が分かる日」＝
+   （ユーザーが採用したら `decision set-status {slug} {D-ID} decided`）。`--verify-date` は「結果が分かる日」＝
    `python tools/mem.py commitment list --rel P:{slug}` で該当する約束の期限（報告日・提出日）を引く。無ければ 2 週間後
 3. **人物モデルの予測**：人物モデルが参加した場合、その最終立場を
    `python tools/mem.py person predict {識別子} --case "{テーマ}" --prediction "{予測した反応}" --verify-date {実際に話す予定日}`

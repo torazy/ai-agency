@@ -43,7 +43,7 @@ class OperationLoggerTest(TempRepo):
         lines = self.log_lines()
         cats = [ln.split("[", 1)[1].split("]", 1)[0] for ln in lines]
         self.assertEqual(cats, ["mem:inbox", "mem:commitment", "git-commit", "mem:person", "mem:inbox"])
-        self.assertIn("承認済", lines[0])
+        self.assertIn("自動許可", lines[0])          # 確認画面の印が無い通常モード＝許可ルールで通ったもの
         self.assertIn("自動実行[auto]", lines[3])
         self.assertIn("自動実行[unattended]", lines[4])
 

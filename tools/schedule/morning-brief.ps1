@@ -25,14 +25,17 @@ New-Item -ItemType Directory -Force "memory/briefs" | Out-Null
 # operation-logger records these runs as automatic (unattended), not as user-approved.
 $env:AI_AGENCY_UNATTENDED = "1"
 
-$allowed = @(
-    "Read", "Glob", "Grep",
-    "Bash(python tools/mem.py *)", "Bash(python3 tools/mem.py *)",
-    "Bash(python tools/recall.py *)", "Bash(python3 tools/recall.py *)",
+# Only append-type and read-only memory commands. mem.py itself also refuses rewrites while AI_AGENCY_UNATTENDED is set.
+$memOps = @("inbox add", "inbox list", "commitment add", "commitment list", "person observe", "person note",
+            "sync mark", "sync show", "check")
+$allowed = @("Read", "Glob", "Grep", "Edit(memory/briefs/**)")
+foreach ($op in $memOps) {
+    $allowed += "Bash(python tools/mem.py $op*)"
+    $allowed += "Bash(python3 tools/mem.py $op*)"
     # On Windows the model may call the same scripts through the PowerShell tool; allow that too.
-    "PowerShell(python tools/mem.py *)", "PowerShell(python tools/recall.py *)",
-    "Edit(memory/briefs/**)"
-)
+    $allowed += "PowerShell(python tools/mem.py $op*)"
+}
+$allowed += @("Bash(python tools/recall.py *)", "Bash(python3 tools/recall.py *)", "PowerShell(python tools/recall.py *)")
 $log = "memory/briefs/_last-run.log"
 $stamp = { Get-Date -Format "yyyy-MM-dd HH:mm" }
 "[$(& $stamp)] start" | Out-File -Encoding utf8 $log

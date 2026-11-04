@@ -277,6 +277,7 @@ def api_decisions(root: Path) -> dict:
                     continue
                 out.append({
                     "project": d.parent.name, "date": m.group(1), "title": m.group(2).strip(),
+                    "id": field(b, "ID"),
                     "status": field(b, "状態") or "（状態行なし）",
                     "content": field(b, "決定内容"), "prediction": field(b, "予測（期待した結果）"),
                     "verify_date": field(b, "検証日"), "verify_in": days_until(field(b, "検証日")),
@@ -310,7 +311,56 @@ def run_mem(fn, *args, **kwargs) -> dict:
     return {"ok": True, "message": mem.LAST_OK[-1] if mem.LAST_OK else ""}
 
 
+# 画面からの入力の検証。mem.py も検証するが、ここでは「形として受け付けてよいか」を先に見て 400 で返す
+# （型違い・必須欠落・長すぎ・不正な ID や日付で 500 や想定外の書き込みにしない）
+FIELD_RULES = {
+    "text": (r"(?s).{1,1000}", "1〜1000字"), "source": (r".{1,80}", "1〜80字"), "to": (r".{1,300}", "1〜300字"),
+    "content": (r".{1,300}", "1〜300字"), "who": (r".{1,80}", "1〜80字"), "rel": (r".{1,120}", "1〜120字"),
+    "situation": (r".{1,300}", "1〜300字"), "judgment": (r".{1,300}", "1〜300字"), "reason": (r".{1,300}", "1〜300字"),
+    "insight": (r".{1,300}", "1〜300字"),
+    "id": (r"(C|I|D)-\d{3,}", "C-001 / I-001 / D-001 の形"),
+    "kind": (r"task|received|given", "task / received / given"),
+    "state": (r"open|in-progress|waiting|done|dropped", "open / in-progress / waiting / done / dropped"),
+    "status": (r"proposed|decided|verified", "proposed / decided / verified"),
+    "due": (r"\d{4}-\d{2}-\d{2}", "YYYY-MM-DD"), "follow": (r"\d{4}-\d{2}-\d{2}", "YYYY-MM-DD"),
+    "ident": (r"[a-z0-9]+(-[a-z0-9]+)+", "英小文字・数字・ハイフンの識別子"),
+    "project": (r"[A-Za-z0-9_-]{1,60}", "案件のスラッグ"), "icon": (r"[^|\n]{1,24}", "1〜24字"),
+    "title": (r".{1,200}", "1〜200字"),
+}
+REQUIRED = {
+    "/api/inbox/add": ["text"], "/api/inbox/resolve": ["id", "to"],
+    "/api/commitment/add": ["kind", "content"], "/api/commitment/state": ["id", "state"],
+    "/api/commitment/due": ["id", "due"], "/api/commitment/follow": ["id", "follow"],
+    "/api/person/observe": ["ident", "situation", "judgment"], "/api/person/icon": ["ident", "icon"],
+    "/api/person/note": ["ident", "situation", "insight"], "/api/decision/status": ["project", "status"],
+}
+
+
+def validate(path: str, body) -> str | None:
+    if not isinstance(body, dict):
+        return "本文は JSON オブジェクトで送る"
+    for k in REQUIRED.get(path, []):
+        if body.get(k) in (None, ""):
+            return f"{k} が必要"
+    for k, v in body.items():
+        if v in (None, ""):
+            continue
+        if not isinstance(v, str):
+            return f"{k} は文字列で送る"
+        rule = FIELD_RULES.get(k)
+        if rule and not re.fullmatch(rule[0], v.strip()):
+            return f"{k} が不正（{rule[1]}）"
+    if path == "/api/decision/status" and not (body.get("id") or body.get("title")):
+        return "決定の id（推奨）か title が必要"
+    return None
+
+
 def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
+    if path not in REQUIRED:
+        return 404, {"ok": False, "error": "unknown endpoint"}
+    err = validate(path, body)
+    if err:
+        return 400, {"ok": False, "error": err}
     g = body.get
     try:
         if path == "/api/inbox/add":
@@ -336,7 +386,7 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
             ns = Namespace(ident=g("ident"), situation=g("situation"), insight=g("insight"))
             res = run_mem(mem.person_note, root, ns)
         elif path == "/api/decision/status":
-            res = run_mem(mem.decision_set_status, root, g("project", ""), g("title", ""), g("status", ""))
+            res = run_mem(mem.decision_set_status, root, g("project", ""), g("id") or g("title", ""), g("status", ""))
         else:
             return 404, {"ok": False, "error": "unknown endpoint"}
     except Exception as e:  # noqa: BLE001 ── ボードは落とさず理由を返す

@@ -130,8 +130,13 @@ class WorkTest(TempRepo):
 
     def test_pending_and_idle_dispatch_skips_claude(self):
         pd = json.loads(self.work("pending", "--json").stdout)
-        self.assertTrue(pd["work"] and pd["observe"])                                  # 期限の近い C-002 → 提案（未判定）
+        self.assertTrue(pd["work"])                                                     # 期限の近い C-002 → 提案（未判定）
+        self.assertFalse(pd["observe"])                                                 # /setup 前：観察する材料が無い
         self.assertEqual(len(pd["proposed"]), 1)
+        dash = self.root / "memory/dashboard.md"
+        dash.write_text(dash.read_text(encoding="utf-8").replace("**名前**: （未設定）", "**名前**: 山田"), encoding="utf-8")
+        self.write("memory/people/sato.md", "# 佐藤\n")
+        self.assertTrue(self.w.pending(self.root)["observe"])
         self.work("decide", pd["undecided"][0], "ask", "--reason", "人の判断")
         pd = self.w.pending(self.root)
         self.assertEqual((pd["proposed"], pd["undecided"], pd["work"]), ([], [], False))  # 要承認は割り振り役の仕事ではない

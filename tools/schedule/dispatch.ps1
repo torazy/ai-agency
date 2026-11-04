@@ -4,7 +4,9 @@
 #
 # Register once (every 15 minutes; the real interval is "jikkou kankaku" in memory/work/settings.md):
 #   schtasks /Create /TN "ai-agency dispatch" /SC MINUTE /MO 15 `
-#     /TR "powershell -NoProfile -ExecutionPolicy Bypass -File \"<instance path>\tools\schedule\dispatch.ps1\""
+#     /TR "conhost.exe --headless powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"<instance path>\tools\schedule\dispatch.ps1\""
+#   (conhost --headless keeps a console window from flashing every 15 minutes; Windows 10 1903+ / 11)
+#   Run once now: schtasks /Run /TN "ai-agency dispatch"
 #   Remove: schtasks /Delete /TN "ai-agency dispatch"
 #
 # Prerequisite: open this folder in Claude Code once and trust it. claude and python must be on PATH.

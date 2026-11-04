@@ -1,0 +1,4 @@
+# シェルスクリプトは LF 固定（Windows で checkout しても bash で動くように）
+*.sh   text eol=lf
+# PowerShell は CRLF 固定
+*.ps1  text eol=crlf

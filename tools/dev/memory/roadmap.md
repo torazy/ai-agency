@@ -54,6 +54,23 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
 | 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | ✅ 2026-11-04（/update コマンド・mem.py sync・inbox の重複防止・/morning-brief --unattended → memory/briefs/・tools/schedule の ps1/sh・ログの unattended 区別・起動フックとボードへの表示・/setup Step 6 をローカル定期実行に） |
 
+## タスク一覧とエージェントの動き（2026-11-04・ユーザー要望）
+
+「ボードにタスク一覧」「誰がアサインされて動いているか」「人がやるタスクとエージェントがやるタスクがある」に対応。
+- 担当の表し方：約束台帳の「出した指示」の相手を `@handle` にするとエージェントの担当（`.claude/agents/` にいるか検査・
+  フォロー日は省略可＝期限）。自分のタスク／受けた指示＝自分、`@` なしの相手＝人。新しい台帳は作らない
+- `commitment set-content`（前段の残課題）。ボードからも内容を書き換えられる
+- 動きの記録は `tools/hooks/agent-activity.py`（PreToolUse/PostToolUse/PostToolUseFailure の Agent|Task と SubagentStop）
+  → `memory/task-log/agent-runs.jsonl`。description・prompt の C-ID で約束と結ぶ
+- ボード：「約束」タブを「タスク」に（ボード＝未着手/進行中/相手待ち/完了の列、表との切替、担当で絞り込み、追加フォームの
+  「誰がやる」にエージェント）。カードに担当のアイコンと「稼働中／確認待ち／失敗」。チームタブに「最近の動き」と各エージェントの
+  稼働・最終稼働・持ちタスク、今日タブに「エージェントの動き」、無人実行（朝のブリーフ）の最後の実行も出す
+- CLAUDE.md §4 にまとまった作業を切り出すときの行（台帳に @handle で載せ、Agent の description に C-ID）
+- テスト test_agent_tasks（7件）。テストインスタンスで本物の起動（generalist・C-006）が記録されることと、ボードの表示・追加・
+  書き換えをブラウザで確認
+- 未検証：バックグラウンド起動の SubagentStop と起動の対応づけ（同じ会話・同じ種類の最も古いものを閉じる近似）を実機で。
+  エージェント同士が同時に同じ種類で動くと取り違える可能性がある
+
 ## 公式 Productivity から取り入れ（2026-11-04）
 
 比較の結果、公式が優れていた「用語集」と「初回の一括取り込み」を取り入れた。用語は業務ルールと並ぶ知識の置き場
@@ -67,7 +84,7 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 - テストインスタンス（headless）：①「PSR を金曜までに」→ decode で PSR が未知と判定し、約束を台帳に入れたうえで意味だけ1問
   ②「PSR はパイプライン状況報告、経費精算は翌月5営業日まで（経費規程第4条）」→ term add（範囲・出典つき）と rule add（R-001）。
   以後 decode が PSR を解読。約0.63 / 0.35 USD
-- 残課題：約束の内容を書き換える命令が無い（①で入れた C-006 の「PSR の意味は確認中」が残った）→ `commitment set-content` を足す
+- 残課題：約束の内容を書き換える命令が無い（①で入れた C-006 の「PSR の意味は確認中」が残った）→ `commitment set-content` を足した（次節）
 
 ## ZIP からの更新（2026-11-04）
 

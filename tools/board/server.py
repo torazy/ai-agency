@@ -201,8 +201,83 @@ def api_inbox(root: Path) -> dict:
     return {"pending": pending, "resolved": resolved[:30]}
 
 
+RUN_STALE_SEC = {"running": 2 * 3600, "background": 6 * 3600}
+
+
+def agent_runs(root: Path) -> list[dict]:
+    """agent-activity.py の記録（memory/task-log/agent-runs.jsonl）を、起動1回＝1件にまとめる。"""
+    log = root / "memory" / "task-log" / "agent-runs.jsonl"
+    try:
+        lines = log.read_text(encoding="utf-8").splitlines()[-3000:]
+    except OSError:
+        return []
+    runs, by_tuid = [], {}
+    now = datetime.now().timestamp()
+    for ln in lines:
+        try:
+            e = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        ev = e.get("ev")
+        if ev == "start":
+            r = {"tuid": e.get("tuid"), "sid": e.get("sid", ""), "agent": e.get("agent", ""), "desc": e.get("desc", ""),
+                 "tasks": e.get("tasks", []), "bg": e.get("bg", False), "start": e.get("ts"), "end": None,
+                 "state": "running", "unattended": e.get("unattended", False)}
+            runs.append(r)
+            if r["tuid"]:
+                by_tuid[r["tuid"]] = r
+        elif ev in ("end", "launched", "fail") and e.get("tuid") in by_tuid:
+            r = by_tuid[e["tuid"]]
+            if ev == "end" and r["state"] == "running":
+                r.update(state="done", end=e.get("ts"))
+            elif ev == "launched":
+                r["state"] = "background"
+            elif ev == "fail":
+                r.update(state="failed", end=e.get("ts"))
+        elif ev == "stop":  # バックグラウンドで動いていたものの終了：同じ会話・同じ種類で、まだ動いている最も古いもの
+            for r in runs:
+                if r["sid"] == e.get("sid") and r["agent"] == e.get("agent") and r["state"] == "background":
+                    r.update(state="done", end=e.get("ts"))
+                    break
+    for r in runs:
+        lim = RUN_STALE_SEC.get(r["state"])
+        if lim and now - (r["start"] or 0) > lim:
+            r["state"] = "unknown"  # 終了の記録が無いまま時間がたった（会話が途中で閉じた等）
+        r["elapsed"] = round(((r["end"] or now) - (r["start"] or now)))
+        r["start_hm"] = datetime.fromtimestamp(r["start"]).strftime("%m/%d %H:%M") if r["start"] else ""
+    return runs
+
+
+def unattended_status(root: Path) -> dict:
+    """無人実行（朝のブリーフ）の最後の実行。"""
+    t = text(root / "memory" / "briefs" / "_last-run.log")
+    starts = re.findall(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\] start", t)
+    exits = re.findall(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\] exit (\d+)", t)
+    if not starts:
+        return {}
+    return {"start": starts[-1], "exit": exits[-1][1] if exits else None, "end": exits[-1][0] if exits else None,
+            "running": not exits or exits[-1][0] < starts[-1]}
+
+
+def api_activity(root: Path) -> dict:
+    runs = agent_runs(root)
+    today_s = date.today().isoformat()
+    by_agent: dict = {}
+    for r in runs:
+        a = by_agent.setdefault(r["agent"], {"running": 0, "today": 0, "last": "", "last_desc": ""})
+        if r["state"] in ("running", "background"):
+            a["running"] += 1
+        if r["start"] and datetime.fromtimestamp(r["start"]).date().isoformat() == today_s:
+            a["today"] += 1
+        a["last"], a["last_desc"] = r["start_hm"], r["desc"]
+    running = [r for r in runs if r["state"] in ("running", "background")]
+    recent = [r for r in runs if r["state"] not in ("running", "background")][-30:][::-1]
+    return {"running": running[::-1], "recent": recent, "by_agent": by_agent, "unattended": unattended_status(root)}
+
+
 def api_commitments(root: Path) -> dict:
     rows = mem.commitment_rows(root) if (root / "memory" / "commitments.md").exists() else []
+    runs = agent_runs(root)
     out = []
     for r in rows:
         d = dict(r)
@@ -210,6 +285,21 @@ def api_commitments(root: Path) -> dict:
         d["who"] = r.get("依頼者") or r.get("相手") or ""
         d["due_in"] = days_until(r.get("期限", ""))
         d["follow_in"] = days_until(r.get("フォロー日", "")) if "フォロー日" in r else None
+        # 誰がやるか：自分（自分のタスク・受けた指示）／人（人に出した指示）／エージェント（@handle に任せた）
+        if r["kind"] == "given":
+            d["assignee"] = "agent" if d["who"].startswith("@") else "person"
+        else:
+            d["assignee"] = "self"
+        mine = [x for x in runs if r.get("ID") in x["tasks"]]
+        d["runs"] = len(mine)
+        if any(x["state"] in ("running", "background") for x in mine):
+            d["agent_state"] = "running"
+        elif mine and mine[-1]["state"] == "done" and r.get("状態") not in mem.CLOSED:
+            d["agent_state"] = "review"   # エージェントは終わった。秘書が結果を確かめて完了にする
+        elif mine and mine[-1]["state"] == "failed":
+            d["agent_state"] = "failed"
+        else:
+            d["agent_state"] = ""
         out.append(d)
     return {"rows": out}
 
@@ -344,6 +434,7 @@ REQUIRED = {
     "/api/inbox/add": ["text"], "/api/inbox/resolve": ["id", "to"],
     "/api/commitment/add": ["kind", "content"], "/api/commitment/state": ["id", "state"],
     "/api/commitment/due": ["id", "due"], "/api/commitment/follow": ["id", "follow"],
+    "/api/commitment/content": ["id", "content"],
     "/api/person/observe": ["ident", "situation", "judgment"], "/api/person/icon": ["ident", "icon"],
     "/api/person/note": ["ident", "situation", "insight"], "/api/decision/status": ["project", "status"],
     "/api/term/add": ["term", "meaning"], "/api/rule/add": ["content", "source"], "/api/rule/confirm": ["rid"],
@@ -391,6 +482,8 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
             res = run_mem(mem.commitment_set_due, root, g("id", ""), g("due", ""))
         elif path == "/api/commitment/follow":
             res = run_mem(mem.commitment_set_follow, root, g("id", ""), g("follow", ""))
+        elif path == "/api/commitment/content":
+            res = run_mem(mem.commitment_set_content, root, g("id", ""), g("content", ""))
         elif path == "/api/person/observe":
             ns = Namespace(ident=g("ident"), situation=g("situation"), judgment=g("judgment"), reason=g("reason"))
             res = run_mem(mem.person_observe, root, ns)
@@ -421,7 +514,7 @@ GETS = {
     "/api/summary": api_summary, "/api/situation": api_situation, "/api/inbox": api_inbox,
     "/api/commitments": api_commitments, "/api/projects": api_projects, "/api/people": api_people,
     "/api/decisions": api_decisions, "/api/oplog": api_oplog, "/api/agents": api_agents, "/api/brief": api_brief,
-    "/api/review": api_review, "/api/knowledge": api_knowledge,
+    "/api/review": api_review, "/api/knowledge": api_knowledge, "/api/activity": api_activity,
 }
 
 

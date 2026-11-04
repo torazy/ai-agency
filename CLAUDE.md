@@ -59,6 +59,7 @@ SessionStart フックが「[記憶の状態]」「[約束台帳]」「[inbox]�
 | テーマを与えて議論させたい（専門家同士、専門家＋人物モデル） | `/discuss`：@chief が司会。意見表明→反論・修正→収束のラウンド制 |
 | 実在の人への報告・提案・指示の通し方 | `/simulate`：その人の**思考モデル**（`memory/people/` の観察）を独立に召集し反応を予測 |
 | 単純な検索・ファイリング・単一領域の問い | @chief が直接、対応スキルで即答 |
+| まとまった作業を切り出す（調査・下書き・一括処理） | 約束台帳に `commitment add --kind given --who @handle` で載せ、Agent の description に C-ID を書いて渡す。ボードに担当と稼働が出る。結果は @chief が確かめて done |
 
 専門家は「正しい答え」、人物モデルは「実際のあの人の反応（予測）」を出す別の仕組み。両方要るなら `/consult` → `/simulate`。
 対応領域は `memory/team/roster.md`、不在なら `recruit-expert`、深掘りの手順を足すなら `expert-plugins`。

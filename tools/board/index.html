@@ -80,6 +80,22 @@
   .content{padding:22px 26px 60px;max-width:1280px}
   section{display:none;animation:fade .2s ease}section.active{display:block}
   @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .kanban{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;align-items:start;overflow-x:auto}
+  .kcol{background:color-mix(in srgb,var(--line-2) 60%,transparent);border:1px solid var(--line);border-radius:var(--r);padding:10px;min-height:120px}
+  .kcol-h{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--fg-2);margin:2px 4px 10px}
+  .kcol-h .ic{width:14px;height:14px}.kcol-h .n{margin-left:auto;color:var(--muted);font-weight:500}
+  .tcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;box-shadow:var(--shadow)}
+  .tcard .top{display:flex;gap:8px;align-items:flex-start}
+  .tcard .ct{font-weight:600;font-size:13px;line-height:1.45;flex:1;min-width:0;word-break:break-word}
+  .tcard .meta{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:6px;font-size:11.5px;color:var(--muted)}
+  .tcard .acts{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+  .tcard.agent{border-left:3px solid var(--accent)}
+  .live{display:inline-flex;align-items:center;gap:5px}
+  .live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 60%,transparent);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 55%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+  .run{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line-2);font-size:12.5px}
+  .run:last-child{border-bottom:0}
+  @media (max-width:900px){.kanban{grid-template-columns:repeat(4,78vw)}}
 
   /* ---------- cards & grid ---------- */
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
@@ -339,7 +355,7 @@
 /* ------------------------------------------------------------ helpers */
 const TABS=[
   ["today","今日","sun","期限・inbox・未承認の提案・situation"],
-  ["commitments","約束","check-square","約束台帳：自分のタスク・受けた指示・出した指示"],
+  ["commitments","タスク","check-square","誰がやるか（自分・人・エージェント）と状態で見るタスク一覧。約束台帳がもと"],
   ["inbox","inbox","inbox","「覚えておいて」の受け皿。分類して記録先へ"],
   ["projects","案件","folder","進行中プロジェクトの座標・期限・約束"],
   ["people","人物","users","関係者の思考モデル（/simulate の素材）"],
@@ -400,7 +416,7 @@ function dialog({title,icon="pen",fields,submit="保存"}){return new Promise(re
 /* ------------------------------------------------------------ state & render */
 let S={},cur="today";
 async function refresh(){
-  const keys=["summary","situation","inbox","commitments","projects","people","decisions","oplog","agents","brief","review","knowledge"];
+  const keys=["summary","situation","inbox","commitments","projects","people","decisions","oplog","agents","brief","review","knowledge","activity"];
   const vals=await Promise.all(keys.map(k=>fetch("/api/"+k).then(r=>r.json()).catch(e=>({error:String(e)}))));
   S=Object.fromEntries(keys.map((k,i)=>[k,vals[i]]));
   const sum=S.summary,name=val(sum.name),nick=val(sum.nickname);
@@ -414,7 +430,7 @@ async function refresh(){
   renderNav();renderTeamStrip();
   renderToday();renderCommitments();renderInbox();renderProjects();renderPeople();renderDecisions();renderKnowledge();renderTeam();renderLog();
 }
-function counts(){const {open,urgent,proposed}=S.derived;return {today:urgent.length,commitments:open.length,inbox:(S.inbox.pending||[]).length,projects:(S.projects.projects||[]).length,people:(S.people.people||[]).length,decisions:proposed.length,knowledge:((S.knowledge.terms||[]).length+(S.knowledge.rules||[]).filter(r=>r["状態"]==="有効").length),team:(S.agents.agents||[]).length,log:(S.oplog.items||[]).length};}
+function counts(){const {open,urgent,proposed}=S.derived;return {today:urgent.length,commitments:open.length,inbox:(S.inbox.pending||[]).length,projects:(S.projects.projects||[]).length,people:(S.people.people||[]).length,decisions:proposed.length,knowledge:((S.knowledge.terms||[]).length+(S.knowledge.rules||[]).filter(r=>r["状態"]==="有効").length),team:((S.activity||{}).running||[]).length,log:(S.oplog.items||[]).length};}
 function renderNav(){const c=counts();$("#nav").innerHTML=TABS.map(([k,l,i])=>{const n=c[k];const hot=k==="today"&&n>0?"hot":(k==="inbox"||k==="decisions")&&n>0?"warm":"";return `<button data-tab="${k}" class="${k===cur?"active":""}">${ic(i)}<span class="lbl">${l}</span>${n?`<span class="cnt ${hot}">${n}</span>`:""}</button>`;}).join("");
   $("#nav").querySelectorAll("button").forEach(b=>b.onclick=()=>show(b.dataset.tab));}
 function renderTeamStrip(){const ag=S.agents.agents||[];$("#team-n").textContent=`${ag.length}名`;$("#team-strip").innerHTML=ag.map(a=>`<span data-team="${esc(a.handle)}">${avatar(a.icon,"@"+a.handle,"sm",a.handle)}</span>`).join("");$("#team-strip").querySelectorAll("[data-team]").forEach(el=>el.onclick=()=>show("team"));}
@@ -428,6 +444,7 @@ function renderToday(){
     <div class="card"><div class="card-h">${ic("alert")}いま動くべき約束<span class="n">${urgent.length}</span></div>${urgent.length?urgent.map(comItem).join(""):empty("期限間近・フォロー到来の約束はありません","check")}</div>
     <div class="card"><div class="card-h">${ic("lightbulb")}未承認の提案<span class="n">${proposed.length}</span></div>${proposed.length?proposed.map(decItem).join(""):empty("承認待ちの提案はありません","badge-check")}</div>
     <div class="card"><div class="card-h">${ic("inbox")}inbox 未分類<span class="n">${inbox.length}</span></div>${inbox.length?inbox.map(inboxItem).join(""):empty("未分類の記憶はありません","inbox")}</div>
+    <div class="card"><div class="card-h">${ic("sparkles")}エージェントの動き<span class="n">${(S.activity.running||[]).length} 稼働中</span><span class="right">${act("詳しく","chevron",()=>show("team"),"ghost")}</span></div>${activityList(6)}</div>
     <div class="card"><div class="card-h">${ic("wrench")}記憶の点検<span class="n">${(S.review.findings||[]).length}</span><span class="right">秘書が直す ${S.review.auto||0} ・ 確認 ${S.review.ask||0}</span></div>${reviewList()}</div>
     <div class="card"><div class="card-h">${ic("file")}situation.md<span class="right">${ic("clock")}最終更新 ${esc(val(S.summary.situation_updated)||"未記録")}</span></div>${md(S.situation.markdown)}</div>
   </div>`;}
@@ -454,7 +471,7 @@ async function doSearch(q){q=q.trim();if(!q)return;const r=await fetch("/api/sea
 $("#search").onsubmit=e=>{e.preventDefault();doSearch(e.target.q.value);};
 
 /* --- commitments --- */
-function stateSeg(r){return `<span class="seg">${Object.entries(STATE).map(([s,[l,i]])=>actRaw(ic(i)+`<span class="lbl-s">${l}</span>`,()=>api("/api/commitment/state",{id:r.ID,state:s}),s===r["状態"]?"on":"").replace("<button ",`<button title="${l}" `))}</span>`;}
+function stateSeg(r){return `<span class="seg">${Object.entries(STATE).map(([s,[l,i]])=>actRaw(ic(i)+`<span class="lbl-s">${l}</span>`,()=>api("/api/commitment/state",{id:r.ID,state:s}),s===r["状態"]?"on":"").replace("<button ",`<button title="${l}" `)).join("")}</span>`;}
 function comItem(r){return `<div class="item">${avatar("",r.who||"自分","",r.who||"me")}<div class="body"><div class="ttl">${kindBadge(r.kind)}<span>${esc(r.content)}</span></div>
   <div class="meta"><span class="mono">${esc(r.ID)}</span>${val(r.who)?`<span>${ic("user")} ${esc(r.who)}</span>`:""}<span>${due(r["期限"],r.due_in)}</span>${r["フォロー日"]?`<span>${ic("eye")}フォロー ${due(r["フォロー日"],r.follow_in,"eye")}</span>`:""}${val(r["関連"])?`<span class="chip">${ic("tag")}${esc(r["関連"].replace(/`/g,""))}</span>`:""}</div>
   <div class="acts">${stateSeg(r)}${act("期限","calendar",()=>editDue(r))}</div></div></div>`;}
@@ -465,22 +482,43 @@ function comTable(rows){if(!rows.length)return empty("該当する約束はあ�
   <td class="nw">${stateSeg(r)}</td><td class="nw">${act("","calendar",()=>editDue(r),"icon")}${r.kind==="given"?act("","eye",()=>editFollow(r),"icon"):""}</td></tr>`).join("")}</tbody></table></div>`;}
 async function editDue(r){const o=await dialog({title:`${r.ID} の期限を変更`,icon:"calendar",fields:[{label:"内容",name:"c",value:r.content},{label:"新しい期限",name:"due",type:"date",value:/\d{4}-\d{2}-\d{2}/.test(r["期限"]||"")?r["期限"].match(/\d{4}-\d{2}-\d{2}/)[0]:"",required:true}]});if(o)api("/api/commitment/due",{id:r.ID,due:o.due});}
 async function editFollow(r){const o=await dialog({title:`${r.ID} のフォロー日を変更`,icon:"eye",fields:[{label:"内容",name:"c",value:r.content},{label:"新しいフォロー日",name:"f",type:"date",required:true}]});if(o)api("/api/commitment/follow",{id:r.ID,follow:o.f});}
+let taskView="board",taskWho="all";
+const agentOf=h=>(S.agents.agents||[]).find(a=>a.handle===String(h||"").replace(/^@/,""));
+function assigneeAvatar(r,size="sm"){if(r.assignee==="agent"){const a=agentOf(r.who);return avatar(a?a.icon:"sparkles",r.who,size,String(r.who).replace(/^@/,""));}
+  if(r.assignee==="person")return avatar("",r.who,size,r.who);return avatar("user","自分",size,"me");}
+function assigneeLabel(r){return r.assignee==="agent"?`${esc(r.who)}（エージェント）`:r.assignee==="person"?`${esc(r.who)} に依頼`:r.kind==="received"?`自分（${esc(r.who)}から）`:"自分";}
+function agentBadge(r){return r.agent_state==="running"?`<span class="badge t-ok live">稼働中</span>`:r.agent_state==="review"?`<span class="badge t-warn">${ic("eye")}確認待ち</span>`:r.agent_state==="failed"?`<span class="badge t-danger">${ic("alert")}失敗</span>`:"";}
+async function editContent(r){const o=await dialog({title:`${r.ID} の内容を書き換える`,icon:"pen",fields:[{label:"内容",name:"content",value:r.content,required:true}]});if(o&&o.content)api("/api/commitment/content",{id:r.ID,content:o.content});}
+function taskCard(r){return `<div class="tcard ${r.assignee==="agent"?"agent":""}"><div class="top">${assigneeAvatar(r)}<div class="ct">${esc(r.content)}</div></div>
+  <div class="meta"><span class="mono">${esc(r.ID)}</span><span>${assigneeLabel(r)}</span>${due(r["期限"],r.due_in)}${val(r["関連"])?`<span class="chip">${ic("tag")}${esc(r["関連"].replace(/`/g,""))}</span>`:""}${agentBadge(r)}</div>
+  <div class="acts">${stateSeg(r)}${act("","pen",()=>editContent(r),"icon")}${act("","calendar",()=>editDue(r),"icon")}</div></div>`;}
 function renderCommitments(){
-  const all=S.commitments.rows||[];const f=comFilter;
-  let rows=all.filter(r=>f.kind==="all"||r.kind===f.kind).filter(r=>f.state==="all"?true:f.state==="open"?!isClosed(r):r["状態"]===f.state);
-  const fbtn=(k,v,l,i)=>act(l,i,()=>{comFilter[k]=v;renderCommitments();},f[k]===v?"on":"");
-  $("#tab-commitments").innerHTML=`<div class="card"><div class="card-h">${ic("check-square")}約束台帳<span class="n">未完了 ${S.derived.open.length} / 全 ${all.length}</span></div>
-    <div class="filters">${fbtn("kind","all","すべて","layers")}${fbtn("kind","task","自分","user")}${fbtn("kind","received","受けた","arrow-in")}${fbtn("kind","given","出した","arrow-out")}<span style="width:10px"></span>${fbtn("state","open","未完了","circle")}${fbtn("state","waiting","相手待ち","hourglass")}${fbtn("state","done","完了","archive")}${fbtn("state","all","全状態","eye")}</div>
-    ${comTable(rows)}
+  const all=S.commitments.rows||[];
+  const pick=r=>taskWho==="all"||r.assignee===taskWho;
+  const rows=all.filter(pick);
+  const counts={all:all.filter(r=>!isClosed(r)).length,self:all.filter(r=>r.assignee==="self"&&!isClosed(r)).length,person:all.filter(r=>r.assignee==="person"&&!isClosed(r)).length,agent:all.filter(r=>r.assignee==="agent"&&!isClosed(r)).length};
+  const whoBtn=(v,l,i)=>act(`${l} <span class="muted">${counts[v]}</span>`,i,()=>{taskWho=v;renderCommitments();},taskWho===v?"on":"");
+  const viewSeg=`<span class="seg">${actRaw(ic("layers")+'<span class="lbl-s">ボード</span>',()=>{taskView="board";renderCommitments();},taskView==="board"?"on":"")}${actRaw(ic("file")+'<span class="lbl-s">表</span>',()=>{taskView="table";renderCommitments();},taskView==="table"?"on":"")}</span>`;
+  const cols=[["open","未着手","circle"],["in-progress","進行中","play"],["waiting","相手待ち","hourglass"],["done","完了（最近）","archive"]];
+  const recentDone=r=>{const m=/\d{4}-\d{2}-\d{2}/.exec(r["追加日"]||r["受領日"]||r["依頼日"]||"");return !m||((Date.now()-new Date(m[0]))/864e5)<45;};
+  const board=`<div class="kanban">${cols.map(([st,l,i])=>{const cs=rows.filter(r=>r["状態"]===st&&(st!=="done"||recentDone(r)));
+    return `<div class="kcol"><div class="kcol-h">${ic(i)}${l}<span class="n">${cs.length}</span></div>${cs.length?cs.map(taskCard).join(""):`<div class="muted small" style="padding:6px 4px">なし</div>`}</div>`;}).join("")}</div>`;
+  const agents=(S.agents.agents||[]).filter(a=>a.handle!=="chief");
+  $("#tab-commitments").innerHTML=`<div class="card"><div class="card-h">${ic("check-square")}タスク<span class="n">未完了 ${counts.all}</span><span class="right">${viewSeg}</span></div>
+    <div class="filters">${whoBtn("all","すべて","layers")}${whoBtn("self","自分","user")}${whoBtn("person","人に依頼","users")}${whoBtn("agent","エージェント","sparkles")}</div>
+    ${taskView==="board"?board:comTable(rows.filter(r=>!isClosed(r)))}
     <form class="panel" id="f-com">
-      <label><span>${ic("tag")}種別</span><select name="kind"><option value="task">自分のタスク</option><option value="received">受けた指示</option><option value="given">出した指示</option></select></label>
-      <label class="wide"><span>${ic("pen")}内容</span><input type="text" name="content" placeholder="何をするか / 何を約束したか" required></label>
-      <label><span>${ic("user")}依頼者 / 相手</span><input type="text" name="who" placeholder="架空部長"></label>
+      <label><span>${ic("user")}誰がやる</span><select name="assign" id="f-assign"><option value="self">自分</option><option value="received">自分（人から受けた）</option><option value="person">人に依頼</option>${agents.map(a=>`<option value="@${esc(a.handle)}">@${esc(a.handle)}（エージェント）</option>`).join("")}</select></label>
+      <label class="wide"><span>${ic("pen")}内容</span><input type="text" name="content" placeholder="何をするか" required></label>
+      <label><span>${ic("users")}依頼者 / 相手</span><input type="text" name="who" placeholder="受けた・依頼のとき"></label>
       <label><span>${ic("calendar")}期限</span><input type="date" name="due"></label>
-      <label><span>${ic("eye")}フォロー日</span><input type="date" name="follow"></label>
+      <label><span>${ic("eye")}フォロー日</span><input type="date" name="follow" title="人に依頼したとき"></label>
       <label><span>${ic("folder")}関連</span><input type="text" name="rel" placeholder="P:slug / チケット"></label>
-      <button class="btn primary">${ic("plus")}追加</button></form></div>`;
-  $("#f-com").onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));Object.keys(d).forEach(k=>{if(!d[k])delete d[k];});await api("/api/commitment/add",d);e.target.reset();};}
+      <button class="btn primary">${ic("plus")}追加</button></form>
+    <div class="muted small" style="margin-top:8px">エージェントに任せたタスクは、会話の中でそのエージェントが動くと「稼働中」、終わると「確認待ち」になる。秘書が結果を確かめて完了にする。</div></div>`;
+  $("#f-com").onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const a=d.assign;delete d.assign;
+    if(a==="self")d.kind="task";else if(a==="received")d.kind="received";else if(a==="person")d.kind="given";else{d.kind="given";d.who=a;}
+    Object.keys(d).forEach(k=>{if(!d[k])delete d[k];});await api("/api/commitment/add",d);e.target.reset();};}
 
 /* --- inbox --- */
 function inboxItem(it){return `<div class="item"><div class="av sm" style="--h:${hue(it.source)}">${ic("inbox")}</div><div class="body"><div class="ttl"><span>「${esc(it.text)}」</span></div>
@@ -552,8 +590,19 @@ function renderKnowledge(){const K=S.knowledge||{},q=kq.trim().toLowerCase();
   post("#f-term","/api/term/add");post("#f-rule","/api/rule/add");}
 
 /* --- team --- */
-function renderTeam(){const ag=S.agents.agents||[];
-  $("#tab-team").innerHTML=`<div class="grid">${ag.map(a=>`<div class="card agent"><div class="head">${avatar(a.icon,"@"+a.handle,"lg",a.handle)}<div style="flex:1;min-width:0"><h3>@${esc(a.handle)}</h3><div class="role">${esc(val(a.role)||"—")}</div></div>${a.handle==="chief"?`<span class="badge t-accent">${ic("crown")}司会</span>`:""}</div>
+function fmtSec(n){n=n||0;return n<60?`${n}秒`:n<3600?`${Math.round(n/60)}分`:`${(n/3600).toFixed(1)}時間`;}
+function runRow(r){const a=agentOf(r.agent);const st=r.state==="running"||r.state==="background"?`<span class="badge t-ok live">稼働中 ${fmtSec(r.elapsed)}</span>`:r.state==="done"?`<span class="badge t-muted">${ic("check")}${fmtSec(r.elapsed)}</span>`:r.state==="failed"?`<span class="badge t-danger">${ic("alert")}失敗</span>`:`<span class="badge t-muted">${ic("clock")}終了不明</span>`;
+  return `<div class="run">${avatar(a?a.icon:"sparkles","@"+r.agent,"sm",r.agent)}<div style="min-width:0"><div><b>@${esc(r.agent)}</b> <span class="muted">${esc(r.start_hm)}${r.bg?" ・ バックグラウンド":""}${r.unattended?" ・ 無人実行":""}</span></div><div class="muted small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.desc||"（説明なし）")}${(r.tasks||[]).length?` ・ ${r.tasks.map(esc).join(" ")}`:""}</div></div>${st}</div>`;}
+function activityList(n){const A=S.activity||{};const rows=[...(A.running||[]),...(A.recent||[])].slice(0,n);
+  const u=A.unattended||{};const un=u.start?`<div class="run">${avatar("crown","@chief","sm","chief")}<div><b>@chief（無人実行）</b> <span class="muted">朝のブリーフ ${esc(u.start)}</span></div>${u.running?`<span class="badge t-ok live">稼働中</span>`:`<span class="badge ${u.exit==="0"?"t-muted":"t-danger"}">${u.exit==="0"?ic("check")+"完了":ic("alert")+"終了 "+esc(u.exit||"?")}</span>`}</div>`:"";
+  return rows.length||un?un+rows.map(runRow).join(""):empty("まだ動きはありません。/consult や「@generalist に任せて」でエージェントが動くとここに出ます","sparkles");}
+function renderTeam(){const ag=S.agents.agents||[];const by=(S.activity||{}).by_agent||{};
+  const status=h=>{const b=by[h];if(!b)return `<span class="muted small">${ic("clock")} まだ動いていない</span>`;return b.running?`<span class="badge t-ok live">稼働中 ${b.running}</span> <span class="muted small">${esc(b.last_desc)}</span>`:`<span class="muted small">${ic("clock")} 最終 ${esc(b.last)} ・ 今日 ${b.today} 回</span>`;};
+  const tasksOf=h=>(S.commitments.rows||[]).filter(r=>r.assignee==="agent"&&String(r.who).replace(/^@/,"")===h&&!isClosed(r));
+  $("#tab-team").innerHTML=`<div class="card" style="margin-bottom:14px"><div class="card-h">${ic("activity")}最近の動き<span class="n">${((S.activity||{}).running||[]).length} 稼働中</span><span class="right">会話の中で起動されたエージェント（フックが記録）</span></div>${activityList(15)}</div>
+  <div class="grid">${ag.map(a=>`<div class="card agent"><div class="head">${avatar(a.icon,"@"+a.handle,"lg",a.handle)}<div style="flex:1;min-width:0"><h3>@${esc(a.handle)}</h3><div class="role">${esc(val(a.role)||"—")}</div></div>${a.handle==="chief"?`<span class="badge t-accent">${ic("crown")}司会</span>`:""}</div>
+    <div style="margin-top:8px">${a.handle==="chief"?`<span class="muted small">会話の相手。記憶へ書くのは @chief だけ</span>`:status(a.handle)}</div>
+    ${tasksOf(a.handle).length?`<div style="margin-top:8px">${tasksOf(a.handle).map(r=>`<div class="small">${ic("check-square")} <span class="mono muted">${esc(r.ID)}</span> ${esc(r.content)} ${agentBadge(r)}</div>`).join("")}</div>`:""}
     <p>${esc(a.description)}</p>
     <div class="chips">${(a.skills||[]).map(s=>`<span class="chip">${ic("layers")}${esc(s)}</span>`).join("")}${a.path?`<span class="chip mono" title="frontmatter の icon: を変えるとアイコンが変わります">${ic("file")}${esc(a.path)}</span>`:`<span class="chip">${ic("file")}CLAUDE.md §1</span>`}</div></div>`).join("")}</div>
   <div class="card" style="margin-top:14px"><div class="card-h">${ic("palette")}アイコンの設定</div><div class="small" style="color:var(--fg-2)">専門家：<code>.claude/agents/{handle}.md</code> の frontmatter に <code>icon: calculator</code> のようにアイコン名か絵文字を書く。人物：人物カードの「アイコン」ボタン、または <code>python tools/mem.py person set-icon {識別子} 👔</code>。使えるアイコン名：</div>

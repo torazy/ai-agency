@@ -114,6 +114,7 @@ def main() -> None:
                 out = {}
             log.write(str(out.get("result") or r.stdout or "") + "\n")
             cost = out.get("total_cost_usd")
+            work.record_cost(root, "dispatch", cost)   # 1日の費用上限に数える
             log.write(f"[{time.strftime('%Y-%m-%d %H:%M')}] exit {r.returncode}"
                       + (f" cost {cost:.2f} USD" if isinstance(cost, (int, float)) else "") + "\n")
         st = sd / "last-dispatch.json"

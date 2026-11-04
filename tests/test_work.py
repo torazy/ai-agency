@@ -76,6 +76,9 @@ class WorkTest(TempRepo):
         self.assertEqual(self.w.running_runs(self.root)[0]["実行ID"], "C-001-R1")
         self.w.run_end(self.root, r1, "完了", 1.234)
         self.assertEqual(self.w.spent_today(self.root), 1.23)
+        self.w.record_cost(self.root, "dispatch", 0.48)                                  # 定期の見直しの費用も数える
+        self.w.record_cost(self.root, "dispatch", None)
+        self.assertEqual(self.w.spent_today(self.root), 1.71)
         self.write("memory/projects/x/status.md", STATUS_V2)                            # 実行の後で前提が変わった
         self.assertEqual(self.w.accept(self.root, r1, "accept"), "古い条件")              # 最新として受け入れない
         self.assertIn("古い条件", self.w.read_task(self.root, "C-001")["runs"][0]["判定"])

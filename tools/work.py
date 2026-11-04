@@ -544,9 +544,30 @@ def mark_applied(root: Path, rid: str) -> None:
     ok(f"{rid} の報告を記憶に反映済みにした")
 
 
+def record_cost(root: Path, kind: str, cost: float | None) -> None:
+    """作業セッション以外（定期の見直しなど）の費用を残す。1日の上限に数える。"""
+    if not isinstance(cost, (int, float)):
+        return
+    p = state_dir(root) / "costs.jsonl"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"date": mem.today(), "at": mem.now_hm(), "kind": kind, "cost": round(float(cost), 2)}, ensure_ascii=False) + "\n")
+
+
 def spent_today(root: Path) -> float:
+    """今日使った額：今日始めた作業セッションの費用（実行履歴）＋定期の見直しなどの費用（.state/costs.jsonl）。"""
     total = 0.0
     d = mem.today()
+    try:
+        for ln in (state_dir(root) / "costs.jsonl").read_text(encoding="utf-8").splitlines():
+            try:
+                e = json.loads(ln)
+                if e.get("date") == d:
+                    total += float(e.get("cost") or 0)
+            except (ValueError, TypeError):
+                pass
+    except OSError:
+        pass
     for p in sorted((work_dir(root) / "tasks").glob("C-*.md")) if (work_dir(root) / "tasks").exists() else []:
         for r in table_rows(read(p), "実行履歴"):
             if r.get("開始", "").startswith(d):

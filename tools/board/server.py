@@ -303,7 +303,7 @@ def api_work(root: Path) -> dict:
         last = json.loads((work.state_dir(root) / "last-dispatch.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         pass
-    return {**st, "proposals": props[::-1][:40], "last_dispatch": last.get("when", ""),
+    return {**st, "proposals": props[::-1][:40], "last_dispatch": last.get("finished") or last.get("when", ""),
             "dispatch_log": text(root / "memory" / "briefs" / "dispatch.md")[-4000:]}
 
 

@@ -193,8 +193,8 @@ inbox は**秘書の作業中トレイ**で、ユーザーの ToDo ではない�
 | スラッシュコマンド | /setup /intake /update /consult /discuss /simulate /incident /morning-brief /scout /dispatch /run-task /review-decisions /propose-delegation |
 | ガードレール・フック | `.claude/settings.json`、`tools/hooks/`（guardrail・session-start・operation-logger）。正典は `memory/guardrails.json` |
 | MCP | `.mcp.json`（github / backlog / brave-search）。コネクタは claude.ai 側 |
-| 記憶の道具 | 書き込み `tools/mem.py`、探す・読む・点検 `tools/recall.py`（コマンド例は `python` で書いている。Mac / Linux では `python3` に読み替える。フックとボードは `tools/py.sh` が自動で選ぶ） |
+| 記憶の道具 | 書き込み `tools/mem.py`、探す・読む・点検 `tools/recall.py`、チームの仕事（提案・作業記録・変化の検知）`tools/work.py`、作業セッション `tools/run_task.py`（コマンド例は `python` で書いている。Mac / Linux では `python3` に読み替える。フックとボードは `tools/py.sh` が自動で選ぶ） |
 | ボード | `tools/board/`（`board` スキル）。memory/ を見る・触る・探すローカル画面。書き込みは mem.py と同じ経路 |
-| 定期実行 | デスクトップの定期タスク、または `tools/schedule/`（OS スケジューラ＋`claude -p`）。`/morning-brief --unattended` → `memory/briefs/` |
+| 定期実行 | デスクトップの定期タスク、または `tools/schedule/`（OS スケジューラ＋`claude -p`）。`/morning-brief --unattended` → `memory/briefs/`、定期の見直し `tools/schedule/dispatch.*` → `/dispatch --unattended`（設定 `memory/work/settings.md`） |
 
 本体（テンプレート）とインスタンスの分離、メンテナンス層は `OPERATIONS.md`。

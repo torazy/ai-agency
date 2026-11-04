@@ -151,8 +151,8 @@ class RunTaskTest(TempRepo):
 
     def test_allowed_tools_stay_read_only(self):
         tools = self.rt.allowed_tools()
-        self.assertIn("Write(memory/task-results/**)", tools)
-        self.assertFalse([t for t in tools if t.startswith("Write(") and "task-results" not in t])
+        self.assertIn("Edit(memory/task-results/**)", tools)
+        self.assertFalse([t for t in tools if t.startswith(("Write", "Edit")) and t != "Edit(memory/task-results/**)"])
         self.assertFalse([t for t in tools if t.startswith("Bash(") and "mem.py" in t
                           and not any(op in t for op in ("list", "check", "show"))])
         self.assertNotIn("Bash", tools)
@@ -185,6 +185,11 @@ class RunTaskTest(TempRepo):
         self.mem("commitment", "set-state", "C-002", "done")
         out = self.run_py("tools/hooks/session-start.py").stdout
         self.assertIn("[任せたタスク] 報告が届いて確認待ち：C-001（", out)
+        self.assertIn("承認済みで記憶への反映待ち：C-002。", out)                      # 完了にしたが、まだ記憶に入れていない
+        self.assertEqual(self.run_py("tools/run_task.py", "--applied", "C-002").returncode, 0)
+        self.assertNotEqual(self.run_py("tools/run_task.py", "--applied", "C-003").returncode, 0)
+        out = self.run_py("tools/hooks/session-start.py").stdout
+        self.assertNotIn("反映待ち", out)
 
     def test_cli_rejects_without_claude_side_effects(self):
         r = self.run_py("tools/run_task.py", "C-002")

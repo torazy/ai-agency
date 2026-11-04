@@ -58,6 +58,8 @@ description: エージェントに任せたタスク（約束台帳の出した�
 
 ## 人が承認したあと（対話のとき）
 
-ボードで「承認して完了」されたタスク、または会話で「C-007 の結果、OK」と言われたら、@chief は報告の
-「記憶に入れる候補」を通常の手順（intake-and-file・commitment-track・person-model-update）で記録する。
-起動時の案内に「確認待ちの結果」が出ていれば、そのタスクの報告を読んで要点を伝え、承認を1問で聞く。
+- 起動時の案内に「報告が届いて確認待ち」が出たら、報告を読んで要点を伝え、承認を1問で聞く（承認なら `commitment set-state … done`）
+- 「承認済みで記憶への反映待ち」（ボードで「承認して完了」されたもの）が出たら、報告の「記憶に入れる候補」を通常の手順
+  （intake-and-file・commitment-track・person-model-update）で記録する。決定は**提案（未承認）**として入れ、「確認してほしいこと」は
+  約束台帳や issues に残す。記録し終えたら `python tools/run_task.py --applied C-…` を実行し、記録先を事後報告する
+- 手直しを頼まれたら、内容を `commitment set-content` で直して、ボードの「やり直させる」か `/run-task` をもう一度

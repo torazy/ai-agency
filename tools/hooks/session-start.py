@@ -10,6 +10,7 @@ stdout（プレーンテキスト・exit 0）は Claude Code が「Claude が見
 命令形ではなく事実の記述にする（フック出力の規約）。失敗しても exit 0。上限 10,000 文字。
 """
 
+import json
 import re
 import sys
 from datetime import date, datetime
@@ -78,9 +79,11 @@ def main() -> None:
     commitments = read(mem / "commitments.md")
     overdue = 0
     today = date.today()
-    open_ids = set()
+    open_ids, done_ids = set(), set()
     for row in commitments.splitlines():
         cells = [c.strip() for c in row.strip().strip("|").split("|")] if row.startswith("|") else []
+        if len(cells) >= 4 and re.fullmatch(r"C-\d{3,}", cells[0]) and cells[-1] == "done":
+            done_ids.add(cells[0])
         if len(cells) < 4 or not re.fullmatch(r"C-\d{3,}", cells[0]) or cells[-1] in ("done", "dropped"):
             continue
         open_ids.add(cells[0])
@@ -134,6 +137,18 @@ def main() -> None:
     if waiting:
         lines.append(f"[任せたタスク] 報告が届いて確認待ち：{', '.join(waiting[:8])}（memory/task-results/）。"
                      "要点を伝えて承認を1問で聞き、承認後に報告の「記憶に入れる候補」を記録する（/run-task の末尾）。")
+    approved = []
+    for f in sorted(rdir.glob("C-*.md")) if rdir.exists() else []:
+        if f.stem in done_ids:
+            try:
+                applied = json.loads((rdir / f"{f.stem}.json").read_text(encoding="utf-8")).get("applied")
+            except (OSError, ValueError):
+                applied = None
+            if not applied:
+                approved.append(f.stem)
+    if approved:
+        lines.append(f"[任せたタスク] 承認済みで記憶への反映待ち：{', '.join(approved[:8])}。報告の「記憶に入れる候補」を記録し、"
+                     "`python tools/run_task.py --applied C-…` で反映済みにする（/run-task の末尾）。")
 
     # 記憶の点検（recall.py review の結果。毎朝のブリーフが作る）。7日以内で要対応があれば件数だけ伝える
     review = read(mem / "briefs" / "review.md")

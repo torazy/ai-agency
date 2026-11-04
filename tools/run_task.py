@@ -6,6 +6,7 @@ run_task.py ── エージェントに任せたタスク（約束台帳の「�
   python tools/run_task.py C-007 --wait       # 終わるまで待つ
   python tools/run_task.py C-007 --dry-run    # 実行するコマンドだけ表示
   python tools/run_task.py --status C-007     # 状態（JSON）
+  python tools/run_task.py --applied C-007    # 承認後、報告の「記憶に入れる候補」を記録し終えた印（起動時の案内から消える）
 
 結果：memory/task-results/C-007.md（@chief がまとめた報告。記憶に入れる候補を含むが、記憶そのものは書き換えない）
 状態：memory/task-results/C-007.json（running / done / failed・終了コード・時刻）、実行ログ：C-007.log
@@ -89,7 +90,7 @@ def check_task(root: Path, cid: str, child: bool = False) -> dict:
 
 def allowed_tools() -> list[str]:
     tools = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Agent", "Task",
-             "Write(memory/task-results/**)", "Edit(memory/task-results/**)"]
+             "Edit(memory/task-results/**)"]   # Edit(パス) は Write を含むファイル編集すべてに効く（Write(パス) は効かない）
     for py in ("python", "python3"):
         tools.append(f"Bash({py} tools/recall.py *)")
         for op in ("commitment list", "inbox list", "check", "sync show"):
@@ -165,6 +166,7 @@ def main() -> None:
     ap.add_argument("--wait", action="store_true", help="終わるまで待つ")
     ap.add_argument("--dry-run", action="store_true", help="コマンドを表示するだけ")
     ap.add_argument("--status", metavar="ID", help="状態を JSON で表示")
+    ap.add_argument("--applied", metavar="ID", help="報告の候補を記憶に反映し終えた印を付ける")
     ap.add_argument("--budget", type=float, default=None, help="1回の上限（USD）")
     ap.add_argument("--root", type=Path, default=ROOT)
     ap.add_argument("--child", action="store_true", help=argparse.SUPPRESS)
@@ -172,6 +174,12 @@ def main() -> None:
     root = a.root.resolve()
     if a.status:
         print(json.dumps(read_status(root, a.status), ensure_ascii=False))
+        return
+    if a.applied:
+        if not CID_RE.fullmatch(a.applied) or not (results_dir(root) / f"{a.applied}.md").exists():
+            sys.exit(f"✗ {a.applied} の報告が無い")
+        write_status(root, a.applied, applied=time.strftime("%Y-%m-%d"))
+        print(f"📝 {a.applied} の報告を記憶に反映済みにした")
         return
     if not a.id:
         ap.error("ID（C-007 など）が必要")

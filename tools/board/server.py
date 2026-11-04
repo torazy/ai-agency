@@ -49,6 +49,15 @@ def load_recall():
 recall = load_recall()
 
 
+def api_knowledge(root: Path) -> dict:
+    rmd = text(root / "memory" / "knowledge" / "rules.md")
+    rules = recall.md_rows(rmd, "## ルール") if rmd else []
+    for r in rules:
+        cd = recall.to_date(r.get("確認日", ""))
+        r["confirmed_days"] = (date.today() - cd).days if cd else None
+    return {"terms": recall.glossary(root), "rules": rules}
+
+
 def api_review(root: Path) -> dict:
     fs = recall.review_findings(root)
     return {"findings": [f.__dict__ for f in fs], "auto": sum(f.auto for f in fs), "ask": sum(not f.auto for f in fs)}
@@ -326,6 +335,10 @@ FIELD_RULES = {
     "ident": (r"[a-z0-9]+(-[a-z0-9]+)+", "英小文字・数字・ハイフンの識別子"),
     "project": (r"[A-Za-z0-9_-]{1,60}", "案件のスラッグ"), "icon": (r"[^|\n]{1,24}", "1〜24字"),
     "title": (r".{1,200}", "1〜200字"),
+    "term": (r".{1,60}", "1〜60字"), "meaning": (r".{1,300}", "1〜300字"), "aliases": (r".{1,120}", "1〜120字"),
+    "scope": (r".{1,80}", "1〜80字"), "effective": (r"\d{4}-\d{2}-\d{2}", "YYYY-MM-DD"),
+    "kind_term": (r"略語|社内用語|コードネーム|あだ名|業界用語", "略語 / 社内用語 / コードネーム / あだ名 / 業界用語"),
+    "rid": (r"R-\d{3,}", "R-001 の形"),
 }
 REQUIRED = {
     "/api/inbox/add": ["text"], "/api/inbox/resolve": ["id", "to"],
@@ -333,6 +346,7 @@ REQUIRED = {
     "/api/commitment/due": ["id", "due"], "/api/commitment/follow": ["id", "follow"],
     "/api/person/observe": ["ident", "situation", "judgment"], "/api/person/icon": ["ident", "icon"],
     "/api/person/note": ["ident", "situation", "insight"], "/api/decision/status": ["project", "status"],
+    "/api/term/add": ["term", "meaning"], "/api/rule/add": ["content", "source"], "/api/rule/confirm": ["rid"],
 }
 
 
@@ -385,6 +399,15 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
         elif path == "/api/person/note":
             ns = Namespace(ident=g("ident"), situation=g("situation"), insight=g("insight"))
             res = run_mem(mem.person_note, root, ns)
+        elif path == "/api/term/add":
+            ns = Namespace(term=g("term"), meaning=g("meaning"), aliases=g("aliases"), kind=g("kind_term"),
+                           scope=g("scope"), source=g("source") or "ボード")
+            res = run_mem(mem.term_add, root, ns)
+        elif path == "/api/rule/add":
+            ns = Namespace(content=g("content"), source=g("source"), scope=g("scope"), effective=g("effective"))
+            res = run_mem(mem.rule_add, root, ns)
+        elif path == "/api/rule/confirm":
+            res = run_mem(mem.rule_confirm, root, g("rid", ""))
         elif path == "/api/decision/status":
             res = run_mem(mem.decision_set_status, root, g("project", ""), g("id") or g("title", ""), g("status", ""))
         else:
@@ -398,7 +421,7 @@ GETS = {
     "/api/summary": api_summary, "/api/situation": api_situation, "/api/inbox": api_inbox,
     "/api/commitments": api_commitments, "/api/projects": api_projects, "/api/people": api_people,
     "/api/decisions": api_decisions, "/api/oplog": api_oplog, "/api/agents": api_agents, "/api/brief": api_brief,
-    "/api/review": api_review,
+    "/api/review": api_review, "/api/knowledge": api_knowledge,
 }
 
 

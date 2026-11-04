@@ -55,6 +55,7 @@ ai-agency/
 │   ├── situation.md          # 優先事項ダッシュボード
 │   ├── inbox.md              # 「覚えておいて」の受け皿（分類前に即時保存。mem.py inbox）
 │   ├── commitments.md        # 約束台帳（ID 付き。mem.py commitment で追記・状態変更）
+│   ├── knowledge/            # 用語集（glossary.md・依頼を解読する辞書）と業務ルール（rules.md・出典と確認日つき）
 │   ├── delegation.md         # 委任レベル（人間可読）
 │   ├── guardrails.json       # 物理ガードレール（機械可読・フックが参照）
 │   ├── service-capabilities.md, user-profile.md, insights.md

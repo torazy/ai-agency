@@ -8,7 +8,7 @@ import_legacy.py ── 旧版のインスタンス（別の PC で使ってい�
   python tools/import_legacy.py --from D:/old/ai-manager --apply    # 実行：写す → migrate → check → 点検 → 報告
 
 方針：
-- 写す：約束台帳・気づき・inbox、人物ファイル、projects/・memos/・archive/
+- 写す：約束台帳・気づき・inbox、人物ファイル、projects/・memos/・archive/・knowledge/（用語集・業務ルール）
 - 突き合わせ：自分で書き換えていた delegation.md は安全に関わるので上書きせず legacy-import に置く
 - 載せ替え：状況（situation.md）・プロフィール（user-profile.md）・登録簿（dashboard.md）は版ごとに雛形の構造が
   変わっているので上書きせず memory/legacy-import/ に置き、/setup で秘書が今の構造へ載せ替える
@@ -40,7 +40,7 @@ FIXTURE = HERE.parent / "tests" / "fixtures" / "memory"  # 今の版の雛形（
 
 DATA_FILES = ["commitments.md", "insights.md", "inbox.md"]
 CONDITIONAL_FILES = ["delegation.md"]           # 自分で書き換えていたときだけ。安全に関わるので上書きせず legacy-import で突き合わせる
-DATA_DIRS = ["people", "projects", "memos", "archive"]
+DATA_DIRS = ["people", "projects", "memos", "archive", "knowledge"]
 SKIP = {"people/_template.md", "team/roster.md", "guardrails.json", "service-capabilities.md", "sync-state.json",
         ".mem.lock"}
 SKIP_DIRS = {"task-log", "briefs", "legacy-import"}

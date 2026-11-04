@@ -54,6 +54,17 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
 | 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | ✅ 2026-11-04（/update コマンド・mem.py sync・inbox の重複防止・/morning-brief --unattended → memory/briefs/・tools/schedule の ps1/sh・ログの unattended 区別・起動フックとボードへの表示・/setup Step 6 をローカル定期実行に） |
 
+## 公式 Productivity から取り入れ（2026-11-04）
+
+比較の結果、公式が優れていた「用語集」と「初回の一括取り込み」を取り入れた。用語は業務ルールと並ぶ知識の置き場
+`memory/knowledge/` に置く（glossary.md・rules.md。学びは従来どおり insights.md）。
+- mem.py term add|set、rule add|set-state|confirm（出典必須・確認日）。migrate が knowledge/ を作る
+- recall.py decode（依頼文の人・案件・用語を解読し、知らない略語を聞く候補に）、find が用語の別表記を展開、--type term|rule、
+  点検に「確認日から180日の有効ルール」「用語の重複」「範囲の案件が無い」
+- CLAUDE.md §5「依頼を実行する前に解読する」、§6 の表に用語・業務ルール
+- /update --initial（直近30日から人・案件・用語・約束・ルールを集め、すぐ記録／確認／保留の3区分）、/setup Step 1b
+- 公式の「タスクのいつか区分」は見送り（約束台帳の状態追加は別途）
+
 ## ZIP からの更新（2026-11-04）
 
 git を使わない環境（ユーザーの Mac）で、GitHub から落とした最新の ZIP を起点にインスタンスを更新する `tools/update_instance.py` を追加。

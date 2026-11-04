@@ -9,6 +9,7 @@ recall.py ── memory/ を「探す・読む・点検する」読み取り専�
 
 使い方（リポジトリルートで）：
   python tools/recall.py find 比較表 部長 [--type decision,meeting] [--project kintai-saas] [--since 2026-10-01] [--archive] [--limit 12] [--json]
+  python tools/recall.py decode "部長にPSRの件を勤怠刷新の定例で"   # 実行する前に人・案件・用語を解読、知らない言葉を挙げる
   python tools/recall.py who 部長            # 名前・呼び名・メール → 人物ファイル（0件=新規、2件以上=曖昧）
   python tools/recall.py map [--project kintai-saas | --type people]
   python tools/recall.py show memory/projects/kintai-saas/decisions.md [--section クラウド]
@@ -35,7 +36,7 @@ HEADING_RE = re.compile(r"^(#{1,4})\s+(.*)$")
 FIELD_RE = r"^\s*-\s*\*\*{label}\*\*:\s*(.*)$"
 EXCLUDE_DIRS = {"task-log", "briefs", "legacy-import"}  # legacy-import は旧版から移した統合前のデータ（秘書が統合する）
 GENERIC = {"提出", "報告", "対応", "確認", "検討", "作成", "依頼", "共有", "準備", "資料", "会議", "連絡", "調整", "勤怠"}
-TYPE_ORDER = ["person", "project", "status", "decision", "commitment", "issue", "meeting", "context",
+TYPE_ORDER = ["person", "project", "status", "decision", "commitment", "term", "rule", "issue", "meeting", "context",
               "incident", "insight", "memo", "inbox", "situation", "profile", "team", "deliverable", "other"]
 
 
@@ -92,6 +93,8 @@ def classify(relpath: str) -> str:
                 return t
     if len(parts) >= 2 and parts[1] == "memos":
         return "memo"
+    if len(parts) >= 2 and parts[1] == "knowledge":
+        return {"glossary.md": "term", "rules.md": "rule"}.get(name, "insight")
     return {"commitments.md": "commitment", "inbox.md": "inbox", "insights.md": "insight",
             "situation.md": "situation", "dashboard.md": "profile", "user-profile.md": "profile"}.get(
         name, "team" if "team" in parts else "other")
@@ -201,7 +204,22 @@ def load_entities(root: Path) -> list[Entity]:
         e.info = " ・ ".join(x for x in (field(ov, "状態"), "期限 " + field(ov, "期限") if field(ov, "期限") else "") if x)
         e.aliases = {a for a in e.aliases if len(norm(a)) >= 2}
         ents.append(e)
+    for row in glossary(root):
+        term = row.get("用語", "").strip()
+        if not term:
+            continue
+        e = Entity("term", term, term, "memory/knowledge/glossary.md")
+        e.aliases = {term} | set(split_aliases(row.get("別表記", "")))
+        e.info = row.get("意味", "") + (f"（{row.get('範囲')}）" if row.get("範囲") and row.get("範囲") != "全社" else "")
+        e.aliases = {a for a in e.aliases if len(norm(a)) >= 2}
+        ents.append(e)
     return ents
+
+
+def glossary(root: Path) -> list[dict]:
+    """用語集の行（用語・別表記・意味・種別・範囲・出典・更新日）。"""
+    md = read(root / "memory" / "knowledge" / "glossary.md")
+    return md_rows(md, "## 用語") if md else []
 
 
 def resolve(term: str, ents: list[Entity]) -> list[tuple[Entity, str]]:
@@ -382,6 +400,75 @@ def do_who(root: Path, a) -> int:
         for e, al in hits:
             print(f"- {e.key}  {e.label}（{e.info}）  ← 「{al}」")
     return 0 if len(hits) == 1 else (3 if not hits else 2)
+
+
+# ---------------------------------------------------------------- decode（依頼を実行する前に解読）
+ACRONYM_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9&\-]*[A-Z0-9][A-Za-z0-9&\-]*(?![A-Za-z0-9])")
+COMMON_ASCII = {"OK", "NG", "PC", "ID", "URL", "PDF", "AI", "IT", "PR", "CC", "TODO", "FAQ", "API", "CSV", "MTG", "Q&A",
+                "SaaS", "SSO", "MFA", "CEO", "CFO", "CTO", "HR", "DX", "QA", "PM"}
+
+
+def decode_text(root: Path, text: str) -> dict:
+    """文中の人の呼び名・案件の別名・用語を解読する。長い一致を優先し、重なりは捨てる。知らない略語は聞く候補にする。"""
+    ents = load_entities(root)
+    nt = norm(text)
+    cands = []
+    for e in ents:
+        for a in e.aliases:
+            na = norm(a)
+            if len(na) < 2 or (e.kind == "person" and na == e.key):
+                continue
+            start = nt.find(na)
+            while start >= 0:
+                cands.append((start, start + len(na), a, e))
+                start = nt.find(na, start + 1)
+    cands.sort(key=lambda c: (-(c[1] - c[0]), c[0]))
+    taken, hits = [], []
+    for st, en, a, e in cands:
+        if any(st < t_en and t_st < en for t_st, t_en in taken):
+            continue
+        taken.append((st, en))
+        hits.append((st, a, e))
+    hits.sort(key=lambda h: h[0])
+    resolved, ambiguous, seen = [], [], set()
+    for st, a, e in hits:
+        if (a, e.key) in seen:
+            continue
+        seen.add((a, e.key))
+        same = [x for x in resolve(a, ents) if x[0].kind == e.kind] if e.kind == "person" else [(e, a)]
+        if len(same) > 1:
+            ambiguous.append({"word": a, "candidates": [f"{x[0].label}（{x[0].key}）" for x in same]})
+        else:
+            resolved.append({"word": a, "kind": e.kind, "to": e.label, "key": e.key, "info": e.info, "path": e.path})
+    known = {norm(a) for e in ents for a in e.aliases}
+    unknown = []
+    for m in ACRONYM_RE.finditer(text):
+        w = m.group(0)
+        if w in COMMON_ASCII or norm(w) in known or any(norm(w) in norm(r["word"]) for r in resolved) or w in unknown:
+            continue
+        unknown.append(w)
+    for m in re.finditer(r"「([^」]{2,20})」", text):
+        w = m.group(1)
+        if norm(w) not in known and w not in unknown:
+            unknown.append(w)
+    return {"resolved": resolved, "ambiguous": ambiguous, "unknown": unknown}
+
+
+def do_decode(root: Path, a) -> int:
+    r = decode_text(root, " ".join(a.text))
+    if a.json:
+        print(json.dumps(r, ensure_ascii=False, indent=1))
+        return 0
+    label = {"person": "人", "project": "案件", "term": "用語"}
+    for x in r["resolved"]:
+        print(f"- 「{x['word']}」→ {label.get(x['kind'], x['kind'])}: {x['to']}" + (f"（{x['info']}）" if x["info"] else ""))
+    for x in r["ambiguous"]:
+        print(f"- 「{x['word']}」は曖昧: " + " / ".join(x["candidates"]) + " ── 確かめる")
+    if r["unknown"]:
+        print("- 知らない言葉: " + "、".join(r["unknown"]) + " ── 意味を1問で聞き、`mem.py term add` で用語集へ")
+    if not any(r.values()):
+        print("解読が要る言葉は見当たらない")
+    return 0
 
 
 # ---------------------------------------------------------------- map（目次）
@@ -686,6 +773,26 @@ def review_findings(root: Path) -> list[Finding]:
         if dd and (today - dd).days > 2:
             F.append(Finding("取り出し漏れ", "memory/inbox.md", f"{m.group(1)} が {(today - dd).days} 日未分類", "秘書が仕分けて配置する（確認ケースなら1問で聞く）", True))
 
+    # 6b. 知識（業務ルールの確認日・用語の重複と範囲）
+    rmd = read(mem / "knowledge" / "rules.md")
+    for r in md_rows(rmd, "## ルール") if rmd else []:
+        cd = to_date(r.get("確認日", ""))
+        if r.get("状態") == "有効" and cd and (today - cd).days > 180:
+            F.append(Finding("古さ", "memory/knowledge/rules.md", f"{r.get('ID')}「{clip(r.get('内容', ''), 30)}」の確認日から {(today - cd).days} 日",
+                             "今も有効か確かめる（有効なら rule confirm、変わっていれば新しいルールを足して旧い方を retired）", False))
+    names: dict[str, list[str]] = {}
+    for row in glossary(root):
+        for n in {norm(row.get("用語", ""))} | {norm(x) for x in split_aliases(row.get("別表記", ""))}:
+            if n:
+                names.setdefault(n, []).append(row.get("用語", ""))
+        for slug in re.findall(r"P:([A-Za-z0-9_-]+)", row.get("範囲", "")):
+            if slug not in projects:
+                F.append(Finding("参照", "memory/knowledge/glossary.md", f"用語「{row.get('用語')}」の範囲 P:{slug} という案件が無い", "範囲を直す", True))
+    for n, terms in names.items():
+        if len(set(terms)) > 1:
+            F.append(Finding("重複", "memory/knowledge/glossary.md", f"「{n}」が複数の用語に当たる: {'・'.join(sorted(set(terms)))}",
+                             "同じ意味ならまとめる。違う意味なら範囲で区別する", False))
+
     # 7. ライフサイクル
     for d in docs:
         if d.type == "decision":
@@ -766,6 +873,8 @@ def main(argv=None) -> None:
     s.add_argument("--type", help="person,project,status,decision,commitment,issue,meeting,context,incident,insight,memo,inbox,situation,deliverable")
     s.add_argument("--project"); s.add_argument("--since"); s.add_argument("--archive", action="store_true")
     s.add_argument("--limit", type=int, default=12); s.add_argument("--json", action="store_true")
+    s = sub.add_parser("decode", help="依頼文の人・案件・用語を解読し、知らない言葉を挙げる（実行する前に使う）")
+    s.add_argument("text", nargs="+"); s.add_argument("--json", action="store_true")
     s = sub.add_parser("who", help="名前・呼び名・メールから人物ファイルを引く")
     s.add_argument("name"); s.add_argument("--json", action="store_true")
     s = sub.add_parser("map", help="目次（全体／案件／人物）")
@@ -781,7 +890,8 @@ def main(argv=None) -> None:
     root = (a.root or Path(__file__).resolve().parent.parent).resolve()
     if not (root / "memory").is_dir():
         sys.exit(f"{root} に memory/ が無い（--root を確認）")
-    code = {"find": do_find, "who": do_who, "map": do_map, "show": do_show, "review": do_review}[a.cmd](root, a)
+    code = {"find": do_find, "who": do_who, "map": do_map, "show": do_show, "review": do_review,
+            "decode": do_decode}[a.cmd](root, a)
     sys.exit(code)
 
 

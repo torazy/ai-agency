@@ -42,6 +42,8 @@ description: 会話の中で重要な情報・決定・知見が生まれたと�
 | プロジェクトの決定事項 | `memory/projects/{name}/decisions.md` | `mem.py decision add`（未承認なら proposed） |
 | プロジェクトの現状変化 | `memory/projects/{name}/status.md` | 更新 |
 | ユーザーの好み・パターン | `memory/user-profile.md` | 追記 |
+| 用語の定義 | `memory/knowledge/glossary.md` | `mem.py term add` |
+| 業務ルール（出典つき） | `memory/knowledge/rules.md` | `mem.py rule add` |
 | 業務上の学び・ドメイン知識 | `memory/insights.md` | 追記 |
 | 今の優先事項の変化 | `memory/situation.md` | 更新 |
 | 新しいサービス座標 | `memory/projects/{name}/overview.md` | 追記 |

@@ -81,6 +81,9 @@ fork は使わない。専門家は座標から自分で読み、`memory/` へ�
 inbox は**秘書の作業中トレイ**で、ユーザーの ToDo ではない。分類をユーザーに頼まない。
 事後報告で違うと言われたら秘書が直す（約束は `set-state … dropped` で取り下げ、別の行で記録し直す）。
 
+**依頼を実行する前に解読する**：知らない略語・社内用語・人の呼び名があれば `python tools/recall.py decode "<依頼文>"` で引く。
+知らない言葉は1問で意味を聞き、答えを `mem.py term add` で用語集へ（次からは聞かない）。
+
 **確認するのは4つだけ**（誤記録の影響が大きい）：新しい人物ファイルを作るとき／案件が複数あり本文に案件名が無いとき／
 決定か案か不明なとき／発言者が不明なとき。このときも記録先の**案を添えて**、複数あれば**1問にまとめて**聞き、
 答えを受けたらその場で配置まで済ませる。答えを待つ間は inbox に置いておく。
@@ -98,7 +101,9 @@ inbox は**秘書の作業中トレイ**で、ユーザーの ToDo ではない�
 | 未解決の課題／背景知識・仕様／現状 | 同 `issues.md`／`context/{topic}.md`／`status.md` |
 | サービス座標・別名 | 同 `overview.md` |
 | 関係者（人物モデルの素材＝判断事例ログを含む） | `memory/people/{姓}-{名}-{所属略称}-{役職略称}.md`（一意な識別子・呼び名も記録。`person-model-update`） |
-| ドメイン知識・気づき | `memory/insights.md` |
+| 用語（略語・社内用語・コードネーム・あだ名） | `memory/knowledge/glossary.md`（`mem.py term add`） |
+| 業務ルール（規程・手順・締め・承認の流れ。出典と確認日つき） | `memory/knowledge/rules.md`（`mem.py rule add`）。案件だけの決まりは案件の `context/` |
+| 経験から得た学び・ドメイン知識 | `memory/insights.md` |
 | 受け取った直後（秘書の作業中トレイ） | `memory/inbox.md` |
 | 生メモ（長文） | `memory/memos/YYYY-MM-DD-{topic}.md` |
 
@@ -116,7 +121,7 @@ inbox は**秘書の作業中トレイ**で、ユーザーの ToDo ではない�
 | 段 | 何を読む | 道具 |
 |---|---|---|
 | L0 常時 | 登録簿（ユーザー・進行中案件・重要な人物） | `memory/dashboard.md`（自動ロード） |
-| L1 どこにあるか | 見出しつきの短い一覧（件数に上限） | `recall.py find {語…}`（人物の呼び名・メール、案件の別名を展開。`--type`・`--project`・`--since`）／人物は `recall.py who {名前}`／目次は `recall.py map [--project {slug}]` |
+| L1 どこにあるか | 見出しつきの短い一覧（件数に上限） | `recall.py find {語…}`（人物の呼び名・メール、案件の別名、用語の別表記を展開。`--type`・`--project`・`--since`）／人物は `recall.py who {名前}`／依頼文の解読は `recall.py decode`／目次は `recall.py map [--project {slug}]` |
 | L2 中身 | 当たった節だけ | `recall.py show {path} --section {見出し}`（Read の offset でもよい） |
 | L3 全文・過去分・原本 | L2 で足りないときだけ | ファイル全体、`find --archive`、外部の原本（座標から） |
 

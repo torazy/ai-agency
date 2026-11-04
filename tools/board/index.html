@@ -294,6 +294,7 @@
   <symbol id="i-git" viewBox="0 0 24 24"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9M12 12v3"/></symbol>
   <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 12.5-9.17 4.18a2 2 0 0 1-1.66 0L2 12.5M22 17.5l-9.17 4.18a2 2 0 0 1-1.66 0L2 17.5"/></symbol>
   <symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M8 7h8M8 11h6"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
   <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
   <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.5-.67 1.5-1.5 0-.4-.15-.74-.4-1-.23-.27-.4-.6-.4-1 0-.83.67-1.5 1.5-1.5H16c3.31 0 6-2.69 6-6 0-4.96-4.5-9-10-9z"/></symbol>
@@ -325,6 +326,7 @@
       <section id="tab-projects"></section>
       <section id="tab-people"></section>
       <section id="tab-decisions"></section>
+      <section id="tab-knowledge"></section>
       <section id="tab-team"></section>
       <section id="tab-log"></section>
     </div>
@@ -342,6 +344,7 @@ const TABS=[
   ["projects","案件","folder","進行中プロジェクトの座標・期限・約束"],
   ["people","人物","users","関係者の思考モデル（/simulate の素材）"],
   ["decisions","決定","badge-check","提案（未承認）→ 決定 → 検証"],
+  ["knowledge","知識","book","用語集と業務ルール（秘書が依頼を解読し、判断の前提にする）"],
   ["team","チーム","sparkles","AI秘書チーム：@chief と専門家"],
   ["log","操作ログ","activity","フックが自動記録した外部操作"]];
 const ICONS=new Set([...document.querySelectorAll("symbol")].map(s=>s.id.slice(2)));
@@ -397,7 +400,7 @@ function dialog({title,icon="pen",fields,submit="保存"}){return new Promise(re
 /* ------------------------------------------------------------ state & render */
 let S={},cur="today";
 async function refresh(){
-  const keys=["summary","situation","inbox","commitments","projects","people","decisions","oplog","agents","brief","review"];
+  const keys=["summary","situation","inbox","commitments","projects","people","decisions","oplog","agents","brief","review","knowledge"];
   const vals=await Promise.all(keys.map(k=>fetch("/api/"+k).then(r=>r.json()).catch(e=>({error:String(e)}))));
   S=Object.fromEntries(keys.map((k,i)=>[k,vals[i]]));
   const sum=S.summary,name=val(sum.name),nick=val(sum.nickname);
@@ -409,9 +412,9 @@ async function refresh(){
   const proposed=(S.decisions.decisions||[]).filter(d=>d.status.startsWith("提案"));
   S.derived={open,urgent,proposed};
   renderNav();renderTeamStrip();
-  renderToday();renderCommitments();renderInbox();renderProjects();renderPeople();renderDecisions();renderTeam();renderLog();
+  renderToday();renderCommitments();renderInbox();renderProjects();renderPeople();renderDecisions();renderKnowledge();renderTeam();renderLog();
 }
-function counts(){const {open,urgent,proposed}=S.derived;return {today:urgent.length,commitments:open.length,inbox:(S.inbox.pending||[]).length,projects:(S.projects.projects||[]).length,people:(S.people.people||[]).length,decisions:proposed.length,team:(S.agents.agents||[]).length,log:(S.oplog.items||[]).length};}
+function counts(){const {open,urgent,proposed}=S.derived;return {today:urgent.length,commitments:open.length,inbox:(S.inbox.pending||[]).length,projects:(S.projects.projects||[]).length,people:(S.people.people||[]).length,decisions:proposed.length,knowledge:((S.knowledge.terms||[]).length+(S.knowledge.rules||[]).filter(r=>r["状態"]==="有効").length),team:(S.agents.agents||[]).length,log:(S.oplog.items||[]).length};}
 function renderNav(){const c=counts();$("#nav").innerHTML=TABS.map(([k,l,i])=>{const n=c[k];const hot=k==="today"&&n>0?"hot":(k==="inbox"||k==="decisions")&&n>0?"warm":"";return `<button data-tab="${k}" class="${k===cur?"active":""}">${ic(i)}<span class="lbl">${l}</span>${n?`<span class="cnt ${hot}">${n}</span>`:""}</button>`;}).join("");
   $("#nav").querySelectorAll("button").forEach(b=>b.onclick=()=>show(b.dataset.tab));}
 function renderTeamStrip(){const ag=S.agents.agents||[];$("#team-n").textContent=`${ag.length}名`;$("#team-strip").innerHTML=ag.map(a=>`<span data-team="${esc(a.handle)}">${avatar(a.icon,"@"+a.handle,"sm",a.handle)}</span>`).join("");$("#team-strip").querySelectorAll("[data-team]").forEach(el=>el.onclick=()=>show("team"));}
@@ -526,6 +529,27 @@ function decItem(d){const st=d.status;return `<div class="item"><div class="av" 
   <div class="acts">${st.startsWith("提案")?act("承認して決定にする","thumbs-up",()=>api("/api/decision/status",d.id?{project:d.project,id:d.id,status:"decided"}:{project:d.project,title:d.title,status:"decided"}),"primary"):""}${!st.startsWith("提案")&&!st.startsWith("検証済")?act("提案に戻す","undo",()=>api("/api/decision/status",d.id?{project:d.project,id:d.id,status:"proposed"}:{project:d.project,title:d.title,status:"proposed"})):""}</div></div></div>`;}
 function renderDecisions(){const ds=S.decisions.decisions||[];const grp=k=>ds.filter(d=>k(d.status));const sec=(t,i,arr)=>arr.length?`<div class="card" style="margin-bottom:14px"><div class="card-h">${ic(i)}${t}<span class="n">${arr.length}</span></div>${arr.map(decItem).join("")}</div>`:"";
   $("#tab-decisions").innerHTML=ds.length?sec("提案（未承認）","lightbulb",grp(s=>s.startsWith("提案")))+sec("決定","check",grp(s=>s.startsWith("決定")))+sec("検証済","badge-check",grp(s=>s.startsWith("検証")))+sec("その他","tag",grp(s=>!/^(提案|決定|検証)/.test(s))):`<div class="card">${empty("決定の記録がありません。/consult・/discuss の結果が提案として溜まります","badge-check")}</div>`;}
+
+/* --- knowledge（用語集・業務ルール） --- */
+let kq="";
+function renderKnowledge(){const K=S.knowledge||{},q=kq.trim().toLowerCase();
+  const terms=(K.terms||[]).filter(t=>!q||JSON.stringify(t).toLowerCase().includes(q));
+  const rules=(K.rules||[]).filter(r=>!q||JSON.stringify(r).toLowerCase().includes(q));
+  const stale=r=>r["状態"]==="有効"&&r.confirmed_days!=null&&r.confirmed_days>180;
+  $("#tab-knowledge").innerHTML=`<div class="card" style="margin-bottom:14px"><div class="searchbox" style="min-width:0">${ic("search")}<input id="kq" placeholder="用語・ルールを絞り込む" value="${esc(kq)}"></div></div>
+  <div class="grid-2">
+    <div class="card"><div class="card-h">${ic("book")}用語集<span class="n">${terms.length}</span><span class="right">依頼の前に秘書が解読に使う</span></div>
+      ${terms.length?`<div class="tscroll"><table><thead><tr><th>用語</th><th>意味</th><th>種別</th><th>範囲</th></tr></thead><tbody>${terms.map(t=>`<tr><td class="nw"><b>${esc(t["用語"])}</b>${t["別表記"]?`<div class="muted small">${esc(t["別表記"])}</div>`:""}</td><td>${esc(t["意味"])}<div class="muted small">${esc(t["出典"]||"")} ・ ${esc(t["更新日"]||"")}</div></td><td class="nw"><span class="chip">${esc(t["種別"]||"")}</span></td><td class="nw">${esc(t["範囲"]||"")}</td></tr>`).join("")}</tbody></table></div>`:empty("用語はまだありません。「PSR はパイプライン状況報告のこと」と話すか、下から追加","book")}
+      <form class="panel" id="f-term"><label><span>${ic("tag")}用語</span><input name="term" required placeholder="PSR"></label><label class="wide"><span>${ic("pen")}意味</span><input name="meaning" required placeholder="パイプライン状況報告（週次の営業資料）"></label><label><span>別表記</span><input name="aliases" placeholder="パイプライン報告"></label><label><span>種別</span><select name="kind_term"><option>略語</option><option selected>社内用語</option><option>コードネーム</option><option>あだ名</option><option>業界用語</option></select></label><label><span>範囲</span><input name="scope" placeholder="全社 / P:slug"></label><button class="btn primary">${ic("plus")}用語を追加</button></form></div>
+    <div class="card"><div class="card-h">${ic("shield")}業務ルール<span class="n">${rules.filter(r=>r["状態"]==="有効").length}</span><span class="right">出典と確認日つき</span></div>
+      ${rules.length?rules.map(r=>`<div class="item"><div class="av sm" style="--h:${hue(r.ID||"")}">${ic(r["状態"]==="有効"?"shield":"archive")}</div><div class="body"><div class="ttl"><span class="mono muted">${esc(r.ID)}</span><span>${esc(r["内容"])}</span>${r["状態"]!=="有効"?`<span class="badge t-muted">${esc(r["状態"])}</span>`:""}${stale(r)?`<span class="badge t-warn">${ic("clock")}確認から${r.confirmed_days}日</span>`:""}</div>
+        <div class="meta"><span>${ic("file")} ${esc(r["出典"])}</span><span>${ic("tag")} ${esc(r["適用範囲"]||"")}</span><span>${ic("eye")} 確認 ${esc(r["確認日"]||"")}</span></div>
+        ${r["状態"]==="有効"?`<div class="acts">${act("今も有効と確認","check",()=>api("/api/rule/confirm",{rid:r.ID}))}</div>`:""}</div></div>`).join(""):empty("業務ルールはまだありません。出典つきで話すか、下から追加","shield")}
+      <form class="panel" id="f-rule"><label class="wide"><span>${ic("pen")}内容</span><input name="content" required placeholder="経費精算は翌月5営業日までに申請"></label><label><span>${ic("file")}出典</span><input name="source" required placeholder="経費規程 第4条"></label><label><span>適用範囲</span><input name="scope" placeholder="全社"></label><label><span>有効日</span><input type="date" name="effective"></label><button class="btn primary">${ic("plus")}ルールを追加</button></form></div>
+  </div>`;
+  const qi=$("#kq");qi.oninput=e=>{kq=e.target.value;renderKnowledge();const n=$("#kq");n.focus();n.setSelectionRange(n.value.length,n.value.length);};
+  const post=(id,path)=>{$(id).onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));Object.keys(d).forEach(k=>{if(!d[k])delete d[k];});await api(path,d);};};
+  post("#f-term","/api/term/add");post("#f-rule","/api/rule/add");}
 
 /* --- team --- */
 function renderTeam(){const ag=S.agents.agents||[];

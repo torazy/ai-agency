@@ -23,6 +23,9 @@ mem.py ── memory/ への「決定的な追記」CLI。
          --impact "..." --prediction "..." --verify-date 2026-12-01 [--status proposed|decided] [--revoke "..."]
   python tools/mem.py decision set-status kintai-saas D-003 decided   # ID（または題名の完全一致）で指定
   python tools/mem.py person add-alias kakuu-ichiro-kakuu-corp-bucho "部長"   # 呼び名（recall.py の名前解決）
+  python tools/mem.py term add PSR --meaning "パイプライン状況報告（週次の営業会議資料）" --aliases "パイプライン報告" --kind 略語
+  python tools/mem.py rule add --content "経費精算は翌月5営業日までに申請" --source "経費規程 第4条" --scope 全社
+  python tools/mem.py rule confirm R-001        # 今も有効と確かめた ／ rule set-state R-001 retired で廃止
   python tools/mem.py check
   （探す・読む・点検するは tools/recall.py。このファイルは書き込み専用）
   python tools/mem.py migrate     # 旧雛形からの移行（本体アップデート後に1回。冪等）
@@ -698,6 +701,174 @@ def person_predict(root: Path, a: argparse.Namespace) -> None:
     person_append(root, a.ident, "反応予測と検証", [today(), a.case, a.prediction, a.verify_date, "（未検証）", "", ""], "反応予測")
 
 
+# ---------------------------------------------------------------- knowledge（用語集・業務ルール）
+GLOSSARY_SKELETON = """# 用語集（glossary.md）
+
+> 社内の略語・用語・コードネーム・あだ名と、その意味。依頼を実行する前に `recall.py decode` で解読する。
+> 追加・更新は `python tools/mem.py term add|set`。
+
+**最終更新**: （未記録）
+
+## 用語
+
+| 用語 | 別表記 | 意味 | 種別 | 範囲 | 出典 | 更新日 |
+|---|---|---|---|---|---|---|
+| （未登録） | | | | | | |
+"""
+RULES_SKELETON = """# 業務ルール（rules.md）
+
+> 社内規程・手順・締め日・承認の流れなど。出典と確認日を必ず書く。追加・更新は `python tools/mem.py rule add|set-state|confirm`。
+
+**最終更新**: （未記録）
+
+## ルール
+
+| ID | 内容 | 適用範囲 | 出典 | 有効日 | 確認日 | 状態 |
+|---|---|---|---|---|---|---|
+| （未登録） | | | | | | |
+"""
+TERM_KINDS = {"略語", "社内用語", "コードネーム", "あだ名", "業界用語"}
+TERM_FIELDS = {"meaning": "意味", "aliases": "別表記", "kind": "種別", "scope": "範囲", "source": "出典"}
+
+
+def knowledge_path(root: Path, name: str) -> Path:
+    p = root / "memory" / "knowledge" / name
+    if not p.exists():
+        write_text_atomic(p, GLOSSARY_SKELETON if name == "glossary.md" else RULES_SKELETON)
+    return p
+
+
+def _table(lines: list[str], heading: str, path: Path) -> tuple[int, int]:
+    sec = find_section(lines, heading)
+    h, e = find_table(lines, sec) if sec >= 0 else (-1, -1)
+    if h < 0:
+        fail(f"{path.name} に『{heading}』の表が無い")
+    return h, e
+
+
+def _norm_term(t: str) -> str:
+    return re.sub(r"\s+", "", t or "").lower()
+
+
+def _term_names(row: dict) -> set[str]:
+    names = {_norm_term(row.get("用語", ""))}
+    names |= {_norm_term(x) for x in re.split(r"[、,，/／]", row.get("別表記", "")) if x.strip()}
+    return {n for n in names if n}
+
+
+def glossary_rows(root: Path) -> list[dict]:
+    p = root / "memory" / "knowledge" / "glossary.md"
+    if not p.exists():
+        return []
+    lines = read(p)
+    sec = find_section(lines, "## 用語")
+    h, e = find_table(lines, sec) if sec >= 0 else (-1, -1)
+    if h < 0:
+        return []
+    hdr = cells(lines[h])
+    return [dict(zip(hdr, cells(ln))) for ln in lines[h + 2:e] if not PLACEHOLDER_RE.match(ln)]
+
+
+@locked
+def term_add(root: Path, a: argparse.Namespace) -> None:
+    term = (a.term or "").strip()
+    if not term or len(term) > 60:
+        fail("用語は1〜60字")
+    if not (a.meaning or "").strip() or len(a.meaning) > 300:
+        fail("--meaning（意味）は1〜300字")
+    if a.kind and a.kind not in TERM_KINDS:
+        fail(f"--kind は {sorted(TERM_KINDS)} のいずれか")
+    new_names = {_norm_term(term)} | {_norm_term(x) for x in re.split(r"[、,，/／]", a.aliases or "") if x.strip()}
+    for r in glossary_rows(root):
+        if _term_names(r) & new_names:
+            fail(f"「{r.get('用語')}」が既に用語集にある（意味を直すなら term set、別の意味なら範囲を変えて登録）")
+    p = knowledge_path(root, "glossary.md")
+    lines = read(p)
+    h, e = _table(lines, "## 用語", p)
+    lines = append_row(lines, h, e, [term, a.aliases or "", a.meaning, a.kind or "社内用語", a.scope or "全社",
+                                     a.source or "会話", today()])
+    write(p, touch_updated(lines))
+    ok(f"用語集に「{term}」＝{a.meaning}")
+
+
+@locked
+def term_set(root: Path, term: str, field_name: str, value: str) -> None:
+    col = TERM_FIELDS.get(field_name)
+    if not col:
+        fail(f"項目は {sorted(TERM_FIELDS)} のいずれか")
+    if field_name == "kind" and value not in TERM_KINDS:
+        fail(f"種別は {sorted(TERM_KINDS)} のいずれか")
+    p = knowledge_path(root, "glossary.md")
+    lines = read(p)
+    h, e = _table(lines, "## 用語", p)
+    hdr = cells(lines[h])
+    key = _norm_term(term)
+    for i in range(h + 2, e):
+        row = dict(zip(hdr, cells(lines[i])))
+        if key in _term_names(row):
+            c = cells(lines[i])
+            c[hdr.index(col)] = esc(value)
+            if "更新日" in hdr:
+                c[hdr.index("更新日")] = today()
+            lines[i] = "| " + " | ".join(c) + " |"
+            write(p, touch_updated(lines))
+            ok(f"用語「{row.get('用語')}」の{col}を更新")
+            return
+    fail(f"用語集に「{term}」が無い（term add で登録）")
+
+
+@locked
+def rule_add(root: Path, a: argparse.Namespace) -> None:
+    content = (a.content or "").strip()
+    if not content or len(content) > 400:
+        fail("--content（ルールの内容）は1〜400字")
+    if not (a.source or "").strip():
+        fail("--source（出典：規程名・URL・誰から聞いたか）が必要。出典の無いルールは記録しない")
+    effective = check_date(a.effective, "--effective（有効日）", allow_none=True) or "-"
+    p = knowledge_path(root, "rules.md")
+    lines = read(p)
+    h, e = _table(lines, "## ルール", p)
+    hdr = cells(lines[h])
+    for ln in lines[h + 2:e]:
+        row = dict(zip(hdr, cells(ln)))
+        if _norm_term(row.get("内容", "")) == _norm_term(esc(content)) and row.get("状態") != "廃止":
+            fail(f"同じルールが既にある（{row.get('ID')}）。確かめ直しただけなら rule confirm")
+    rid = next_id(lines, "R", root)
+    lines = append_row(lines, h, e, [rid, content, a.scope or "全社", a.source, effective, today(), "有効"])
+    write(p, touch_updated(lines))
+    ok(f"業務ルール {rid}「{content[:40]}」（出典 {a.source}）")
+
+
+def _rule_update(root: Path, rid: str, updates: dict, label: str) -> None:
+    p = knowledge_path(root, "rules.md")
+    lines = read(p)
+    h, e = _table(lines, "## ルール", p)
+    hdr = cells(lines[h])
+    for i in range(h + 2, e):
+        c = cells(lines[i])
+        if c[:1] == [rid]:
+            for col, v in updates.items():
+                c[hdr.index(col)] = esc(v)
+            lines[i] = "| " + " | ".join(c) + " |"
+            write(p, touch_updated(lines))
+            ok(f"{rid} の{label}")
+            return
+    fail(f"{rid} が業務ルールに無い")
+
+
+@locked
+def rule_set_state(root: Path, rid: str, state: str) -> None:
+    label = {"active": "有効", "retired": "廃止"}.get(state)
+    if not label:
+        fail("状態は active（有効）/ retired（廃止）")
+    _rule_update(root, rid, {"状態": label, "確認日": today()}, f"状態を {label} に")
+
+
+@locked
+def rule_confirm(root: Path, rid: str) -> None:
+    _rule_update(root, rid, {"確認日": today()}, "確認日を今日に（今も有効と確かめた）")
+
+
 # ---------------------------------------------------------------- decisions
 def decisions_path(root: Path, project: str) -> Path:
     p = root / "memory" / "projects" / project / "decisions.md"
@@ -832,6 +1003,10 @@ def migrate(root: Path) -> None:
     if not (root / "memory" / "inbox.md").exists():
         inbox_path(root)
         changed.append("inbox.md を作成")
+    for name in ("glossary.md", "rules.md"):
+        if not (root / "memory" / "knowledge" / name).exists():
+            knowledge_path(root, name)
+            changed.append(f"knowledge/{name} を作成")
     # 関連欄の表記を統一（旧行の `P:x` のバッククォートを外す）
     if p.exists():
         lines = read(p)
@@ -967,6 +1142,16 @@ def main(argv: list[str] | None = None) -> None:
     s = de.add_parser("set-status"); s.add_argument("project"); s.add_argument("key", help="決定の ID（D-001）か題名の完全一致")
     s.add_argument("status")
 
+    te = sub.add_parser("term", help="用語集（memory/knowledge/glossary.md）").add_subparsers(dest="sub", required=True)
+    s = te.add_parser("add"); s.add_argument("term"); s.add_argument("--meaning", required=True)
+    s.add_argument("--aliases", help="別表記（「、」区切り）"); s.add_argument("--kind", help="略語 / 社内用語 / コードネーム / あだ名 / 業界用語")
+    s.add_argument("--scope", help="全社 / P:{案件} / 部署名"); s.add_argument("--source", help="出典（誰から・どの資料）")
+    s = te.add_parser("set"); s.add_argument("term"); s.add_argument("field", choices=sorted(TERM_FIELDS)); s.add_argument("value")
+    ru = sub.add_parser("rule", help="業務ルール（memory/knowledge/rules.md）").add_subparsers(dest="sub", required=True)
+    s = ru.add_parser("add"); s.add_argument("--content", required=True); s.add_argument("--source", required=True)
+    s.add_argument("--scope"); s.add_argument("--effective", help="有効日 YYYY-MM-DD")
+    s = ru.add_parser("set-state"); s.add_argument("id"); s.add_argument("state", choices=["active", "retired"])
+    s = ru.add_parser("confirm"); s.add_argument("id")
     sy = sub.add_parser("sync", help="/update の取り込み済み範囲（memory/sync-state.json）").add_subparsers(dest="sub", required=True)
     s = sy.add_parser("show"); s.add_argument("--json", action="store_true")
     s = sy.add_parser("mark"); s.add_argument("source"); s.add_argument("--at")
@@ -1016,6 +1201,13 @@ def dispatch(root: Path, a: argparse.Namespace) -> None:
     elif a.cmd == "decision":
         {"add": lambda: decision_add(root, a),
          "set-status": lambda: decision_set_status(root, a.project, a.key, a.status)}[a.sub]()
+    elif a.cmd == "term":
+        {"add": lambda: term_add(root, a),
+         "set": lambda: term_set(root, a.term, a.field, a.value)}[a.sub]()
+    elif a.cmd == "rule":
+        {"add": lambda: rule_add(root, a),
+         "set-state": lambda: rule_set_state(root, a.id, a.state),
+         "confirm": lambda: rule_confirm(root, a.id)}[a.sub]()
     elif a.cmd == "sync":
         {"show": lambda: sync_show(root, a.json),
          "mark": lambda: sync_mark(root, a.source, a.at)}[a.sub]()

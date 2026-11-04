@@ -30,6 +30,14 @@
       "pattern": "\\bmem\\.py\\s+decision\\s+(add|set-status)\\b"
     },
     {
+      "category": "mem:term",
+      "pattern": "\\bmem\\.py\\s+term\\s+(add|set)\\b"
+    },
+    {
+      "category": "mem:rule",
+      "pattern": "\\bmem\\.py\\s+rule\\s+(add|set-state|confirm)\\b"
+    },
+    {
       "category": "memory-write(sh)",
       "pattern": "((>>?|\\btee\\b|\\bsed\\s+-i|Set-Content|Out-File|\\bcp\\b|\\bmv\\b)[^|;&]*\\bmemory/)|(\\bmemory/[^|;&\\n]*\\.(write_text|write_bytes)\\b)|(open\\([^)]*memory/[^)]*['\"][wa])"
     },

@@ -27,7 +27,10 @@ description: ユーザーが外部情報（会議メモ、Slack会話、仕様�
 - **「覚えておいて」で分類が即決できないもの** → まず `python tools/mem.py inbox add "要点" --source {出所}`
   （取りこぼしゼロ）。**同じターンで**分類して正規の記録先へ書き、`inbox resolve` で記録先を残す（仕分けをユーザーに任せない）
 - **生メモ・複数カテゴリ混在（長文）** → `memos/YYYY-MM-DD-{topic}.md`
-- **ドメイン知識・汎用情報** → `memory/insights.md`
+- **用語の定義**（「Xは Yのこと」「略して Z と呼ぶ」）→ `python tools/mem.py term add X --meaning … --kind … --scope … --source …`
+- **業務ルール**（規程・手順・締め日・承認の流れ・使ってよい道具）→ `python tools/mem.py rule add --content … --source …`
+  （出典＝規程名・資料・誰から聞いたか。出典が分からなければ確認ケース。案件だけの決まりは案件の `context/`）
+- **経験から得た学び・ドメイン知識** → `memory/insights.md`
 
 複数の種類が混在する場合は分割して複数ファイルに保存する。
 

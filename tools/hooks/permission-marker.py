@@ -59,6 +59,9 @@ def save(path: Path, items: list) -> None:
 
 
 def main() -> None:
+    # 本体（テンプレート）では記録しない：雛形の memory/ に実データを書かない（OPERATIONS.md §1）
+    if (workspace_root() / ".ai-agency-template").exists():
+        sys.exit(0)
     try:
         raw = sys.stdin.buffer.read().decode("utf-8", errors="replace").strip() if not sys.stdin.isatty() else ""
         event = json.loads(raw) if raw else {}

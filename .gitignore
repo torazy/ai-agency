@@ -28,10 +28,10 @@ Thumbs.db
 # Claude Code ローカル設定（端末固有・権限承認のたびに変化）
 .claude/settings.local.json
 
-# 本体メンテナンス層（tools/dev/enable-maintenance.py が本体フォルダにだけ生成する。インスタンスには存在させない）
+# 本体マーカー（本体フォルダにだけ置く。製品のフックとツールが本体の雛形に記録しないための印。インスタンスには存在させない）
+# 本体の保守は別リポジトリ ai-agency-maintenance から行う（OPERATIONS.md §5）
 .ai-agency-template
 /CLAUDE.local.md
-/.claude/skills/maint-*/
 
 # 書き込みのロックと一時ファイル（mem.py）
 memory/.mem.lock

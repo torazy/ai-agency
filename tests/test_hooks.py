@@ -54,6 +54,17 @@ class OperationLoggerTest(TempRepo):
         self.logger(ev("Write", file_path=str(self.root / "README.md")))
         self.assertEqual(self.log_lines(), [])
 
+    def test_template_records_nothing(self):
+        # 本体（テンプレート）を直接開いても、記録系のフックは雛形の memory/ に書かない
+        (self.root / ".ai-agency-template").write_text("", encoding="utf-8")
+        for hook, e in (("operation-logger", ev("Edit", file_path=str(self.root / "memory" / "situation.md"))),
+                        ("agent-activity", json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Agent",
+                                                       "tool_input": {"subagent_type": "qa", "description": "x"}})),
+                        ("permission-marker", ev("Bash", "python tools/mem.py inbox add x"))):
+            self.assertEqual(self.run_py(f"tools/hooks/{hook}.py", stdin=e).returncode, 0, hook)
+        self.assertEqual(self.log_lines(), [])
+        self.assertFalse((self.root / "memory/task-log/agent-runs.jsonl").exists())
+
     def test_records_memory_writes(self):
         self.logger(ev("Edit", file_path=str(self.root / "memory" / "situation.md")))
         self.logger(ev("Bash", "python -c \"open('memory/x.md','w').write('a')\""))

@@ -151,23 +151,21 @@ git merge upstream/main
   （それより前の記録は昇格の根拠に使わない）
 
 - **自動テスト**：`python -m unittest discover -s tests -t tests`（標準ライブラリのみ）。push と PR のたびに GitHub Actions が
-  Windows / Linux × Python 3.11 / 3.12 で回す。テストは `tests/fixtures/memory/`（雛形の写し）の上で動き、リポジトリの `memory/`
+  Windows / Linux / macOS × Python 3.9 / 3.11 / 3.12 で回す。テストは `tests/fixtures/memory/`（雛形の写し）の上で動き、リポジトリの `memory/`
   には触らないので、インスタンスで回しても実データは読まない
 
-- **本体フォルダではメンテナンス層を有効化する**（Claude Code）：`python tools/dev/enable-maintenance.py` を1回実行。
-  製品の CLAUDE.md・フック・スキル・MCP を本体フォルダでだけ機械的に止め（`.claude/settings.local.json`）、
-  メンテナ向けの `CLAUDE.local.md` と `.claude/skills/maint-*` を置く。生成物はすべて gitignore 済みで
-  インスタンスには届かない。雛形は `tools/dev/`（コミット対象）。詳細は `tools/dev/README.md`。
-  有効化後、新しいセッションで「あなたは誰？」と聞いて第一秘書と名乗らないことを確認する。
-- **本体で `/setup` や `/intake` を実行しない**。動作確認は使い捨てのテストインスタンスで行う
-  （`maint-test-instance` スキル：`git clone . ../ai-agency-test`。push しない。削除は手動）。
-- `permissions.deny` は局所設定で外せないため本体でも効く。ディレクトリ削除は `git rm -r` か Python で行う。
+- **本体の保守は別リポジトリ（ai-agency-maintenance）を開いた会話から行う**。本体のフォルダを Claude Code で開くと
+  製品（秘書）の常時ルール・フック・許可と禁止のルールがそのまま効くため、本体の制御に左右されずに直すには、
+  本体の `.claude/` が読み込まれない別のフォルダから作業する。保守の手順・状況台帳・メンテ用スキルはそちらにあり、
+  本体には持ち込まない。本体フォルダには gitignore 済みのマーカー `.ai-agency-template` を置き、本体を直接開いても
+  製品のフックとツールが雛形の `memory/` に記録しないようにする（保守側が自動で置く）
+- **本体で `/setup` や `/intake` を実行しない**。動作確認は使い捨てのテストインスタンスで行う（本体を clone し、push しない）
 
 - `memory/` 配下のファイルは**初期化用の雛形**。リリース後に雛形の構造を変える場合は、
   上書きでなく **移行手順** をコミットメッセージと `PORTABILITY.md` に明記する
   （例：「commitments.md に関連欄を追加 → 既存インスタンスは列を手動追加 or 秘書に依頼」）
 - 正典は `CLAUDE.md`（常時ルール）・`.claude/agents/`（人格）・`.claude/skills/`（手順）・`.claude/commands/`（コマンド）。
-  構造の整合は `maint-check-structure` スキルで検査する
+  構造の整合は保守側の `maint-check-structure` スキルと `tests/test_structure.py` で検査する
 - 破壊的変更（ファイル名変更・ワークフロー削除）は README のリリースノートに明記する
 
 ---

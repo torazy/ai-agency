@@ -86,15 +86,10 @@ class StructureTest(unittest.TestCase):
         attrs = (REPO / ".gitattributes").read_text(encoding="utf-8")
         self.assertIn("*.sh   text eol=lf", attrs)
 
-    def test_maintenance_layer_sources_exist(self):
-        """enable-maintenance.py が写す元（本体メンテ層の正本）が clone に含まれているか（gitignore で落ちていないか）。"""
-        dev = REPO / "tools" / "dev"
-        if not dev.exists():
-            self.skipTest("インスタンスでは tools/dev を消していてもよい")
-        for rel in ("claude-local.md", "enable-maintenance.py", "disable-maintenance.py", "maint.py", "isolation.json",
-                    "DESIGN.md", "memory/maint-state.md",
-                    "skills/maint-check-structure/SKILL.md", "skills/maint-test-instance/SKILL.md"):
-            self.assertTrue((dev / rel).exists(), f"tools/dev/{rel} が無い")
+    def test_no_maintenance_files_in_product(self):
+        """保守の物（台帳・手順・メンテモードの層）は別リポジトリ ai-agency-maintenance に置き、本体には持ち込まない。"""
+        self.assertFalse((REPO / "tools" / "dev").exists(), "tools/dev は廃止（保守は ai-agency-maintenance から）")
+        self.assertEqual([p.name for p in (REPO / ".claude" / "skills").glob("maint-*")], [])
 
     def test_fixture_matches_template(self):
         """本体（雛形のまま）でだけ確かめる：tests/fixtures/memory が memory/ の雛形と一致しているか。"""

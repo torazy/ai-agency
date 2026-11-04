@@ -200,6 +200,9 @@ def main() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
+    # 本体（テンプレート）では記録しない：雛形の memory/ に実データを書かない（OPERATIONS.md §1）
+    if (workspace_root() / ".ai-agency-template").exists():
+        sys.exit(0)
 
     event = read_event()
     cfg = load_config()

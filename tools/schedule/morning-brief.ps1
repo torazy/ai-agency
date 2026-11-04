@@ -29,6 +29,8 @@ $allowed = @(
     "Read", "Glob", "Grep",
     "Bash(python tools/mem.py *)", "Bash(python3 tools/mem.py *)",
     "Bash(python tools/recall.py *)", "Bash(python3 tools/recall.py *)",
+    # On Windows the model may call the same scripts through the PowerShell tool; allow that too.
+    "PowerShell(python tools/mem.py *)", "PowerShell(python tools/recall.py *)",
     "Edit(memory/briefs/**)"
 )
 $log = "memory/briefs/_last-run.log"

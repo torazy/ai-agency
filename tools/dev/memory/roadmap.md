@@ -54,6 +54,15 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
 | 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | ✅ 2026-11-04（/update コマンド・mem.py sync・inbox の重複防止・/morning-brief --unattended → memory/briefs/・tools/schedule の ps1/sh・ログの unattended 区別・起動フックとボードへの表示・/setup Step 6 をローカル定期実行に） |
 
+## テストインスタンスの観察（2026-11-04・CLAUDE.md を 186 行に整理した後・OK）
+
+「覚えておいて」で、既存の人（鈴木さん）と新しい人（ベンダーの山田さん、メールつき）が混ざった2件を渡した。
+`intake-and-file` を起動 → `recall.py who 鈴木`（姓だけで鈴木花子に解決）・`who 山田`（該当なし＝新規）→ `find` で既存確認 →
+デモ日を status.md、見積予定を約束台帳 C-005 に配置 → inbox 2件 resolve（未分類 0）→ 新規人物だけファイル名の案を添えて1問。
+見積期限と比較表の期限が重なることも先回りで指摘。約0.54 USD・55秒。
+気づき：Windows ではモデルが PowerShell ツールで mem.py / recall.py を呼ぶことがあり、Bash 用の許可だけだと拒否が続いて空回りした
+→ tools/schedule/morning-brief.ps1 の許可に PowerShell(python tools/mem.py *)・PowerShell(python tools/recall.py *) を追加。
+
 ## テストインスタンスの観察（2026-11-04・段階的開示と点検・OK）
 
 ブランチ `synthetic-year` に1年分のダミー（372 ファイル・約1.2万行・約50万文字：案件6・会議240・人物40・約束150・過去分あり）を生成。
@@ -71,7 +80,7 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
   ダミー生成の副作用で台帳に ID 重複が出た → 点検に「台帳の ID 重複」を追加
 - 直した点：生メモを「参照されていない」だけで取り出し漏れ扱いにしていた（約束・決定らしき記載が無いものは正規の置き場）、
   点検の出力が多すぎた（区分ごとに上位5件＋`--area`）、姓だけで人物を引けなかった、大きな表で語が別々の行に散っているだけの節が上位に来た
-- 残課題：CLAUDE.md が 263 行（目安 200）。§8 のモデル階層・セッション切り替えなど手順寄りの節を skills へ移す余地
+- 残課題（解消済み）：CLAUDE.md 263 行 → 186 行に整理（e7b99e8）
 
 ## テストインスタンスの観察（2026-11-04・「配置は秘書」・OK）
 

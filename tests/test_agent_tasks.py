@@ -120,5 +120,92 @@ class BoardActivityTest(TempRepo):
         self.assertEqual(self.srv.do_post(self.root, "/api/commitment/content", {"id": "C-004"})[0], 400)
 
 
+class RunTaskTest(TempRepo):
+    """tools/run_task.py：着手の検査・状態・ボードからの起動（claude は起動しない）。"""
+
+    def setUp(self):
+        super().setUp()
+        self.write(".claude/agents/pm.md", "---\nname: pm\n---\n")
+        self.mem("commitment", "add", "--kind", "given", "--who", "@pm", "--content", "スケジュール案", "--due", d(5))
+        self.mem("commitment", "add", "--kind", "task", "--content", "自分の作業", "--due", d(5))
+        self.rt = self.load("tools/run_task.py", "run_task_t")
+
+    def test_check_task(self):
+        self.assertEqual(self.rt.check_task(self.root, "C-001")["相手"], "@pm")
+        for cid, why in [("C-002", "エージェントに任せた"), ("C-099", "無い"), ("x; rm", "形が違う")]:
+            with self.assertRaises(ValueError) as cm:
+                self.rt.check_task(self.root, cid)
+            self.assertIn(why, str(cm.exception))
+        self.rt.write_status(self.root, "C-001", state="running", start=time.time())
+        with self.assertRaises(ValueError):
+            self.rt.check_task(self.root, "C-001")                      # 二重起動しない
+        self.rt.check_task(self.root, "C-001", child=True)              # 起動した本人は通す
+        self.rt.write_status(self.root, "C-001", start=time.time() - 4 * 3600)
+        self.assertEqual(self.rt.read_status(self.root, "C-001")["state"], "unknown")
+        self.mem("commitment", "set-state", "C-001", "done")
+        with self.assertRaises(ValueError):
+            self.rt.check_task(self.root, "C-001")
+        (self.root / ".ai-agency-template").write_text("", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "本体"):
+            self.rt.check_task(self.root, "C-002")
+
+    def test_allowed_tools_stay_read_only(self):
+        tools = self.rt.allowed_tools()
+        self.assertIn("Write(memory/task-results/**)", tools)
+        self.assertFalse([t for t in tools if t.startswith("Write(") and "task-results" not in t])
+        self.assertFalse([t for t in tools if t.startswith("Bash(") and "mem.py" in t
+                          and not any(op in t for op in ("list", "check", "show"))])
+        self.assertNotIn("Bash", tools)
+
+    def test_board_run_and_result(self):
+        srv = self.load("tools/board/server.py", "board_runtask")
+        calls = []
+        real = srv.run_task.launch
+        srv.run_task.launch = lambda root, cid, budget: (calls.append((cid, budget)), real.__globals__["check_task"](root, cid),
+                                                         {"id": cid, "agent": "@pm", "budget": budget})[-1]
+        self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "0.5"})[0], 200)
+        self.assertEqual(calls, [("C-001", 0.5)])
+        self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-002"})[0], 400)       # 自分のタスク
+        self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "50"})[0], 400)
+        self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "abc"})[0], 400)
+        # 報告が届くと「確認待ち」、失敗はログつき
+        self.rt.write_status(self.root, "C-001", state="done", start=time.time() - 60, end=time.time(), exit=0)
+        self.write("memory/task-results/C-001.md", "# C-001 スケジュール案\n\n## 結論\n- 3案\n")
+        row = next(r for r in srv.api_commitments(self.root)["rows"] if r["ID"] == "C-001")
+        self.assertEqual((row["has_result"], row["agent_state"]), (True, "review"))
+        self.assertIn("3案", srv.api_task_result(self.root, "C-001")["text"])
+        self.assertEqual(srv.api_task_result(self.root, "../x"), {"error": "ID が不正"})
+        self.rt.write_status(self.root, "C-001", state="running", start=time.time())
+        row = next(r for r in srv.api_commitments(self.root)["rows"] if r["ID"] == "C-001")
+        self.assertEqual(row["agent_state"], "running")
+
+    def test_session_start_mentions_waiting_reports(self):
+        self.write("memory/task-results/C-001.md", "# 報告\n")
+        self.write("memory/task-results/C-002.md", "# 自分のタスクには付かない想定だが、未完了なら出る\n")
+        self.mem("commitment", "set-state", "C-002", "done")
+        out = self.run_py("tools/hooks/session-start.py").stdout
+        self.assertIn("[任せたタスク] 報告が届いて確認待ち：C-001（", out)
+
+    def test_cli_rejects_without_claude_side_effects(self):
+        r = self.run_py("tools/run_task.py", "C-002")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertFalse((self.root / "memory/task-results/C-002.json").exists())
+
+
+class BoardGuardTest(TempRepo):
+    def test_request_allowed(self):
+        srv = self.load("tools/board/server.py", "board_guard")
+        f = srv.request_allowed
+        self.assertEqual(f("GET", {"Host": "127.0.0.1:8765"}, 8765), "")
+        self.assertEqual(f("GET", {"Host": "localhost:8765"}, 8765), "")
+        self.assertNotEqual(f("GET", {"Host": "attacker.example:8765"}, 8765), "")     # DNS リバインディング
+        self.assertNotEqual(f("GET", {"Host": "127.0.0.1:9999"}, 8765), "")
+        ok = {"Host": "127.0.0.1:8765", "Content-Type": "application/json"}
+        self.assertEqual(f("POST", ok, 8765), "")
+        self.assertNotEqual(f("POST", {**ok, "Content-Type": "text/plain"}, 8765), "")   # フォーム送信型の CSRF
+        self.assertNotEqual(f("POST", {**ok, "Origin": "https://attacker.example"}, 8765), "")
+        self.assertEqual(f("POST", {**ok, "Origin": "http://localhost:8765"}, 8765), "")
+
+
 if __name__ == "__main__":
     unittest.main()

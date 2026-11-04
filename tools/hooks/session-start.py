@@ -78,10 +78,12 @@ def main() -> None:
     commitments = read(mem / "commitments.md")
     overdue = 0
     today = date.today()
+    open_ids = set()
     for row in commitments.splitlines():
         cells = [c.strip() for c in row.strip().strip("|").split("|")] if row.startswith("|") else []
         if len(cells) < 4 or not re.fullmatch(r"C-\d{3,}", cells[0]) or cells[-1] in ("done", "dropped"):
             continue
+        open_ids.add(cells[0])
         for d in re.findall(r"(\d{4}-\d{2}-\d{2})", " ".join(cells[2:])):
             try:
                 if datetime.strptime(d, "%Y-%m-%d").date() < today:
@@ -125,6 +127,13 @@ def main() -> None:
                 f"[朝のブリーフ] memory/briefs/{latest.name}（{'今日' if age == 0 else '昨日'}の無人実行）"
                 f"：今日中 {count('🔴')} 件・見ておく {count('🟡')} 件。取り込みで記録したものと確認待ちはブリーフ末尾にある。"
             )
+
+    # エージェントに任せたタスクの報告（tools/run_task.py → memory/task-results/）。未完了の約束のものだけ
+    rdir = mem / "task-results"
+    waiting = sorted(f.stem for f in rdir.glob("C-*.md") if f.stem in open_ids) if rdir.exists() else []
+    if waiting:
+        lines.append(f"[任せたタスク] 報告が届いて確認待ち：{', '.join(waiting[:8])}（memory/task-results/）。"
+                     "要点を伝えて承認を1問で聞き、承認後に報告の「記憶に入れる候補」を記録する（/run-task の末尾）。")
 
     # 記憶の点検（recall.py review の結果。毎朝のブリーフが作る）。7日以内で要対応があれば件数だけ伝える
     review = read(mem / "briefs" / "review.md")

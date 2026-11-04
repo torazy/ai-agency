@@ -59,7 +59,7 @@ SessionStart フックが「[記憶の状態]」「[約束台帳]」「[inbox]�
 | テーマを与えて議論させたい（専門家同士、専門家＋人物モデル） | `/discuss`：@chief が司会。意見表明→反論・修正→収束のラウンド制 |
 | 実在の人への報告・提案・指示の通し方 | `/simulate`：その人の**思考モデル**（`memory/people/` の観察）を独立に召集し反応を予測 |
 | 単純な検索・ファイリング・単一領域の問い | @chief が直接、対応スキルで即答 |
-| まとまった作業を切り出す（調査・下書き・一括処理） | 約束台帳に `commitment add --kind given --who @handle` で載せ、Agent の description に C-ID を書いて渡す。ボードに担当と稼働が出る。結果は @chief が確かめて done |
+| まとまった作業を切り出す（調査・下書き・一括処理） | 約束台帳に `commitment add --kind given --who @handle` で載せ、Agent の description に C-ID を書いて渡す。ボードに担当と稼働が出る。無人で進めるなら `/run-task`（結果は `memory/task-results/`）。完了は人の承認後 |
 
 専門家は「正しい答え」、人物モデルは「実際のあの人の反応（予測）」を出す別の仕組み。両方要るなら `/consult` → `/simulate`。
 対応領域は `memory/team/roster.md`、不在なら `recruit-expert`、深掘りの手順を足すなら `expert-plugins`。
@@ -182,7 +182,7 @@ inbox は**秘書の作業中トレイ**で、ユーザーの ToDo ではない�
 | 常時ルール | `CLAUDE.md`（このファイル）＋ `@memory/dashboard.md` |
 | 人格（専門家・汎用秘書） | `.claude/agents/{handle}.md`（`skills:` で担当スキルを事前読込、`icon:` はボード表示用） |
 | 手順（スキル） | `.claude/skills/{name}/SKILL.md`。専門家の周辺プラグイン（任意）は `expert-plugins` |
-| スラッシュコマンド | /setup /intake /update /consult /discuss /simulate /incident /morning-brief /review-decisions /propose-delegation |
+| スラッシュコマンド | /setup /intake /update /consult /discuss /simulate /incident /morning-brief /run-task /review-decisions /propose-delegation |
 | ガードレール・フック | `.claude/settings.json`、`tools/hooks/`（guardrail・session-start・operation-logger）。正典は `memory/guardrails.json` |
 | MCP | `.mcp.json`（github / backlog / brave-search）。コネクタは claude.ai 側 |
 | 記憶の道具 | 書き込み `tools/mem.py`、探す・読む・点検 `tools/recall.py`（コマンド例は `python` で書いている。Mac / Linux では `python3` に読み替える。フックとボードは `tools/py.sh` が自動で選ぶ） |

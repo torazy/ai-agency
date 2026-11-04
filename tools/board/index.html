@@ -414,7 +414,7 @@ function dialog({title,icon="pen",fields,submit="保存"}){return new Promise(re
   d.showModal();setTimeout(()=>$("input,textarea",d)?.focus(),30);});}
 
 /* ------------------------------------------------------------ state & render */
-let S={},cur="today";
+let S={},cur="today",tick=0;
 async function refresh(){
   const keys=["summary","situation","inbox","commitments","projects","people","decisions","oplog","agents","brief","review","knowledge","activity"];
   const vals=await Promise.all(keys.map(k=>fetch("/api/"+k).then(r=>r.json()).catch(e=>({error:String(e)}))));
@@ -488,9 +488,22 @@ function assigneeAvatar(r,size="sm"){if(r.assignee==="agent"){const a=agentOf(r.
   if(r.assignee==="person")return avatar("",r.who,size,r.who);return avatar("user","自分",size,"me");}
 function assigneeLabel(r){return r.assignee==="agent"?`${esc(r.who)}（エージェント）`:r.assignee==="person"?`${esc(r.who)} に依頼`:r.kind==="received"?`自分（${esc(r.who)}から）`:"自分";}
 function agentBadge(r){return r.agent_state==="running"?`<span class="badge t-ok live">稼働中</span>`:r.agent_state==="review"?`<span class="badge t-warn">${ic("eye")}確認待ち</span>`:r.agent_state==="failed"?`<span class="badge t-danger">${ic("alert")}失敗</span>`:"";}
+async function runTask(r){const o=await dialog({title:`${r.ID} を ${r.who} に着手させる`,icon:"sparkles",submit:"着手させる",
+    fields:[{label:"1回の上限（USD）。無人で調べて報告を書く。記憶や外部サービスは変えない",name:"budget",type:"number",value:"1",required:true}]});
+  if(o)api("/api/task/run",{id:r.ID,budget:String(o.budget)});}
+async function showReport(r){const x=await fetch("/api/task/result?id="+encodeURIComponent(r.ID)).then(j=>j.json());const d=$("#dlg");d.classList.add("wide");
+  const st=x.status||{};const failed=st.state==="failed"||st.state==="unknown";const closed=isClosed(r);
+  d.innerHTML=`<form method="dialog"><h2>${ic("file")}${esc(r.ID)} の報告 <span class="muted" style="font-weight:500;font-size:13px">${esc(r.who)}${st.end?" ・ "+new Date(st.end*1000).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""}</span></h2>
+    ${x.text?md(x.text):empty(failed?"報告が書かれずに終わりました（下のログを見てください）":"まだ報告がありません","file")}
+    ${failed||(!x.text&&(x.log||[]).length)?`<pre class="small muted" style="white-space:pre-wrap;max-height:180px;overflow:auto">${esc((x.log||[]).join(String.fromCharCode(10)))}</pre>`:""}
+    <div class="actions"><button type="button" class="btn" data-x>${ic("x")}閉じる</button>${x.text&&!closed?`<button type="button" class="btn primary" data-ok>${ic("check")}承認して完了</button>`:""}</div></form>`;
+  $("[data-x]",d).onclick=()=>d.close();const ok=$("[data-ok]",d);if(ok)ok.onclick=()=>{d.close();api("/api/commitment/state",{id:r.ID,state:"done"});};
+  d.onclose=()=>d.classList.remove("wide");d.showModal();}
 async function editContent(r){const o=await dialog({title:`${r.ID} の内容を書き換える`,icon:"pen",fields:[{label:"内容",name:"content",value:r.content,required:true}]});if(o&&o.content)api("/api/commitment/content",{id:r.ID,content:o.content});}
 function taskCard(r){return `<div class="tcard ${r.assignee==="agent"?"agent":""}"><div class="top">${assigneeAvatar(r)}<div class="ct">${esc(r.content)}</div></div>
   <div class="meta"><span class="mono">${esc(r.ID)}</span><span>${assigneeLabel(r)}</span>${due(r["期限"],r.due_in)}${val(r["関連"])?`<span class="chip">${ic("tag")}${esc(r["関連"].replace(/`/g,""))}</span>`:""}${agentBadge(r)}</div>
+  ${r.assignee==="agent"&&(r.has_result||r.agent_state==="failed")?`<div class="acts">${act(r.has_result?"報告を見る":"ログを見る",r.has_result?"file":"alert",()=>showReport(r),r.has_result&&!isClosed(r)?"primary":"")}</div>`:""}
+  ${r.assignee==="agent"&&!isClosed(r)&&r.agent_state!=="running"&&!S.summary.is_template?`<div class="acts">${act(r.has_result?"やり直させる":"着手させる","sparkles",()=>runTask(r),"ghost")}</div>`:""}
   <div class="acts">${stateSeg(r)}${act("","pen",()=>editContent(r),"icon")}${act("","calendar",()=>editDue(r),"icon")}</div></div>`;}
 function renderCommitments(){
   const all=S.commitments.rows||[];
@@ -515,7 +528,7 @@ function renderCommitments(){
       <label><span>${ic("eye")}フォロー日</span><input type="date" name="follow" title="人に依頼したとき"></label>
       <label><span>${ic("folder")}関連</span><input type="text" name="rel" placeholder="P:slug / チケット"></label>
       <button class="btn primary">${ic("plus")}追加</button></form>
-    <div class="muted small" style="margin-top:8px">エージェントに任せたタスクは、会話の中でそのエージェントが動くと「稼働中」、終わると「確認待ち」になる。秘書が結果を確かめて完了にする。</div></div>`;
+    <div class="muted small" style="margin-top:8px">エージェントに任せたタスクは、動いている間「稼働中」、終わると「確認待ち」。「着手させる」で無人で進め（費用は上限まで）、届いた報告を読んで「承認して完了」。承認した内容は次の会話で秘書が記憶に入れる。</div></div>`;
   $("#f-com").onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const a=d.assign;delete d.assign;
     if(a==="self")d.kind="task";else if(a==="received")d.kind="received";else if(a==="person")d.kind="given";else{d.kind="given";d.who=a;}
     Object.keys(d).forEach(k=>{if(!d[k])delete d[k];});await api("/api/commitment/add",d);e.target.reset();};}
@@ -622,7 +635,7 @@ $("#theme").onclick=()=>{theme=THEMES[(THEMES.indexOf(theme)+1)%3];try{localStor
 $("#refresh").onclick=()=>{refresh();toast("再読込しました","refresh");};
 applyTheme();
 let initial="today";try{initial=localStorage.getItem("board.tab")||"today";}catch(e){}
-cur=TABS.some(([t])=>t===initial)?initial:"today";show(cur);refresh();setInterval(refresh,30000);
+cur=TABS.some(([t])=>t===initial)?initial:"today";show(cur);refresh();setInterval(()=>{const busy=(S.commitments?.rows||[]).some(r=>r.agent_state==="running")||(S.activity?.running||[]).length;if(busy||++tick%3===0)refresh();},10000);
 </script>
 </body>
 </html>

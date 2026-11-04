@@ -5,6 +5,8 @@ board/server.py ── memory/ を「見る・触る」ためのローカルボ�
 - 読み取り：memory/ の markdown を解析して JSON で返す（dashboard / situation / inbox / 約束台帳 / 案件 / 人物 / 決定 / 操作ログ）
 - 書き込み：tools/mem.py と**同じ関数**を呼ぶ（markdown が唯一の正典のまま。二重ストアを作らない）
 - 127.0.0.1 にだけバインドする。認証は無い（ローカル専用）
+- ブラウザで開いている別のサイトから読み書きされないよう、Host がこの端末の名前であること（DNS リバインディング対策）、
+  書き込みは Content-Type が application/json で、Origin があれば自分自身であること（CSRF 対策）を確かめる
 
 起動：python tools/board/server.py [--port 8765] [--root <リポジトリルート>]
 Claude Code デスクトップでは .claude/launch.json の "board" で preview_start できる。
@@ -47,6 +49,17 @@ def load_recall():
 
 
 recall = load_recall()
+
+
+def load_run_task():
+    spec = importlib.util.spec_from_file_location("run_task", HERE.parent / "run_task.py")
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader
+    spec.loader.exec_module(mod)
+    return mod
+
+
+run_task = load_run_task()
 
 
 def api_knowledge(root: Path) -> dict:
@@ -248,6 +261,15 @@ def agent_runs(root: Path) -> list[dict]:
     return runs
 
 
+def api_task_result(root: Path, cid: str) -> dict:
+    """任せたタスクの報告（memory/task-results/{C-ID}.md）と実行の状態・ログの末尾。"""
+    if not re.fullmatch(r"C-\d{3,}", cid or ""):
+        return {"error": "ID が不正"}
+    rd = run_task.results_dir(root)
+    log = text(rd / f"{cid}.log").splitlines()[-15:]
+    return {"id": cid, "text": text(rd / f"{cid}.md"), "status": run_task.read_status(root, cid), "log": log}
+
+
 def unattended_status(root: Path) -> dict:
     """無人実行（朝のブリーフ）の最後の実行。"""
     t = text(root / "memory" / "briefs" / "_last-run.log")
@@ -292,11 +314,18 @@ def api_commitments(root: Path) -> dict:
             d["assignee"] = "self"
         mine = [x for x in runs if r.get("ID") in x["tasks"]]
         d["runs"] = len(mine)
-        if any(x["state"] in ("running", "background") for x in mine):
+        # 無人で着手させたもの（tools/run_task.py）の状態と報告
+        task = run_task.read_status(root, r.get("ID", "")) if d["assignee"] == "agent" else {}
+        d["task_run"] = task
+        d["has_result"] = d["assignee"] == "agent" and (run_task.results_dir(root) / f"{r.get('ID')}.md").exists()
+        open_ = r.get("状態") not in mem.CLOSED
+        if task.get("state") == "running" or any(x["state"] in ("running", "background") for x in mine):
             d["agent_state"] = "running"
-        elif mine and mine[-1]["state"] == "done" and r.get("状態") not in mem.CLOSED:
-            d["agent_state"] = "review"   # エージェントは終わった。秘書が結果を確かめて完了にする
-        elif mine and mine[-1]["state"] == "failed":
+        elif open_ and task.get("state") == "failed":
+            d["agent_state"] = "failed"
+        elif open_ and (d["has_result"] or (mine and mine[-1]["state"] == "done")):
+            d["agent_state"] = "review"   # エージェントは終わった。人が報告を確かめて完了にする
+        elif open_ and mine and mine[-1]["state"] == "failed":
             d["agent_state"] = "failed"
         else:
             d["agent_state"] = ""
@@ -429,6 +458,7 @@ FIELD_RULES = {
     "scope": (r".{1,80}", "1〜80字"), "effective": (r"\d{4}-\d{2}-\d{2}", "YYYY-MM-DD"),
     "kind_term": (r"略語|社内用語|コードネーム|あだ名|業界用語", "略語 / 社内用語 / コードネーム / あだ名 / 業界用語"),
     "rid": (r"R-\d{3,}", "R-001 の形"),
+    "budget": (r"\d{1,2}(\.\d{1,2})?", "USD の数値"),
 }
 REQUIRED = {
     "/api/inbox/add": ["text"], "/api/inbox/resolve": ["id", "to"],
@@ -438,6 +468,7 @@ REQUIRED = {
     "/api/person/observe": ["ident", "situation", "judgment"], "/api/person/icon": ["ident", "icon"],
     "/api/person/note": ["ident", "situation", "insight"], "/api/decision/status": ["project", "status"],
     "/api/term/add": ["term", "meaning"], "/api/rule/add": ["content", "source"], "/api/rule/confirm": ["rid"],
+    "/api/task/run": ["id"],
 }
 
 
@@ -482,6 +513,15 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
             res = run_mem(mem.commitment_set_due, root, g("id", ""), g("due", ""))
         elif path == "/api/commitment/follow":
             res = run_mem(mem.commitment_set_follow, root, g("id", ""), g("follow", ""))
+        elif path == "/api/task/run":
+            try:
+                budget = float(g("budget") or run_task.default_budget())
+                if not 0 < budget <= 20:
+                    raise ValueError("上限は 0〜20 USD")
+                info = run_task.launch(root, g("id", ""), budget)
+            except ValueError as e:
+                return 400, {"ok": False, "error": str(e)}
+            res = {"ok": True, "message": f"{info['id']} を {info['agent']} に着手させた（上限 {budget:g} USD）。終わると報告が届く"}
         elif path == "/api/commitment/content":
             res = run_mem(mem.commitment_set_content, root, g("id", ""), g("content", ""))
         elif path == "/api/person/observe":
@@ -518,8 +558,34 @@ GETS = {
 }
 
 
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+
+
+def request_allowed(method: str, headers, port: int) -> str:
+    """ブラウザ経由の他サイトからの読み書きを断る。問題があれば理由を、無ければ空文字を返す。"""
+    host = (headers.get("Host") or "").strip().lower()
+    name, _, hport = host.rpartition(":") if not host.endswith("]") else (host, "", "")
+    if name not in LOCAL_HOSTS or (hport and hport != str(port)):
+        return f"Host「{host}」からは受け付けない"
+    if method == "POST":
+        if not (headers.get("Content-Type") or "").lower().startswith("application/json"):
+            return "書き込みは application/json だけ"
+        origin = (headers.get("Origin") or "").strip().lower()
+        if origin and origin not in {f"http://{h}:{port}" for h in LOCAL_HOSTS}:
+            return f"Origin「{origin}」からの書き込みは受け付けない"
+    return ""
+
+
 class Handler(BaseHTTPRequestHandler):
     root: Path = HERE.parent.parent
+    port: int = 8765
+
+    def _guard(self, method: str) -> bool:
+        why = request_allowed(method, self.headers, self.port)
+        if why:
+            self._send(403, {"ok": False, "error": why})
+            return False
+        return True
 
     def _send(self, code: int, payload, ctype="application/json; charset=utf-8"):
         data = payload if isinstance(payload, bytes) else json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -531,9 +597,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):  # noqa: N802
+        if not self._guard("GET"):
+            return
         u = urlparse(self.path)
         if u.path in ("/", "/index.html"):
             return self._send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
+        if u.path == "/api/task/result":
+            return self._send(200, api_task_result(self.root, parse_qs(u.query).get("id", [""])[0]))
         if u.path == "/api/search":
             try:
                 return self._send(200, api_search(self.root, parse_qs(u.query)))
@@ -548,6 +618,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(500, {"error": f"{type(e).__name__}: {e}"})
 
     def do_POST(self):  # noqa: N802
+        if not self._guard("POST"):
+            return
         n = int(self.headers.get("Content-Length") or 0)
         try:
             body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
@@ -575,6 +647,7 @@ def main() -> None:
     if not (root / "memory").is_dir():
         sys.exit(f"{root} に memory/ が無い（--root を確認）")
     Handler.root = root
+    Handler.port = a.port
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     print(f"[board] http://127.0.0.1:{a.port}/  (memory: {root / 'memory'})  Ctrl+C で停止", flush=True)
     try:

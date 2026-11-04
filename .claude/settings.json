@@ -49,6 +49,16 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh tools/py.sh tools/hooks/agent-activity.py",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PermissionRequest": [
@@ -72,6 +82,16 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh tools/py.sh tools/hooks/agent-activity.py",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [
@@ -82,6 +102,27 @@
             "type": "command",
             "command": "sh tools/py.sh tools/hooks/operation-logger.py",
             "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh tools/py.sh tools/hooks/agent-activity.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh tools/py.sh tools/hooks/agent-activity.py",
+            "timeout": 10
           }
         ]
       }

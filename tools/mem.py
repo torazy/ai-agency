@@ -13,7 +13,8 @@ mem.py ── memory/ への「決定的な追記」CLI。
   python tools/mem.py commitment add --kind task     --content "経費精算" --due 2026-11-07 --rel -
   python tools/mem.py commitment add --kind received --content "比較表提出" --who 架空部長 --due 2026-11-14 --rel P:kintai-saas
   python tools/mem.py commitment add --kind given    --content "レビュー依頼" --who 鈴木さん --due 2026-11-10 --follow 2026-11-08 --rel P:x
-  python tools/mem.py commitment set-state C-003 done      # set-due / set-follow で期限・フォロー日の変更
+  python tools/mem.py commitment set-state C-003 done      # set-due / set-follow / set-content で期限・フォロー日・内容の変更
+  python tools/mem.py commitment add --kind given --content "競合3社の料金調査" --who @generalist --due 2026-11-10   # エージェントに任せる
   python tools/mem.py commitment list [--rel P:x] [--state open] [--json]
   python tools/mem.py person new suzuki-hanako-kakuu-corp-soumu --name "鈴木 花子" --org "架空株式会社 総務部" --email ...
   python tools/mem.py person observe kakuu-ichiro-kakuu-corp-bucho --situation "..." --judgment "..." --reason "...（推測）"
@@ -414,9 +415,17 @@ def commitment_add(root: Path, a: argparse.Namespace) -> None:
     else:
         if not a.who:
             fail("--who（相手）が必要")
-        if not a.follow:
+        follow = a.follow
+        if a.who.startswith("@"):
+            # エージェントに任せる作業。相手は .claude/agents/{handle}.md にいる専門家・汎用秘書
+            handle = a.who[1:].strip()
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", handle) or not (root / ".claude" / "agents" / f"{handle}.md").exists():
+                known = sorted(f.stem for f in (root / ".claude" / "agents").glob("*.md")) if (root / ".claude" / "agents").exists() else []
+                fail(f"エージェント「{a.who}」がいない（いるのは {', '.join('@' + k for k in known) or 'なし'}）")
+            follow = follow or (due if due != "なし" else "なし")
+        elif not follow:
             fail("--follow（フォロー日）が必要。期限の1〜2営業日前を提案する")
-        row = [cid, today(), a.who, a.content, due, a.follow, rel, state]
+        row = [cid, today(), a.who, a.content, due, follow, rel, state]
     lines = append_row(lines, h, e, row)
     lines = touch_updated(lines)
     write(p, lines)
@@ -461,6 +470,29 @@ def commitment_set_state(root: Path, cid: str, state: str) -> None:
 def commitment_set_due(root: Path, cid: str, due: str) -> None:
     due = check_date(due, "期限") or "なし"
     _commitment_update_cell(root, cid, "期限", due, "期限")
+
+
+@locked
+def commitment_set_content(root: Path, cid: str, content: str) -> None:
+    """約束の内容を書き換える（分かったことを反映する。例「PSR の意味は確認中」→「パイプライン状況報告を提出」）。"""
+    content = (content or "").strip()
+    if not content or len(content) > 300:
+        fail("内容は1〜300字")
+    p = commitments_path(root)
+    lines = read(p)
+    header: list[str] = []
+    for i, ln in enumerate(lines):
+        if TABLE_ROW_RE.match(ln) and i + 1 < len(lines) and TABLE_SEP_RE.match(lines[i + 1]):
+            header = cells(ln)
+        elif TABLE_ROW_RE.match(ln) and cells(ln)[:1] == [cid]:
+            col = "タスク" if "タスク" in header else "内容"
+            c = cells(ln)
+            c[header.index(col)] = esc(content)
+            lines[i] = "| " + " | ".join(c) + " |"
+            write(p, touch_updated(lines))
+            ok(f"{cid} の内容を「{content}」に")
+            return
+    fail(f"{cid} が見つからない")
 
 
 def commitment_set_follow(root: Path, cid: str, follow: str) -> None:
@@ -1116,6 +1148,7 @@ def main(argv: list[str] | None = None) -> None:
     s = cm.add_parser("set-state"); s.add_argument("id"); s.add_argument("state")
     s = cm.add_parser("set-due"); s.add_argument("id"); s.add_argument("due")
     s = cm.add_parser("set-follow"); s.add_argument("id"); s.add_argument("follow")
+    s = cm.add_parser("set-content"); s.add_argument("id"); s.add_argument("content")
     s = cm.add_parser("list"); s.add_argument("--rel"); s.add_argument("--state"); s.add_argument("--json", action="store_true")
 
     pe = sub.add_parser("person").add_subparsers(dest="sub", required=True)
@@ -1190,6 +1223,7 @@ def dispatch(root: Path, a: argparse.Namespace) -> None:
          "set-state": lambda: commitment_set_state(root, a.id, a.state),
          "set-due": lambda: commitment_set_due(root, a.id, a.due),
          "set-follow": lambda: commitment_set_follow(root, a.id, a.follow),
+         "set-content": lambda: commitment_set_content(root, a.id, a.content),
          "list": lambda: commitment_list(root, a)}[a.sub]()
     elif a.cmd == "person":
         {"new": lambda: person_new(root, a),

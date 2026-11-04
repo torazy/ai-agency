@@ -19,7 +19,7 @@
     },
     {
       "category": "mem:commitment",
-      "pattern": "\\bmem\\.py\\s+commitment\\s+(add|set-state)\\b"
+      "pattern": "\\bmem\\.py\\s+commitment\\s+(add|set-state|set-due|set-follow|set-content)\\b"
     },
     {
       "category": "mem:person",

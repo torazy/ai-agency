@@ -13,20 +13,62 @@
   ],
   "mcp_write_verbs": "^(create|update|delete|send|reply|forward|push|merge|comment|upload|trash|untrash|label|unlabel|move|restore|cancel|set_|post|write|add_|remove|rename|duplicate|share|respond|mark_|spawn|stop_|resolve|apply|run_|insert|append|edit|patch|convert|stage|archive|close|reopen|assign|transition|publish)",
   "bash_categories": [
-    { "category": "mem:inbox",       "pattern": "\\bmem\\.py\\s+inbox\\s+(add|resolve)\\b" },
-    { "category": "mem:commitment",  "pattern": "\\bmem\\.py\\s+commitment\\s+(add|set-state)\\b" },
-    { "category": "mem:person",      "pattern": "\\bmem\\.py\\s+person\\s+(observe|note|predict)\\b" },
-    { "category": "mem:decision",    "pattern": "\\bmem\\.py\\s+decision\\s+(add|set-status)\\b" },
-    { "category": "memory-write(sh)", "pattern": "((>>?|\\btee\\b|\\bsed\\s+-i|Set-Content|Out-File|\\bcp\\b|\\bmv\\b)[^|;&]*\\bmemory/)|(\\bmemory/[^|;&\\n]*\\.(write_text|write_bytes)\\b)|(open\\([^)]*memory/[^)]*['\"][wa])" },
-    { "category": "git-push",        "pattern": "\\bgit\\b[^|;&]*\\bpush\\b" },
-    { "category": "git-commit",      "pattern": "\\bgit\\b[^|;&]*\\bcommit\\b" },
-    { "category": "gh-pr-create",    "pattern": "\\bgh\\s+pr\\s+create\\b" },
-    { "category": "gh-pr-merge",     "pattern": "\\bgh\\s+pr\\s+merge\\b" },
-    { "category": "gh-pr-comment",   "pattern": "\\bgh\\s+pr\\s+(comment|review)\\b" },
-    { "category": "gh-issue-create", "pattern": "\\bgh\\s+issue\\s+(create|comment|close)\\b" },
-    { "category": "gh-api-write",    "pattern": "\\bgh\\s+api\\b.*-X\\s*(POST|PUT|PATCH|DELETE)\\b" },
-    { "category": "http-write",      "pattern": "\\bcurl\\b.*-X\\s*(POST|PUT|PATCH|DELETE)\\b" },
-    { "category": "deploy",          "pattern": "\\b(deploy|terraform\\s+apply|kubectl\\s+apply)\\b" }
+    {
+      "category": "mem:inbox",
+      "pattern": "\\bmem\\.py\\s+inbox\\s+(add|resolve)\\b"
+    },
+    {
+      "category": "mem:commitment",
+      "pattern": "\\bmem\\.py\\s+commitment\\s+(add|set-state)\\b"
+    },
+    {
+      "category": "mem:person",
+      "pattern": "\\bmem\\.py\\s+person\\s+(new|observe|note|predict|add-alias|set-icon)\\b"
+    },
+    {
+      "category": "mem:decision",
+      "pattern": "\\bmem\\.py\\s+decision\\s+(add|set-status)\\b"
+    },
+    {
+      "category": "memory-write(sh)",
+      "pattern": "((>>?|\\btee\\b|\\bsed\\s+-i|Set-Content|Out-File|\\bcp\\b|\\bmv\\b)[^|;&]*\\bmemory/)|(\\bmemory/[^|;&\\n]*\\.(write_text|write_bytes)\\b)|(open\\([^)]*memory/[^)]*['\"][wa])"
+    },
+    {
+      "category": "git-push",
+      "pattern": "\\bgit\\b[^|;&]*\\bpush\\b"
+    },
+    {
+      "category": "git-commit",
+      "pattern": "\\bgit\\b[^|;&]*\\bcommit\\b"
+    },
+    {
+      "category": "gh-pr-create",
+      "pattern": "\\bgh\\s+pr\\s+create\\b"
+    },
+    {
+      "category": "gh-pr-merge",
+      "pattern": "\\bgh\\s+pr\\s+merge\\b"
+    },
+    {
+      "category": "gh-pr-comment",
+      "pattern": "\\bgh\\s+pr\\s+(comment|review)\\b"
+    },
+    {
+      "category": "gh-issue-create",
+      "pattern": "\\bgh\\s+issue\\s+(create|comment|close)\\b"
+    },
+    {
+      "category": "gh-api-write",
+      "pattern": "\\bgh\\s+api\\b.*-X\\s*(POST|PUT|PATCH|DELETE)\\b"
+    },
+    {
+      "category": "http-write",
+      "pattern": "\\bcurl\\b.*-X\\s*(POST|PUT|PATCH|DELETE)\\b"
+    },
+    {
+      "category": "deploy",
+      "pattern": "\\b(deploy|terraform\\s+apply|kubectl\\s+apply)\\b"
+    }
   ],
   "server_aliases": {
     "$comment": "claude.ai コネクタは mcp__{アカウント固有ID}__ の形で現れる。読みやすいカテゴリ名にしたいときにここで別名を付ける（/setup の棚卸しで判明したIDを登録。未登録ならIDのまま記録される）。",
@@ -39,9 +81,29 @@
     "4043105e-e6cb-4522-b39f-ea304d429189": "figma"
   },
   "target_keys_priority": [
-    "owner", "repo", "issue_number", "pull_number", "number", "issueIdOrKey", "projectIdOrKey",
-    "path", "file_path", "to", "recipients", "subject", "channel", "channel_id",
-    "title", "name", "summary", "page_id", "event_id", "calendar_id", "id", "url", "query"
+    "owner",
+    "repo",
+    "issue_number",
+    "pull_number",
+    "number",
+    "issueIdOrKey",
+    "projectIdOrKey",
+    "path",
+    "file_path",
+    "to",
+    "recipients",
+    "subject",
+    "channel",
+    "channel_id",
+    "title",
+    "name",
+    "summary",
+    "page_id",
+    "event_id",
+    "calendar_id",
+    "id",
+    "url",
+    "query"
   ],
   "target_max_chars": 90
 }

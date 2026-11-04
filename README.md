@@ -64,6 +64,7 @@ ai-agency/
 │   └── task-log/             # 操作実績（gitignore・フックが自動記録）
 └── tools/
     ├── mem.py                    # memory/ への決定的な追記 CLI（inbox / commitment / person / decision / check / migrate）
+    ├── recall.py                 # 探す・読む・点検する（読み取り専用。find / who / map / show / review。段階的開示の道具）
     ├── board/                    # 秘書ボード：memory/ を見る・触るローカル画面（server.py＋index.html。書き込みは mem.py 経由）
     ├── backlog-mcp/server.py
     ├── dev/                      # 本体メンテナンス層（雛形。本体フォルダでだけ有効化する）
@@ -94,6 +95,7 @@ ai-agency/
 | 今日の状況を把握 | `/morning-brief`（平日の朝に無人で回しておくと、`memory/briefs/` に用意され、拾った約束は台帳に追記済み・要確認だけ inbox に残る） |
 | つながったサービスから取り込む | `/update`（カレンダー・メール・チャット等から前回以降の約束・依頼・人物の反応を拾い、秘書が記録して事後報告。確認が要るものだけ1問） |
 | 専門家を強くする | 「@legal を強くしたい」→ knowledge-work-plugins（legal / finance / human-resources / product-management）を承認制で導入。入れなくても動く |
+| 記憶を探す・見直す | 「〇〇について何て言ってた？」→ 秘書が `tools/recall.py` で段階的に探す（一覧→該当節だけ）。毎朝の点検で古さ・食い違い・重複・取り出し漏れを拾い、秘書が直す |
 | 画面で見る・触る | 「ボードを開いて」（または `python tools/board/server.py` → http://127.0.0.1:8765/）。約束・inbox・案件・人物・決定を一覧し、状態変更や分類も画面から |
 | 過去の決定を検証 | `/review-decisions` |
 | 自律範囲の昇格提案 | `/propose-delegation` |

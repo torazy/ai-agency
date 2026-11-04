@@ -28,6 +28,7 @@ $env:AI_AGENCY_UNATTENDED = "1"
 $allowed = @(
     "Read", "Glob", "Grep",
     "Bash(python tools/mem.py *)", "Bash(python3 tools/mem.py *)",
+    "Bash(python tools/recall.py *)", "Bash(python3 tools/recall.py *)",
     "Edit(memory/briefs/**)"
 )
 $log = "memory/briefs/_last-run.log"

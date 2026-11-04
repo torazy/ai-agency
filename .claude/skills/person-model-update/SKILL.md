@@ -39,6 +39,8 @@ description: 会議メモ・Slack会話・メール・ユーザーとの会話�
 
 ### Step 3: 人物ファイルに書き込む
 
+書く前に `python tools/recall.py who {名前}` で人物を特定する（0件・2件以上は確認ケース）。既存の判断事例は `python tools/recall.py show memory/people/{識別子}.md --section 判断事例` で見る。
+
 | 抽出したもの | 書き込み先セクション | 操作 |
 |---|---|---|
 | 判断事例 | 判断事例ログ | `python tools/mem.py person observe {識別子} --situation … --judgment … --reason …` |

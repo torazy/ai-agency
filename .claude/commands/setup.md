@@ -110,7 +110,7 @@ GitHub リポジトリ / Drive フォルダ URL / Slack チャンネル）、主
 | 平日の朝 | `/morning-brief --unattended` | 先回りの状況整理と、コネクタからの取り込み（確信のあるものは記録、要確認は inbox）。Duet 的な常時稼働の入口 |
 | 週次（金） | `/review-decisions` | 予測 vs 実際の答え合わせ |
 | 週次（月） | `/propose-delegation` | 承認実績から自動承認への昇格提案 |
-| 月次 | `memory-maintenance` | 記憶を育てても軽く保つ |
+| 月次 | `memory-maintenance` | 記憶を育てても軽く保つ（アーカイブ）。中身の点検は毎朝のブリーフに含まれる（`recall.py review`・トークン不要） |
 
 ## Step 6b: 専門家の周辺プラグイン（任意・1問）
 

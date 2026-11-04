@@ -22,7 +22,9 @@ mem.py ── memory/ への「決定的な追記」CLI。
   python tools/mem.py decision add --project kintai-saas --title "..." --content "..." --reason "..." \
          --impact "..." --prediction "..." --verify-date 2026-12-01 [--status proposed|decided] [--revoke "..."]
   python tools/mem.py decision set-status kintai-saas "<タイトル>" decided
+  python tools/mem.py person add-alias kakuu-ichiro-kakuu-corp-bucho "部長"   # 呼び名（recall.py の名前解決）
   python tools/mem.py check
+  （探す・読む・点検するは tools/recall.py。このファイルは書き込み専用）
   python tools/mem.py migrate     # 旧雛形からの移行（本体アップデート後に1回。冪等）
 
 共通オプション：--root <path>（memory/ を含むリポジトリルート。既定は自身の位置から推定。テストに使う）
@@ -429,7 +431,7 @@ def person_new(root: Path, a: argparse.Namespace) -> None:
         "**氏名**": a.name, "**読み仮名**": a.kana, "**役職**": a.title, "**所属組織**": a.org,
         "**メールアドレス**": a.email, "**Backlogユーザー名**": a.backlog, "**GitHubアカウント**": a.github,
         "**Slackアカウント名**": a.slack, "**初めて関わった日**": today(), "**関係の種別**": a.relation,
-        "**アイコン**": getattr(a, "icon", None),
+        "**アイコン**": getattr(a, "icon", None), "**呼び名**": getattr(a, "alias", None),
     }
     out = []
     for ln in lines:
@@ -486,6 +488,33 @@ def person_observe(root: Path, a: argparse.Namespace) -> None:
     n = sum(1 for ln in lines[h + 2:e] if not PLACEHOLDER_RE.match(ln))
     if n >= 5:
         print(f"   判断事例が {n} 件。成熟度 Lv2 以上の要件を満たす（人物ファイルの成熟度行を確認）")
+
+
+def person_add_alias(root: Path, ident: str, alias: str) -> None:
+    """基本情報の「呼び名」に追加する（無ければ関係の種別の直後に作る）。tools/recall.py の名前解決に使う。"""
+    alias = alias.strip()
+    if not alias or "|" in alias or len(alias) > 30:
+        fail("呼び名は30字以内（「|」不可）")
+    p = person_path(root, ident)
+    lines = read(p)
+    for i, ln in enumerate(lines):
+        if ln.startswith("- **呼び名**:"):
+            cur = ln.split(":", 1)[1].strip()
+            names = [] if (not cur or cur.startswith("（")) else [x.strip() for x in re.split(r"[、,]", cur) if x.strip()]
+            if alias in names:
+                ok(f"{p.name} には既に呼び名「{alias}」がある")
+                return
+            lines[i] = "- **呼び名**: " + "、".join(names + [esc(alias)])
+            break
+    else:
+        for i, ln in enumerate(lines):
+            if ln.startswith("- **関係の種別**:"):
+                lines.insert(i + 1, f"- **呼び名**: {esc(alias)}")
+                break
+        else:
+            fail(f"{p.name} に基本情報の『関係の種別』行が無い")
+    write(p, lines)
+    ok(f"{p.name} に呼び名「{alias}」を追加")
 
 
 def person_set_icon(root: Path, ident: str, icon: str) -> None:
@@ -685,6 +714,8 @@ def main(argv: list[str] | None = None) -> None:
         s.add_argument(opt)
     s.add_argument("--relation", default="社内同僚", help="社内同僚 / 顧客担当者 / 外部ベンダー / パートナー / その他")
     s.add_argument("--icon", help="絵文字1つ、またはボードのアイコン名（user / crown / briefcase …）")
+    s.add_argument("--alias", help="呼び名（「、」区切り。例: 田中部長、健司さん）")
+    s = pe.add_parser("add-alias"); s.add_argument("ident"); s.add_argument("alias")
     s = pe.add_parser("set-icon"); s.add_argument("ident"); s.add_argument("icon")
     s = pe.add_parser("observe"); s.add_argument("ident"); s.add_argument("--situation", required=True)
     s.add_argument("--judgment", required=True); s.add_argument("--reason")
@@ -733,6 +764,7 @@ def dispatch(root: Path, a: argparse.Namespace) -> None:
     elif a.cmd == "person":
         {"new": lambda: person_new(root, a),
          "set-icon": lambda: person_set_icon(root, a.ident, a.icon),
+         "add-alias": lambda: person_add_alias(root, a.ident, a.alias),
          "observe": lambda: person_observe(root, a),
          "note": lambda: person_note(root, a),
          "predict": lambda: person_predict(root, a)}[a.sub]()

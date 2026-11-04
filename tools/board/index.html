@@ -62,6 +62,19 @@
   .topbar h1 .ic{width:22px;height:22px;color:var(--accent)}
   .topbar .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
   .topbar .spacer{flex:1}
+  .searchbox{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:5px 12px;background:var(--panel);min-width:260px;color:var(--muted)}
+  .searchbox:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+  .searchbox .ic{width:15px;height:15px}
+  .searchbox input{border:0;background:transparent;padding:2px 0;outline:none;min-width:0;flex:1}
+  .hits{max-height:62vh;overflow:auto;margin:0 -4px;padding:0 4px}
+  .hit{padding:10px 0;border-bottom:1px solid var(--line-2)}
+  .hit:last-child{border-bottom:0}
+  .hit .p{font:12px/1.4 ui-monospace,Consolas,monospace;color:var(--fg-2);word-break:break-all}
+  .hit .h{font-weight:600;margin:3px 0}
+  .hit .s{font-size:12.5px;color:var(--fg-2);margin-top:2px}
+  .hit .s .ln{color:var(--muted);font-variant-numeric:tabular-nums;margin-right:6px}
+  mark{background:color-mix(in srgb,var(--warn) 30%,transparent);color:inherit;border-radius:3px;padding:0 1px}
+  dialog.wide{width:min(760px,calc(100vw - 32px))}
   .userchip{display:flex;align-items:center;gap:10px;padding:5px 10px 5px 6px;border:1px solid var(--line);border-radius:999px;background:var(--panel)}
   .userchip .nm{font-weight:600;font-size:13px;line-height:1.2}.userchip .rl{color:var(--muted);font-size:11.5px}
   .content{padding:22px 26px 60px;max-width:1280px}
@@ -218,6 +231,7 @@
 
   /* ---------- responsive ---------- */
   @media (max-width:900px){
+    .searchbox{min-width:0;flex:1}.userchip{display:none}
     .app{grid-template-columns:1fr}
     aside{position:static;height:auto;flex-direction:row;align-items:center;gap:10px;padding:10px 12px;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto}
     nav.side{flex-direction:row;gap:2px}nav.side button{padding:7px 10px}nav.side button span.lbl{display:none}nav.side .cnt{margin-left:2px}
@@ -280,6 +294,8 @@
   <symbol id="i-git" viewBox="0 0 24 24"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9M12 12v3"/></symbol>
   <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 12.5-9.17 4.18a2 2 0 0 1-1.66 0L2 12.5M22 17.5l-9.17 4.18a2 2 0 0 1-1.66 0L2 17.5"/></symbol>
   <symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
   <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.5-.67 1.5-1.5 0-.4-.15-.74-.4-1-.23-.27-.4-.6-.4-1 0-.83.67-1.5 1.5-1.5H16c3.31 0 6-2.69 6-6 0-4.96-4.5-9-10-9z"/></symbol>
 </svg>
 
@@ -297,6 +313,7 @@
     <div class="topbar">
       <div><h1 id="title"></h1><div class="sub" id="subtitle"></div></div>
       <div class="spacer"></div>
+      <form id="search" class="searchbox" role="search"><svg class="ic"><use href="#i-search"/></svg><input name="q" placeholder="記憶を探す（例: 比較表 部長）" autocomplete="off"></form>
       <button class="btn ghost icon" id="refresh" title="再読込"><svg class="ic"><use href="#i-refresh"/></svg></button>
       <div class="userchip" id="user"></div>
     </div>
@@ -380,7 +397,7 @@ function dialog({title,icon="pen",fields,submit="保存"}){return new Promise(re
 /* ------------------------------------------------------------ state & render */
 let S={},cur="today";
 async function refresh(){
-  const keys=["summary","situation","inbox","commitments","projects","people","decisions","oplog","agents","brief"];
+  const keys=["summary","situation","inbox","commitments","projects","people","decisions","oplog","agents","brief","review"];
   const vals=await Promise.all(keys.map(k=>fetch("/api/"+k).then(r=>r.json()).catch(e=>({error:String(e)}))));
   S=Object.fromEntries(keys.map((k,i)=>[k,vals[i]]));
   const sum=S.summary,name=val(sum.name),nick=val(sum.nickname);
@@ -408,8 +425,30 @@ function renderToday(){
     <div class="card"><div class="card-h">${ic("alert")}いま動くべき約束<span class="n">${urgent.length}</span></div>${urgent.length?urgent.map(comItem).join(""):empty("期限間近・フォロー到来の約束はありません","check")}</div>
     <div class="card"><div class="card-h">${ic("lightbulb")}未承認の提案<span class="n">${proposed.length}</span></div>${proposed.length?proposed.map(decItem).join(""):empty("承認待ちの提案はありません","badge-check")}</div>
     <div class="card"><div class="card-h">${ic("inbox")}inbox 未分類<span class="n">${inbox.length}</span></div>${inbox.length?inbox.map(inboxItem).join(""):empty("未分類の記憶はありません","inbox")}</div>
+    <div class="card"><div class="card-h">${ic("wrench")}記憶の点検<span class="n">${(S.review.findings||[]).length}</span><span class="right">秘書が直す ${S.review.auto||0} ・ 確認 ${S.review.ask||0}</span></div>${reviewList()}</div>
     <div class="card"><div class="card-h">${ic("file")}situation.md<span class="right">${ic("clock")}最終更新 ${esc(val(S.summary.situation_updated)||"未記録")}</span></div>${md(S.situation.markdown)}</div>
   </div>`;}
+
+/* --- 記憶の点検 --- */
+const AREA_ICON={"食い違い":"alert","古さ":"clock","重複":"layers","参照":"tag","取り出し漏れ":"inbox","期限切れ":"hourglass","育成":"sparkles","量":"archive"};
+function reviewList(){const fs=S.review.findings||[];if(!fs.length)return empty("点検で気になるものはありません","badge-check");
+  const top=[...fs].sort((a,b)=>(a.auto===b.auto?0:a.auto?1:-1)).slice(0,6);
+  return top.map(f=>`<div class="item"><div class="av sm" style="--h:${hue(f.area)}">${ic(AREA_ICON[f.area]||"tag")}</div><div class="body"><div class="ttl"><span class="badge ${f.auto?"t-ok":"t-warn"}">${ic(f.auto?"wrench":"message")}${f.auto?"秘書が直す":"確認"}</span><span>${esc(f.area)}</span></div>
+    <div style="color:var(--fg-2);font-size:12.5px;margin-top:2px">${esc(f.detail)}</div><div class="meta"><span class="mono">${esc(f.target)}</span><span>→ ${esc(f.action)}</span></div></div></div>`).join("")
+    +(fs.length>top.length?`<div class="muted small" style="margin-top:8px">ほか ${fs.length-top.length} 件。会話で「記憶を見直して」と言うと秘書が直します</div>`:`<div class="muted small" style="margin-top:8px">会話で「記憶を見直して」と言うと秘書が直します</div>`);}
+
+/* --- 検索（recall.py find と同じ） --- */
+function hl(text,terms){let t=esc(text);terms.filter(Boolean).forEach(w=>{const e=esc(w).replace(/[.*+?^${}()|[\]\\]/g,"\\$&");t=t.replace(new RegExp(e,"gi"),m=>`<mark>${m}</mark>`);});return t;}
+async function doSearch(q){q=q.trim();if(!q)return;const r=await fetch("/api/search?q="+encodeURIComponent(q)).then(x=>x.json());
+  const terms=q.split(/\s+/);const d=$("#dlg");d.classList.add("wide");
+  d.innerHTML=`<form method="dialog"><h2>${ic("search")}「${esc(q)}」の検索結果 <span class="muted" style="font-weight:500;font-size:13px">${r.total||0} 節</span></h2>
+    ${(r.resolved||[]).map(n=>`<div class="chip" style="margin-bottom:6px">${ic("user")}${esc(n)}</div>`).join(" ")}
+    <div class="hits">${(r.hits||[]).length?r.hits.map(h=>`<div class="hit"><div class="p">${esc(h.path)}:${h.line} <span class="badge t-muted">${esc(h.type)}${h.archived?"・過去分":""}</span> <span class="muted">${esc(h.date)}</span></div>
+      <div class="h">${esc(h.heading||"（冒頭）")}</div>${h.snippets.map(sn=>`<div class="s"><span class="ln">${sn.line}</span>${hl(sn.text.length>180?sn.text.slice(0,179)+"…":sn.text,terms)}</div>`).join("")}</div>`).join(""):empty("見つかりませんでした","search")}</div>
+    ${r.total>(r.hits||[]).length?`<div class="muted small" style="margin-top:8px">上位 ${r.hits.length} 件を表示。語を足すと絞れます</div>`:""}
+    <div class="actions"><button class="btn primary" value="ok">${ic("check")}閉じる</button></div></form>`;
+  d.onclose=()=>d.classList.remove("wide");d.showModal();}
+$("#search").onsubmit=e=>{e.preventDefault();doSearch(e.target.q.value);};
 
 /* --- commitments --- */
 function stateSeg(r){return `<span class="seg">${Object.entries(STATE).map(([s,[l,i]])=>actRaw(ic(i)+`<span class="lbl-s">${l}</span>`,()=>api("/api/commitment/state",{id:r.ID,state:s}),s===r["状態"]?"on":"").replace("<button ",`<button title="${l}" `))}</span>`;}

@@ -22,6 +22,7 @@ echo "[$(date '+%Y-%m-%d %H:%M')] start" > "$LOG"
 claude -p "/morning-brief --unattended" \
   --allowedTools "Read" "Glob" "Grep" \
     "Bash(python tools/mem.py *)" "Bash(python3 tools/mem.py *)" \
+    "Bash(python tools/recall.py *)" "Bash(python3 tools/recall.py *)" \
     "Edit(memory/briefs/**)" \
   --max-budget-usd "$BUDGET" --no-session-persistence >> "$LOG" 2>&1
 code=$?

@@ -30,7 +30,8 @@ python tools/mem.py sync show --json
 
 - `python tools/mem.py commitment list --json`（未完了と直近の完了）
 - `python tools/mem.py inbox list`
-- `memory/people/` のファイル名と、各ファイルの「メールアドレス・Slack・Backlog・GitHub」行（**人物の照合はこの識別子で行う**）
+- 人物の照合は `python tools/recall.py who {名前またはメール}`（氏名・呼び名・メール・Slack 等で引ける。**識別子で照合**）
+- 案件の特定は `python tools/recall.py map` と各 `overview.md` の別名
 - 進行中案件の `overview.md` のサービス座標（チャンネル・Backlog プロジェクト・リポジトリ）
 
 ## Step 3: 拾う（いま使える手段だけ。`memory/service-capabilities.md` の解決順 0）

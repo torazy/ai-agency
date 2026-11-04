@@ -126,6 +126,21 @@ def main() -> None:
                 f"：今日中 {count('🔴')} 件・見ておく {count('🟡')} 件。取り込みで記録したものと確認待ちはブリーフ末尾にある。"
             )
 
+    # 記憶の点検（recall.py review の結果。毎朝のブリーフが作る）。7日以内で要対応があれば件数だけ伝える
+    review = read(mem / "briefs" / "review.md")
+    m = re.search(r"^# 記憶の点検 (\d{4}-\d{2}-\d{2})", review, re.M)
+    n = re.search(r"要対応 (\d+) 件（秘書が直してよい (\d+)・ユーザーに確認 (\d+)）", review)
+    if m and n and int(n.group(1)) > 0:
+        try:
+            r_age = (today - datetime.strptime(m.group(1), "%Y-%m-%d").date()).days
+        except ValueError:
+            r_age = 99
+        if r_age <= 7:
+            lines.append(
+                f"[記憶の点検] memory/briefs/review.md（{m.group(1)}）：要対応 {n.group(1)} 件"
+                f"（秘書が直してよい {n.group(2)}・ユーザーに確認 {n.group(3)}）。手順は memory-review スキル。"
+            )
+
     print("\n".join(lines)[:9000])
     sys.exit(0)
 

@@ -142,11 +142,21 @@ Slack会話・仕様書・メール等が貼り付けられたとき → `intake
 関連欄（`P:{名}`／`P:{名}/issues#…`／`P:{名}/incidents/…`／チケットキー）に必ず書く。
 プロジェクト側に行を複製しない。案件視点の確認は関連欄のフィルタで行う（synthesize-situation）。
 
-### 読み込み規律（トークンを浪費しない）
+### 探し方・読み方（段階的開示。トークンを浪費せず、取りこぼさない）
 
-- **必要になるまで読まない**：プロジェクトはまず `overview.md`＋`status.md` のみ。`decisions.md`・
-  `issues.md`・`meetings/` は、そのトピックが実際に話題になったときだけ、**該当節を検索して部分的に**読む。
-  `memory/projects/{name}/` を丸ごと読むのは禁止。
+記憶は4段で引く。**上の段で足りれば下に降りない**。道具は `tools/recall.py`（読み取り専用。書き込みは mem.py）。
+
+| 段 | 何を読む | 道具 |
+|---|---|---|
+| L0 常時 | 登録簿（ユーザー・進行中案件・重要な人物） | `memory/dashboard.md`（自動ロード） |
+| L1 どこにあるか | 見出しつきの短い一覧（件数に上限） | `recall.py find {語…}`（人物の呼び名・メール、案件の別名を展開。`--type`・`--project`・`--since` で絞る）／人物は `recall.py who {名前}`／目次は `recall.py map [--project {slug}]` |
+| L2 中身 | 当たった節だけ | `recall.py show {path} --section {見出し}`（節の無い長文は目次が出る。Read の offset でもよい） |
+| L3 全文・過去分・原本 | L2 で足りないときだけ | ファイル全体、`find --archive`、外部の原本（座標から） |
+
+- **Grep で memory/ を総なめしない**。`memory/projects/{name}/` を丸ごと読まない。案件の話はまず `overview.md`＋`status.md`
+- **書く前にも引く**：同じ内容が既にないか `find`、人物は `who`（0件＝新規人物、2件以上＝曖昧。どちらも §5 の確認ケース）。
+  既存の人なのに引けなかった呼び名は `mem.py person add-alias` で足す（次から一発で引ける）
+- 見つからなければ `--archive` → それでも無ければ `insights.md` に「🔍検索ミス: {語} → {実際の場所}」を1行（検索の改善材料）
 - **原本は外部、ここには要点とリンク**：Backlog・Slack・Drive・GitHub に原本がある情報は、
   判断に使った要点＋座標（URL/ID）だけを記録する。原本の全文コピーを memory に残さない。
 - **座標があれば検索しない**：サービス座標が登録済みなら直接アクセスする。
@@ -157,7 +167,8 @@ Slack会話・仕様書・メール等が貼り付けられたとき → `intake
 - `decisions.md`：検証済みの決定は年次アーカイブへ。学びの要約は `insights.md` に残す。
 - `insights.md`：四半期ごとに同種の学びを統合・圧縮する（個別事例→原則化）。
 - `situation.md` の「最近完了」・`commitments.md` の完了項目は月次で archive へ。
-- この整理は `memory-maintenance` スキル（月次の定期実行推奨）が提案・実行する。
+- この整理は `memory-maintenance` スキル（月次）が行う。中身の点検（古さ・食い違い・重複・切れた参照・取り出し漏れ）は
+  `recall.py review` が毎朝トークンを使わずに走り、`memory-review` スキルで秘書が直す。
 
 ---
 
@@ -245,7 +256,7 @@ Slack会話・仕様書・メール等が貼り付けられたとき → `intake
 | スラッシュコマンド | `.claude/commands/{name}.md` | /setup /intake /update /consult /discuss /simulate /incident /morning-brief /review-decisions /propose-delegation |
 | ガードレール・フック | `.claude/settings.json`、`tools/hooks/` | deny＋guardrail.py／session-start.py／operation-logger.py。正典は `memory/guardrails.json` |
 | MCP | `.mcp.json` | github / backlog / brave-search。コネクタは claude.ai 側 |
-| 記憶 | `memory/` | 唯一の正典。表への追記は `tools/mem.py` 経由 |
+| 記憶 | `memory/` | 唯一の正典。書き込みは `tools/mem.py`、探す・読む・点検は `tools/recall.py`（§6 の段階的開示） |
 | ボード | `tools/board/`（`board` スキル・`.claude/launch.json`） | memory/ を見る・触るローカル画面（今日/約束/inbox/案件/人物/決定/チーム/操作ログ）。書き込みは mem.py と同じ経路 |
 | 定期実行 | デスクトップの定期タスク、または `tools/schedule/`（OS スケジューラ＋`claude -p`） | `/morning-brief --unattended` → `memory/briefs/`。無人実行はフックが「自動実行[unattended]」と記録 |
 

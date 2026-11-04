@@ -37,6 +37,32 @@ def load_mem():
 mem = load_mem()
 
 
+def load_recall():
+    spec = importlib.util.spec_from_file_location("recall", HERE.parent / "recall.py")
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader
+    sys.modules["recall"] = mod  # dataclass が自モジュールを引けるように
+    spec.loader.exec_module(mod)
+    return mod
+
+
+recall = load_recall()
+
+
+def api_review(root: Path) -> dict:
+    fs = recall.review_findings(root)
+    return {"findings": [f.__dict__ for f in fs], "auto": sum(f.auto for f in fs), "ask": sum(not f.auto for f in fs)}
+
+
+def api_search(root: Path, qs: dict) -> dict:
+    q = (qs.get("q") or [""])[0].strip()
+    if not q:
+        return {"resolved": [], "total": 0, "hits": []}
+    types = set((qs.get("type") or [""])[0].split(",")) - {""} or None
+    return recall.find_hits(root, q.split(), types, (qs.get("project") or [None])[0] or None,
+                            None, (qs.get("archive") or [""])[0] == "1", 20)
+
+
 # ---------------------------------------------------------------- readers
 def text(path: Path) -> str:
     try:
@@ -322,6 +348,7 @@ GETS = {
     "/api/summary": api_summary, "/api/situation": api_situation, "/api/inbox": api_inbox,
     "/api/commitments": api_commitments, "/api/projects": api_projects, "/api/people": api_people,
     "/api/decisions": api_decisions, "/api/oplog": api_oplog, "/api/agents": api_agents, "/api/brief": api_brief,
+    "/api/review": api_review,
 }
 
 
@@ -341,6 +368,11 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path in ("/", "/index.html"):
             return self._send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
+        if u.path == "/api/search":
+            try:
+                return self._send(200, api_search(self.root, parse_qs(u.query)))
+            except Exception as e:  # noqa: BLE001
+                return self._send(500, {"error": f"{type(e).__name__}: {e}"})
         fn = GETS.get(u.path)
         if not fn:
             return self._send(404, {"error": "not found"})

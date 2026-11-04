@@ -96,7 +96,7 @@ def main() -> None:
     inbox = read(mem / "inbox.md")
     pending = sum(1 for ln in inbox.splitlines() if ln.startswith("- [ ] "))
     if pending:
-        lines.append(f"[inbox] 未分類（秘書の作業中トレイ）が {pending} 件ある。仕分けと配置は秘書の担当（CLAUDE.md §3-6・§5）。")
+        lines.append(f"[inbox] 未分類（秘書の作業中トレイ）が {pending} 件ある。仕分けと配置は秘書の担当（CLAUDE.md §3・§5）。")
 
     # 無人実行の朝のブリーフ（tools/schedule/）。今日か昨日の分があれば件数だけ伝える
     briefs = sorted((mem / "briefs").glob("????-??-??.md")) if (mem / "briefs").exists() else []

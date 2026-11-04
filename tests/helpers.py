@@ -36,6 +36,7 @@ class TempRepo(unittest.TestCase):
         shutil.copytree(FIXTURE_MEMORY, self.root / "memory")
         shutil.copytree(REPO / "tools", self.root / "tools",
                         ignore=shutil.ignore_patterns("__pycache__", "dev", "*.pyc"))
+        shutil.copytree(FIXTURE_MEMORY, self.root / "tests" / "fixtures" / "memory")  # import_legacy が雛形の判定に使う
 
     def tearDown(self) -> None:
         self._tmp.cleanup()

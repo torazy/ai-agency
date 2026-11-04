@@ -33,6 +33,13 @@ description: 初回オンボーディング。対話でユーザー・判断基�
 
 すべて設定済みなら「環境の棚卸し（Step 1）だけ更新しますか？」と聞いて Step 1 → Step 7 に短縮する。
 
+**旧版から移行した直後**（`memory/legacy-import/IMPORT-REPORT.md` がある）は、Step 2 以降の質問の前に移行の仕上げをする：
+- `legacy-import/` の dashboard.md・user-profile.md・situation.md から、名前・呼び方・役職、進行中の案件、重要な人物、優先事項を
+  今の `dashboard.md`・`situation.md` へ載せ替える（Step 2〜5 の質問は、そこで埋まらなかった分だけにする）
+- 両方に中身があったファイル・委任設定・今の版に無いファイルは、今の記憶と突き合わせて統合する（委任設定は差分を見せて1問で確認）
+- 移した案件が今も進行中か1問にまとめて聞き、完了したものは `memory/projects/_archive.md` へ。移行で補った決定の状態に目を通す
+- 統合し終えたファイルは `legacy-import/` から消す（`IMPORT-MANIFEST.json` と `IMPORT-REPORT.md` は残す）
+
 ## Step 1: 利用可能ツールの棚卸し（ユーザーに聞かず自分で確認）
 
 1. **このセッションで実際に呼べるもの**を列挙する：MCP/コネクタ（ツール名の接頭辞 `mcp__{server}__` で

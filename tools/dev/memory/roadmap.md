@@ -54,6 +54,14 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
 | 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | ✅ 2026-11-04（/update コマンド・mem.py sync・inbox の重複防止・/morning-brief --unattended → memory/briefs/・tools/schedule の ps1/sh・ログの unattended 区別・起動フックとボードへの表示・/setup Step 6 をローカル定期実行に） |
 
+## 旧版からの移行スクリプト（2026-11-04）
+
+別の PC で使っている旧版インスタンスを新しいインスタンスへ移すため `tools/import_legacy.py` を追加。既定は計画表示、`--apply` で
+写す → migrate → check → 点検 → `memory/legacy-import/IMPORT-REPORT.md`。データだけ写し、構造（雛形・設定）は今の版。
+版ごとに構造が違う状況・プロフィール・登録簿と、安全に関わる委任設定、両方に中身があるファイルは上書きせず legacy-import に置き、
+/setup の冒頭で秘書が載せ替える。元ファイルの指紋（IMPORT-MANIFEST.json）で再実行しても二重に取り込まない。
+手元の5月の写し2つで計画を確認（案件7件を写す・状況メモは載せ替え・委任設定は旧雛形のままと判定・task-log は写さない）。
+
 ## 外部レビュー対応（2026-11-04）
 
 外部レビューの指摘（Productivity プラグインとの比較を含む）を一時フォルダで再現し、すべて当たっていたので直した（4218031）。

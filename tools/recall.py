@@ -33,7 +33,7 @@ from pathlib import Path
 DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 HEADING_RE = re.compile(r"^(#{1,4})\s+(.*)$")
 FIELD_RE = r"^\s*-\s*\*\*{label}\*\*:\s*(.*)$"
-EXCLUDE_DIRS = {"task-log", "briefs"}
+EXCLUDE_DIRS = {"task-log", "briefs", "legacy-import"}  # legacy-import は旧版から移した統合前のデータ（秘書が統合する）
 GENERIC = {"提出", "報告", "対応", "確認", "検討", "作成", "依頼", "共有", "準備", "資料", "会議", "連絡", "調整", "勤怠"}
 TYPE_ORDER = ["person", "project", "status", "decision", "commitment", "issue", "meeting", "context",
               "incident", "insight", "memo", "inbox", "situation", "profile", "team", "deliverable", "other"]

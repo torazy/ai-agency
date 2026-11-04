@@ -148,7 +148,8 @@ def append_log(root: Path, line: str, now: datetime) -> Path:
     existing = log_file.read_text(encoding="utf-8") if log_file.exists() else ""
     chunks = []
     if not existing:
-        chunks.append(f"# タスクログ {now.strftime('%Y年%m月')}\n\n")
+        # strftime の書式に日本語を入れない（Windows の Python 3.11 は英語ロケールで UnicodeEncodeError になる）
+        chunks.append(f"# タスクログ {now.year}年{now.month:02d}月\n\n")
     if not re.search(rf"^{re.escape(day_header)}\s*$", existing, re.MULTILINE):
         chunks.append(f"{day_header}\n\n")
     chunks.append(line + "\n")

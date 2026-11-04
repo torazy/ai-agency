@@ -52,6 +52,14 @@ class StructureTest(unittest.TestCase):
         for f in (REPO / "tools/hooks/operation-log.json", REPO / ".claude/settings.json", FIXTURE_MEMORY / "guardrails.json"):
             json.loads(f.read_text(encoding="utf-8"))
 
+    def test_no_non_ascii_in_strftime(self):
+        """Windows の Python 3.11 は strftime の書式に非 ASCII があると英語ロケールで落ちる（CI で検出した不具合の再発防止）。"""
+        for f in (REPO / "tools").rglob("*.py"):
+            for i, ln in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+                m = re.search(r"strftime\(([^)]*)\)", ln)
+                if m:
+                    self.assertTrue(all(ord(c) < 128 for c in m.group(1)), f"{f}:{i} strftime の書式に非 ASCII")
+
     def test_hooks_point_to_existing_scripts(self):
         st = json.loads((REPO / ".claude/settings.json").read_text(encoding="utf-8"))
         for arr in st.get("hooks", {}).values():

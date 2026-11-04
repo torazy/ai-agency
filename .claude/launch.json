@@ -3,8 +3,13 @@
   "configurations": [
     {
       "name": "board",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["tools/board/server.py", "--port", "8765"],
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "tools/py.sh",
+        "tools/board/server.py",
+        "--port",
+        "8765"
+      ],
       "port": 8765
     }
   ]

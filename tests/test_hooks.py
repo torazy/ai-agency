@@ -32,7 +32,7 @@ class OperationLoggerTest(TempRepo):
 
     def logger(self, event, env=None):
         r = self.run_py("tools/hooks/operation-logger.py", stdin=event, env=env)
-        self.assertEqual(r.returncode, 0)
+        self.assertEqual(r.returncode, 0, f"stdout={r.stdout!r}\nstderr={r.stderr}")
         self.assertEqual(json.loads(r.stdout), {"suppressOutput": True})
 
     def test_categories_and_status(self):

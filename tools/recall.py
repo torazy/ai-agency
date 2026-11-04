@@ -397,8 +397,15 @@ def do_map(root: Path, a) -> int:
     docs = iter_docs(root, archive=a.archive)
     if a.type == "people":
         for e in [e for e in load_entities(root) if e.kind == "person"]:
+            # 表示順は固定する（集合の順序は実行ごとに変わる）。登録された呼び名 → 姓＋役職 → その他（長い順・文字順）
+            md = read(root / e.path)
+            given = split_aliases(field(md, "呼び名"))
             kana = re.compile(r"^[ぁ-ゖー\s　]+$")
-            al = sorted((x for x in e.aliases if x != e.key and "@" not in x and not kana.match(x)), key=len, reverse=True)[:5]
+            rest = sorted((x for x in e.aliases if x != e.key and "@" not in x and not kana.match(x) and x not in given
+                           and " " not in x and "　" not in x), key=lambda x: (-len(x), x))
+            title = field(md, "役職")
+            rest.sort(key=lambda x: 0 if title and x.endswith(title) else 1)
+            al = (given + rest)[:5]
             print(f"- {e.key}  {e.label}（{e.info}）  呼び名: {'、'.join(al)}")
         return 0
     if a.project:

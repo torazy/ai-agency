@@ -65,6 +65,7 @@ ai-agency/
 ├── tests/                    # 自動テスト（unittest。記録・検索・点検・フック・ボード API・構造。fixtures/memory は雛形の写し）
 ├── .github/workflows/test.yml # push / PR で Windows・Linux の両方でテスト
 └── tools/
+    ├── py.sh                     # フック・ボードの起動用（python3 / python の動く方を選ぶ。Mac・Windows 共通）
     ├── mem.py                    # memory/ への決定的な追記 CLI（inbox / commitment / person / decision / check / migrate）
     ├── recall.py                 # 探す・読む・点検する（読み取り専用。find / who / map / show / review。段階的開示の道具）
     ├── import_legacy.py          # 旧版のインスタンスから記憶だけを移す（既定は計画表示。--apply で実行。OPERATIONS.md §2b）

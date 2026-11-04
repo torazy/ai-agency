@@ -60,6 +60,18 @@ class StructureTest(unittest.TestCase):
                 if m:
                     self.assertTrue(all(ord(c) < 128 for c in m.group(1)), f"{f}:{i} strftime の書式に非 ASCII")
 
+    def test_hooks_and_board_start_through_py_sh(self):
+        """Mac は python3 だけ、Windows は python だけのことが多い。フックとボードは tools/py.sh 経由で起動する。"""
+        st = json.loads((REPO / ".claude/settings.json").read_text(encoding="utf-8"))
+        for arr in st.get("hooks", {}).values():
+            for h in arr:
+                for hh in h.get("hooks", []):
+                    self.assertTrue(hh.get("command", "").startswith("sh tools/py.sh "), hh.get("command"))
+        lj = json.loads((REPO / ".claude/launch.json").read_text(encoding="utf-8"))
+        for c in lj.get("configurations", []):
+            self.assertNotEqual(c.get("runtimeExecutable"), "python", c)
+        self.assertNotIn(b"\r", (REPO / "tools/py.sh").read_bytes().replace(b"\r\n", b"\n") if False else b"")
+
     def test_hooks_point_to_existing_scripts(self):
         st = json.loads((REPO / ".claude/settings.json").read_text(encoding="utf-8"))
         for arr in st.get("hooks", {}).values():

@@ -54,6 +54,13 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
 | 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | ✅ 2026-11-04（/update コマンド・mem.py sync・inbox の重複防止・/morning-brief --unattended → memory/briefs/・tools/schedule の ps1/sh・ログの unattended 区別・起動フックとボードへの表示・/setup Step 6 をローカル定期実行に） |
 
+## Mac 対応（2026-11-04）
+
+ユーザーの旧版は Mac（git なし）で動いている。フック（settings.json）とボード（launch.json）が `python` で起動していたため、
+python3 しか無い Mac ではフックがすべて失敗する状態だった → `tools/py.sh`（python3 / python の動く方を選んで exec）経由に変更。
+Windows でも本物の Claude Code（テストインスタンス・headless）で py.sh 経由のフックが動くことを確認（操作ログに「自動許可」で記録）。
+Mac 実機では未確認。OPERATIONS §2b に Mac・git なしの場合の移行手順を追記。
+
 ## 旧版からの移行スクリプト（2026-11-04）
 
 別の PC で使っている旧版インスタンスを新しいインスタンスへ移すため `tools/import_legacy.py` を追加。既定は計画表示、`--apply` で

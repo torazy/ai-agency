@@ -79,6 +79,16 @@ ai-agency（本体・テンプレート）          ← ツールの進化はこ
 4. コミットして push し、Claude Code で `/setup` を実行する（legacy-import の載せ替えと、案件が今も進行中かの確認をする）
 5. 別の PC では `git pull` で同じ記憶を使う。`.env` は PC ごとに置く
 
+**Mac の場合**：コマンドは `python` を `python3` に読み替える（フックとボードは `tools/py.sh` が自動で選ぶ）。
+git と python3 は Xcode Command Line Tools に入っている（`xcode-select --install`）。非公開リポジトリの取得には
+GitHub の認証が要る（`brew install gh` → `gh auth login`、または GitHub Desktop）。
+
+**旧版の PC で git を使っていない場合**：import_legacy.py は旧版のフォルダを読むだけなので、旧版側に git は要らない。
+ただし新しいインスタンスを使い続ける PC には git が要る（本体の更新の取り込みと、PC 間で記憶を揃えるため）。
+どうしても git を入れられない PC では、旧版の `memory/` フォルダを git のある PC へ運んで（USB・クラウドドライブ等）
+そこで `--from` に指定して移行し、push する。その PC で新しい版を使うなら GitHub の画面から ZIP で取得できるが、
+更新も記憶の同期も手作業になるので、日常使いの PC には git を入れることを勧める。
+
 ## 3. 本体アップデートの取り込み（インスタンス側・随時）
 
 秘書に「本体を最新にして」と頼めばこの手順を実行する：

@@ -254,6 +254,10 @@ def main(argv=None) -> None:
         return
 
     done = apply(old_mem, new_root, items)
+    # ZIP を展開したばかりのフォルダがインスタンスになる場合に備え、配ったコアの一覧を残す（次回の update_instance.py が使う）
+    if not (new_root / ".ai-agency-core.json").exists() and not (new_root / ".git").is_dir():
+        upd = load_module("update_for_import", new_root / "tools" / "update_instance.py")
+        upd.write_manifest(new_root)
     mem = load_module("mem_for_import", new_root / "tools" / "mem.py")
     buf = io.StringIO()
     with redirect_stdout(buf):

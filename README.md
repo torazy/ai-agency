@@ -69,6 +69,7 @@ ai-agency/
     ├── mem.py                    # memory/ への決定的な追記 CLI（inbox / commitment / person / decision / check / migrate）
     ├── recall.py                 # 探す・読む・点検する（読み取り専用。find / who / map / show / review。段階的開示の道具）
     ├── import_legacy.py          # 旧版のインスタンスから記憶だけを移す（既定は計画表示。--apply で実行。OPERATIONS.md §2b）
+    ├── update_instance.py        # git を使わない環境で、ZIP で落とした最新の本体からインスタンスを更新する（OPERATIONS.md §3b）
     ├── board/                    # 秘書ボード：memory/ を見る・触るローカル画面（server.py＋index.html。書き込みは mem.py 経由）
     ├── backlog-mcp/server.py
     ├── dev/                      # 本体メンテナンス層（雛形。本体フォルダでだけ有効化する）

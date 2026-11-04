@@ -34,3 +34,7 @@ Thumbs.db
 # 書き込みのロックと一時ファイル（mem.py）
 memory/.mem.lock
 memory/**/.*.tmp
+
+# ZIP で更新するインスタンス用（update_instance.py が作る。git 管理のインスタンスでは使わない）
+.ai-agency-core.json
+.ai-agency-backup/

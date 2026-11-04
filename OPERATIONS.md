@@ -112,6 +112,28 @@ git merge upstream/main
 
 ---
 
+## 3b. git を使わない環境での更新（GitHub から ZIP で落とす）
+
+1. GitHub の `torazy/ai-agency` から最新の ZIP を落として展開する（どこでもよい。インスタンスとは別のフォルダ）
+2. 展開したフォルダで、まず計画を見る（何も変えない）：
+   ```bash
+   python3 tools/update_instance.py --instance <インスタンスのフォルダ>
+   ```
+3. 問題なければ実行する：
+   ```bash
+   python3 tools/update_instance.py --instance <インスタンスのフォルダ> --apply
+   ```
+   - コア（`CLAUDE.md`・説明書類・`.claude/`・`tools/`・`tests/` など）だけを最新にする。データ（`memory/`・`deliverables/`・
+     `.env`・`.claude/settings.local.json`）には触れない（今の版で増えた記憶の雛形ファイルが無ければ追加だけする）
+   - 消すのは「前回本体が配ったが、今回は無いファイル」だけ（配った一覧は `.ai-agency-core.json`）。インスタンスで足した
+     専門家やスキルは残す。上書き・削除の前に `.ai-agency-backup/{日時}/` へ控える
+   - 最後に `mem.py migrate`・`check`・テスト・記憶の点検を行う
+4. 展開したフォルダは消してよい。Windows では `python3` を `python` に読み替える
+
+**旧版（大きく古い版）から最新にするとき**は、上の更新ではなく §2b の移行（最新の ZIP を展開したフォルダへ
+`import_legacy.py` で記憶を移し、そのフォルダを新しいインスタンスにする）を使う。旧ツール向けファイルや古い構成が残らない。
+移行したフォルダには配った一覧が記録されるので、次回からは上の手順で更新できる。
+
 ## 4. 現場からのフィードバック（インスタンス → 本体）
 
 - スキルの不備・改善案・新スキルの必要性に気づいたら：`skill-improvement` が改善案をまとめる →

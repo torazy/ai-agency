@@ -54,6 +54,13 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
 | 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | ✅ 2026-11-04（/update コマンド・mem.py sync・inbox の重複防止・/morning-brief --unattended → memory/briefs/・tools/schedule の ps1/sh・ログの unattended 区別・起動フックとボードへの表示・/setup Step 6 をローカル定期実行に） |
 
+## ZIP からの更新（2026-11-04）
+
+git を使わない環境（ユーザーの Mac）で、GitHub から落とした最新の ZIP を起点にインスタンスを更新する `tools/update_instance.py` を追加。
+コアだけ置き換え、データは触らない（新しい記憶の雛形ファイルは追加だけ）。配った一覧（`.ai-agency-core.json`）で「本体から消えた
+ファイル」だけを消し、インスタンスで足したものは残す。上書き・削除の前に控え。import_legacy も初回に一覧を残す。
+旧版から最新への初回は import_legacy（新しいフォルダへ記憶を移す）、2回目以降は update_instance、と分けた。
+
 ## Mac 対応（2026-11-04）
 
 ユーザーの旧版は Mac（git なし）で動いている。フック（settings.json）とボード（launch.json）が `python` で起動していたため、

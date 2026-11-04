@@ -406,7 +406,7 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(
 
 /* ------------------------------------------------------------ dialog */
 function dialog({title,icon="pen",fields,submit="保存"}){return new Promise(res=>{const d=$("#dlg");
-  d.innerHTML=`<form method="dialog"><h2>${ic(icon)}${esc(title)}</h2>${fields.map(f=>`<label>${esc(f.label)}${f.type==="textarea"?`<textarea name="${f.name}" placeholder="${esc(f.placeholder||"")}" ${f.required?"required":""}>${esc(f.value||"")}</textarea>`:f.type==="icons"?`<input name="${f.name}" value="${esc(f.value||"")}" placeholder="${esc(f.placeholder||"")}"><div class="iconpick">${PICK.map(n=>`<button type="button" data-pick="${n}" title="${n}">${ic(n)}</button>`).join("")}</div>`:`<input type="${f.type||"text"}" name="${f.name}" value="${esc(f.value||"")}" placeholder="${esc(f.placeholder||"")}" ${f.required?"required":""}>`}</label>`).join("")}
+  d.innerHTML=`<form method="dialog"><h2>${ic(icon)}${esc(title)}</h2>${fields.map(f=>`<label>${esc(f.label)}${f.type==="textarea"?`<textarea name="${f.name}" placeholder="${esc(f.placeholder||"")}" ${f.required?"required":""}>${esc(f.value||"")}</textarea>`:f.type==="select"?`<select name="${f.name}">${(f.options||[]).map(([v,l])=>`<option value="${esc(v)}" ${v===f.value?"selected":""}>${esc(l)}</option>`).join("")}</select>`:f.type==="icons"?`<input name="${f.name}" value="${esc(f.value||"")}" placeholder="${esc(f.placeholder||"")}"><div class="iconpick">${PICK.map(n=>`<button type="button" data-pick="${n}" title="${n}">${ic(n)}</button>`).join("")}</div>`:`<input type="${f.type||"text"}" name="${f.name}" value="${esc(f.value||"")}" placeholder="${esc(f.placeholder||"")}" ${f.required?"required":""}>`}</label>`).join("")}
     <div class="actions"><button type="button" class="btn" data-cancel>${ic("x")}キャンセル</button><button class="btn primary" value="ok">${ic("check")}${esc(submit)}</button></div></form>`;
   d.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{const inp=b.closest("label").querySelector("input");inp.value=b.dataset.pick;d.querySelectorAll("[data-pick]").forEach(x=>x.classList.toggle("on",x===b));});
   $("[data-cancel]",d).onclick=()=>{d.close("cancel");};
@@ -488,9 +488,19 @@ function assigneeAvatar(r,size="sm"){if(r.assignee==="agent"){const a=agentOf(r.
   if(r.assignee==="person")return avatar("",r.who,size,r.who);return avatar("user","自分",size,"me");}
 function assigneeLabel(r){return r.assignee==="agent"?`${esc(r.who)}（エージェント）`:r.assignee==="person"?`${esc(r.who)} に依頼`:r.kind==="received"?`自分（${esc(r.who)}から）`:"自分";}
 function agentBadge(r){return r.agent_state==="running"?`<span class="badge t-ok live">稼働中</span>`:r.agent_state==="review"?`<span class="badge t-warn">${ic("eye")}確認待ち</span>`:r.agent_state==="failed"?`<span class="badge t-danger">${ic("alert")}失敗</span>`:"";}
+function reviewOptions(r){const me=String(r.who).replace(/^@/,"");
+  return [["auto","秘書が難易度で判断"],["none","レビューなし"],...(S.agents.agents||[]).filter(a=>a.handle!=="chief"&&a.handle!==me).map(a=>[a.handle,`@${a.handle} がレビュー`])];}
+function planLabel(p){const v=(p||{}).review;return !v||v==="auto"?"レビュー：秘書が判断":v==="none"?"レビューなし":`レビュー：@${v}`;}
 async function runTask(r){const o=await dialog({title:`${r.ID} を ${r.who} に着手させる`,icon:"sparkles",submit:"着手させる",
-    fields:[{label:"1回の上限（USD）。無人で調べて報告を書く。記憶や外部サービスは変えない",name:"budget",type:"number",value:"1",required:true}]});
-  if(o)api("/api/task/run",{id:r.ID,budget:String(o.budget)});}
+    fields:[{label:"レビュー（作った本人とは別のエージェントが見る）",name:"review",type:"select",value:(r.plan||{}).review||"auto",options:reviewOptions(r)},
+            {label:"1回の上限（USD）。無人で調べて報告を書く。記憶や外部サービスは変えない",name:"budget",type:"number",value:"1",required:true}]});
+  if(o)api("/api/task/run",{id:r.ID,budget:String(o.budget),review:o.review});}
+async function editPlan(r){const o=await dialog({title:`${r.ID} の進め方`,icon:"eye",fields:[{label:"レビュー",name:"review",type:"select",value:(r.plan||{}).review||"auto",options:reviewOptions(r)},{label:"理由（任意）",name:"reason",value:(r.plan||{}).reason||""}]});
+  if(o)api("/api/task/plan",{id:r.ID,review:o.review,reason:o.reason});}
+function reviewBadge(r){const v=(r.review||{}).verdict||"";if(!v)return "";const who=(r.review||{}).reviewer||"";
+  if(/^なし/.test(v))return `<span class="badge t-muted">レビューなし</span>`;
+  const ok=/^OK/i.test(v);const fixed=/修正済/.test(v);
+  return `<span class="badge ${ok?"t-ok":fixed?"t-info":"t-warn"}" title="${esc(v)}">${ic(ok||fixed?"badge-check":"alert")}${esc(who)} ${ok?"OK":fixed?"指摘→修正済":"指摘あり"}${r.review.left?"・残りあり":""}</span>`;}
 async function showReport(r){const x=await fetch("/api/task/result?id="+encodeURIComponent(r.ID)).then(j=>j.json());const d=$("#dlg");d.classList.add("wide");
   const st=x.status||{};const failed=st.state==="failed"||st.state==="unknown";const closed=isClosed(r);
   d.innerHTML=`<form method="dialog"><h2>${ic("file")}${esc(r.ID)} の報告 <span class="muted" style="font-weight:500;font-size:13px">${esc(r.who)}${st.end?" ・ "+new Date(st.end*1000).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""}</span></h2>
@@ -501,7 +511,7 @@ async function showReport(r){const x=await fetch("/api/task/result?id="+encodeUR
   d.onclose=()=>d.classList.remove("wide");d.showModal();}
 async function editContent(r){const o=await dialog({title:`${r.ID} の内容を書き換える`,icon:"pen",fields:[{label:"内容",name:"content",value:r.content,required:true}]});if(o&&o.content)api("/api/commitment/content",{id:r.ID,content:o.content});}
 function taskCard(r){return `<div class="tcard ${r.assignee==="agent"?"agent":""}"><div class="top">${assigneeAvatar(r)}<div class="ct">${esc(r.content)}</div></div>
-  <div class="meta"><span class="mono">${esc(r.ID)}</span><span>${assigneeLabel(r)}</span>${due(r["期限"],r.due_in)}${val(r["関連"])?`<span class="chip">${ic("tag")}${esc(r["関連"].replace(/`/g,""))}</span>`:""}${agentBadge(r)}</div>
+  <div class="meta"><span class="mono">${esc(r.ID)}</span><span>${assigneeLabel(r)}</span>${due(r["期限"],r.due_in)}${val(r["関連"])?`<span class="chip">${ic("tag")}${esc(r["関連"].replace(/`/g,""))}</span>`:""}${agentBadge(r)}${reviewBadge(r)}${r.assignee==="agent"&&!isClosed(r)&&!r.has_result?actRaw(ic("eye")+esc(planLabel(r.plan)),()=>editPlan(r),"chip"):""}</div>
   ${r.assignee==="agent"&&(r.has_result||r.agent_state==="failed")?`<div class="acts">${act(r.has_result?"報告を見る":"ログを見る",r.has_result?"file":"alert",()=>showReport(r),r.has_result&&!isClosed(r)?"primary":"")}</div>`:""}
   ${r.assignee==="agent"&&!isClosed(r)&&r.agent_state!=="running"&&!S.summary.is_template?`<div class="acts">${act(r.has_result?"やり直させる":"着手させる","sparkles",()=>runTask(r),"ghost")}</div>`:""}
   <div class="acts">${stateSeg(r)}${act("","pen",()=>editContent(r),"icon")}${act("","calendar",()=>editDue(r),"icon")}</div></div>`;}

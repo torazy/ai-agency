@@ -261,6 +261,25 @@ def agent_runs(root: Path) -> list[dict]:
     return runs
 
 
+def review_of(md: str) -> dict:
+    """報告の「## レビュー」節から、レビュアーと判定を取る（independent-review の形）。"""
+    m = re.search(r"^## レビュー\s*$(.*?)(?=^## |\Z)", md, re.M | re.S)
+    if not m:
+        return {}
+    sec = m.group(1)
+    who = re.search(r"レビュアー[:：]\s*(@[a-z0-9-]+|なし)", sec)
+    verdict = re.search(r"判定[:：]\s*([^\n／|]+)", sec)
+    rest = re.search(r"残った指摘[:：]\s*(.+)", sec)
+    if verdict:
+        v = verdict.group(1).strip()
+    elif (who and who.group(1) == "なし") or re.search(r"レビュー[:：]\s*なし", sec):
+        v = "なし"
+    else:
+        v = ""
+    return {"reviewer": who.group(1) if who else "", "verdict": v,
+            "left": bool(rest and not rest.group(1).strip().startswith("なし"))}
+
+
 def api_task_result(root: Path, cid: str) -> dict:
     """任せたタスクの報告（memory/task-results/{C-ID}.md）と実行の状態・ログの末尾。"""
     if not re.fullmatch(r"C-\d{3,}", cid or ""):
@@ -318,6 +337,8 @@ def api_commitments(root: Path) -> dict:
         task = run_task.read_status(root, r.get("ID", "")) if d["assignee"] == "agent" else {}
         d["task_run"] = task
         d["has_result"] = d["assignee"] == "agent" and (run_task.results_dir(root) / f"{r.get('ID')}.md").exists()
+        d["plan"] = task.get("plan") or {}
+        d["review"] = review_of(text(run_task.results_dir(root) / f"{r.get('ID')}.md")) if d["has_result"] else {}
         open_ = r.get("状態") not in mem.CLOSED
         if task.get("state") == "running" or any(x["state"] in ("running", "background") for x in mine):
             d["agent_state"] = "running"
@@ -459,6 +480,7 @@ FIELD_RULES = {
     "kind_term": (r"略語|社内用語|コードネーム|あだ名|業界用語", "略語 / 社内用語 / コードネーム / あだ名 / 業界用語"),
     "rid": (r"R-\d{3,}", "R-001 の形"),
     "budget": (r"\d{1,2}(\.\d{1,2})?", "USD の数値"),
+    "review": (r"auto|none|@?[a-z0-9][a-z0-9-]*", "auto / none / レビュアーの handle"), "reason": (r".{1,200}", "1〜200字"),
 }
 REQUIRED = {
     "/api/inbox/add": ["text"], "/api/inbox/resolve": ["id", "to"],
@@ -468,7 +490,7 @@ REQUIRED = {
     "/api/person/observe": ["ident", "situation", "judgment"], "/api/person/icon": ["ident", "icon"],
     "/api/person/note": ["ident", "situation", "insight"], "/api/decision/status": ["project", "status"],
     "/api/term/add": ["term", "meaning"], "/api/rule/add": ["content", "source"], "/api/rule/confirm": ["rid"],
-    "/api/task/run": ["id"],
+    "/api/task/run": ["id"], "/api/task/plan": ["id", "review"],
 }
 
 
@@ -518,10 +540,17 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
                 budget = float(g("budget") or run_task.default_budget())
                 if not 0 < budget <= 20:
                     raise ValueError("上限は 0〜20 USD")
-                info = run_task.launch(root, g("id", ""), budget)
+                info = run_task.launch(root, g("id", ""), budget, g("review") or None)
             except ValueError as e:
                 return 400, {"ok": False, "error": str(e)}
             res = {"ok": True, "message": f"{info['id']} を {info['agent']} に着手させた（上限 {budget:g} USD）。終わると報告が届く"}
+        elif path == "/api/task/plan":
+            try:
+                plan = run_task.set_plan(root, g("id", ""), g("review", ""), g("reason", ""))
+            except ValueError as e:
+                return 400, {"ok": False, "error": str(e)}
+            who = {"auto": "秘書が判断", "none": "なし"}.get(plan["review"], "@" + plan["review"])
+            res = {"ok": True, "message": f"{g('id')} の進め方：レビュー {who}"}
         elif path == "/api/commitment/content":
             res = run_mem(mem.commitment_set_content, root, g("id", ""), g("content", ""))
         elif path == "/api/person/observe":

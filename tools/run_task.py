@@ -7,6 +7,10 @@ run_task.py ── エージェントに任せたタスク（約束台帳の「�
   python tools/run_task.py C-007 --dry-run    # 実行するコマンドだけ表示
   python tools/run_task.py --status C-007     # 状態（JSON）
   python tools/run_task.py --applied C-007    # 承認後、報告の「記憶に入れる候補」を記録し終えた印（起動時の案内から消える）
+  python tools/run_task.py --plan C-007 --review qa --reason "部長に出す提案書"   # 進め方（レビューの有無）を記録
+
+レビュー（--review）：auto＝/run-task が難易度で決める（既定）／none＝付けない／handle＝そのエージェントがレビュー（作成者以外）。
+仕事を受けたときに @chief が宣言した進め方を --plan で残すと、ボードや無人実行がそれに従う（CLAUDE.md §4）。
 
 結果：memory/task-results/C-007.md（@chief がまとめた報告。記憶に入れる候補を含むが、記憶そのものは書き換えない）
 状態：memory/task-results/C-007.json（running / done / failed・終了コード・時刻）、実行ログ：C-007.log
@@ -88,6 +92,34 @@ def check_task(root: Path, cid: str, child: bool = False) -> dict:
     return row
 
 
+REVIEW_RE = re.compile(r"auto|none|[a-z0-9][a-z0-9-]*")
+
+
+def check_review(root: Path, row: dict, review: str) -> str:
+    """レビューの指定を確かめて正規化（auto / none / handle）。だめなら ValueError。"""
+    review = (review or "auto").strip().lstrip("@")
+    if not REVIEW_RE.fullmatch(review):
+        raise ValueError(f"レビューの指定が不正：{review}")
+    if review in ("auto", "none"):
+        return review
+    if not (root / ".claude" / "agents" / f"{review}.md").exists():
+        raise ValueError(f"レビュアー @{review} がいない")
+    if "@" + review == (row.get("相手") or "").strip():
+        raise ValueError(f"作成者（@{review}）は自分の成果物をレビューしない。別のエージェントを選ぶ")
+    return review
+
+
+def plan_of(root: Path, cid: str) -> dict:
+    return read_status(root, cid).get("plan") or {}
+
+
+def set_plan(root: Path, cid: str, review: str, reason: str = "") -> dict:
+    row = check_task(root, cid, child=True)
+    plan = {"review": check_review(root, row, review), "reason": (reason or "").strip()[:200], "set": time.strftime("%Y-%m-%d")}
+    write_status(root, cid, plan=plan)
+    return plan
+
+
 def allowed_tools() -> list[str]:
     tools = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Agent", "Task",
              "Edit(memory/task-results/**)"]   # Edit(パス) は Write を含むファイル編集すべてに効く（Write(パス) は効かない）
@@ -98,17 +130,17 @@ def allowed_tools() -> list[str]:
     return tools
 
 
-def build_command(cid: str, budget: float) -> list[str]:
+def build_command(cid: str, budget: float, review: str = "auto") -> list[str]:
     exe = shutil.which("claude")
     if not exe:
         raise ValueError("claude コマンドが見つからない（Claude Code の CLI をインストールし PATH を通す）")
-    return [exe, "-p", f"/run-task {cid}", "--allowedTools", *allowed_tools(),
+    return [exe, "-p", f"/run-task {cid} --review {review}", "--allowedTools", *allowed_tools(),
             "--max-budget-usd", f"{budget:g}", "--no-session-persistence"]
 
 
 def run_foreground(root: Path, cid: str, budget: float, child: bool = False) -> int:
     check_task(root, cid, child=child)
-    cmd = build_command(cid, budget)
+    cmd = build_command(cid, budget, plan_of(root, cid).get("review", "auto"))
     rd = results_dir(root)
     rd.mkdir(parents=True, exist_ok=True)
     write_status(root, cid, state="running", start=round(time.time(), 1), end=None, exit=None, budget=budget, pid=os.getpid())
@@ -127,10 +159,15 @@ def run_foreground(root: Path, cid: str, budget: float, child: bool = False) -> 
     return code
 
 
-def launch(root: Path, cid: str, budget: float) -> dict:
-    """裏で起動して、すぐ戻る（ボードから呼ぶ）。"""
+def launch(root: Path, cid: str, budget: float, review: str | None = None) -> dict:
+    """裏で起動して、すぐ戻る（ボードから呼ぶ）。review を渡すと進め方（レビュー）も更新する。"""
     row = check_task(root, cid)
+    if review is not None:
+        check_review(root, row, review)
     build_command(cid, budget)   # claude が無ければここで止める
+    if review is not None:
+        old = plan_of(root, cid)
+        set_plan(root, cid, review, old.get("reason", "") if old.get("review") == review.lstrip("@") else "ボードで指定")
     # 子が状態を書く前にボードが読みに来ても「実行中」に見えるよう、先に書いておく
     write_status(root, cid, state="running", start=round(time.time(), 1), end=None, exit=None, budget=budget)
     args = [sys.executable, str(root / "tools" / "run_task.py"), cid, "--wait", "--child", "--budget", f"{budget:g}",
@@ -145,7 +182,7 @@ def launch(root: Path, cid: str, budget: float) -> dict:
     except OSError as e:
         write_status(root, cid, state="failed", end=round(time.time(), 1), exit=127)
         raise ValueError(f"起動できない: {e}") from e
-    return {"id": cid, "agent": row.get("相手"), "budget": budget}
+    return {"id": cid, "agent": row.get("相手"), "budget": budget, "review": plan_of(root, cid).get("review", "auto")}
 
 
 def default_budget() -> float:
@@ -167,6 +204,9 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true", help="コマンドを表示するだけ")
     ap.add_argument("--status", metavar="ID", help="状態を JSON で表示")
     ap.add_argument("--applied", metavar="ID", help="報告の候補を記憶に反映し終えた印を付ける")
+    ap.add_argument("--plan", metavar="ID", help="進め方（レビューの有無）を記録する。--review と --reason を添える")
+    ap.add_argument("--review", default=None, help="auto / none / レビュアーの handle")
+    ap.add_argument("--reason", default="", help="進め方の理由（1行）")
     ap.add_argument("--budget", type=float, default=None, help="1回の上限（USD）")
     ap.add_argument("--root", type=Path, default=ROOT)
     ap.add_argument("--child", action="store_true", help=argparse.SUPPRESS)
@@ -174,6 +214,14 @@ def main() -> None:
     root = a.root.resolve()
     if a.status:
         print(json.dumps(read_status(root, a.status), ensure_ascii=False))
+        return
+    if a.plan:
+        try:
+            plan = set_plan(root, a.plan, a.review or "auto", a.reason)
+        except ValueError as e:
+            sys.exit(f"✗ {e}")
+        who = {"auto": "秘書が難易度で決める", "none": "なし"}.get(plan["review"], "@" + plan["review"])
+        print(f"📝 {a.plan} の進め方：レビュー {who}" + (f"（{plan['reason']}）" if plan["reason"] else ""))
         return
     if a.applied:
         if not CID_RE.fullmatch(a.applied) or not (results_dir(root) / f"{a.applied}.md").exists():
@@ -189,12 +237,12 @@ def main() -> None:
     try:
         if a.dry_run:
             check_task(root, a.id)
-            print(" ".join(build_command(a.id, budget)))
+            print(" ".join(build_command(a.id, budget, plan_of(root, a.id).get("review", "auto"))))
             return
         if a.wait:
             sys.exit(run_foreground(root, a.id, budget, child=a.child))
         info = launch(root, a.id, budget)
-        print(f"▶ {a.id} を {info['agent']} に着手させた（上限 {budget:g} USD）。結果は memory/task-results/{a.id}.md")
+        print(f"▶ {a.id} を {info['agent']} に着手させた（レビュー {info['review']}・上限 {budget:g} USD）。結果は memory/task-results/{a.id}.md")
     except ValueError as e:
         sys.exit(f"✗ {e}")
 

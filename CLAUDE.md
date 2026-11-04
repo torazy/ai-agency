@@ -59,7 +59,8 @@ SessionStart フックが「[記憶の状態]」「[約束台帳]」「[inbox]�
 | テーマを与えて議論させたい（専門家同士、専門家＋人物モデル） | `/discuss`：@chief が司会。意見表明→反論・修正→収束のラウンド制 |
 | 実在の人への報告・提案・指示の通し方 | `/simulate`：その人の**思考モデル**（`memory/people/` の観察）を独立に召集し反応を予測 |
 | 単純な検索・ファイリング・単一領域の問い | @chief が直接、対応スキルで即答 |
-| まとまった作業を切り出す（調査・下書き・一括処理） | 約束台帳に `commitment add --kind given --who @handle` で載せ、Agent の description に C-ID を書いて渡す。ボードに担当と稼働が出る。無人で進めるなら `/run-task`（結果は `memory/task-results/`）。完了は人の承認後 |
+| 成果物・判断材料を作る仕事を受けた | 最初に**進め方**を1行で宣言（作成者・レビューの有無とレビュアー・理由）。人に渡るもの・判断材料は作成者と別のレビュアーが見る（`independent-review`） |
+| まとまった作業を切り出す（調査・下書き・一括処理） | 約束台帳に `commitment add --kind given --who @handle` で載せ、Agent の description に C-ID を書いて渡す。ボードに担当と稼働が出る。宣言した進め方は `run_task.py --plan`。無人で進めるなら `/run-task`（結果は `memory/task-results/`）。完了は人の承認後 |
 
 専門家は「正しい答え」、人物モデルは「実際のあの人の反応（予測）」を出す別の仕組み。両方要るなら `/consult` → `/simulate`。
 対応領域は `memory/team/roster.md`、不在なら `recruit-expert`、深掘りの手順を足すなら `expert-plugins`。

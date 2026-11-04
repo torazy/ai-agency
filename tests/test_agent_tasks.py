@@ -161,8 +161,8 @@ class RunTaskTest(TempRepo):
         srv = self.load("tools/board/server.py", "board_runtask")
         calls = []
         real = srv.run_task.launch
-        srv.run_task.launch = lambda root, cid, budget: (calls.append((cid, budget)), real.__globals__["check_task"](root, cid),
-                                                         {"id": cid, "agent": "@pm", "budget": budget})[-1]
+        srv.run_task.launch = lambda root, cid, budget, review=None: (
+            calls.append((cid, budget)), real.__globals__["check_task"](root, cid), {"id": cid, "agent": "@pm", "budget": budget})[-1]
         self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "0.5"})[0], 200)
         self.assertEqual(calls, [("C-001", 0.5)])
         self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-002"})[0], 400)       # 自分のタスク
@@ -195,6 +195,44 @@ class RunTaskTest(TempRepo):
         r = self.run_py("tools/run_task.py", "C-002")
         self.assertNotEqual(r.returncode, 0)
         self.assertFalse((self.root / "memory/task-results/C-002.json").exists())
+
+
+class ReviewPlanTest(TempRepo):
+    """進め方（レビューの有無・レビュアー）の記録と、報告のレビュー節の読み取り。"""
+
+    def setUp(self):
+        super().setUp()
+        for h in ("pm", "qa"):
+            self.write(f".claude/agents/{h}.md", f"---\nname: {h}\n---\n")
+        self.mem("commitment", "add", "--kind", "given", "--who", "@pm", "--content", "スケジュール案", "--due", d(5))
+        self.rt = self.load("tools/run_task.py", "run_task_plan")
+
+    def test_plan_validation_and_command(self):
+        out = self.run_py("tools/run_task.py", "--plan", "C-001", "--review", "@qa", "--reason", "部長に出す", check=True).stdout
+        self.assertIn("レビュー @qa（部長に出す）", out)
+        self.assertEqual(self.rt.plan_of(self.root, "C-001")["review"], "qa")
+        for bad in ("pm", "nobody", "../x"):                                  # 作成者自身・いない・不正
+            self.assertNotEqual(self.run_py("tools/run_task.py", "--plan", "C-001", "--review", bad).returncode, 0)
+        self.assertEqual(self.rt.plan_of(self.root, "C-001")["review"], "qa")  # 失敗しても前の進め方は残る
+        self.rt.shutil.which = lambda name: "claude"
+        cmd = self.rt.build_command("C-001", 1, self.rt.plan_of(self.root, "C-001")["review"])
+        self.assertEqual(cmd[2], "/run-task C-001 --review qa")
+        self.rt.set_plan(self.root, "C-001", "none")
+        self.assertEqual(self.rt.plan_of(self.root, "C-001"), {"review": "none", "reason": "", "set": self.rt.time.strftime("%Y-%m-%d")})
+
+    def test_board_plan_and_review_badge(self):
+        srv = self.load("tools/board/server.py", "board_plan")
+        self.assertEqual(srv.do_post(self.root, "/api/task/plan", {"id": "C-001", "review": "qa", "reason": "社外"})[0], 200)
+        self.assertEqual(srv.do_post(self.root, "/api/task/plan", {"id": "C-001", "review": "pm"})[0], 400)
+        self.assertEqual(srv.do_post(self.root, "/api/task/plan", {"id": "C-001", "review": "a b"})[0], 400)
+        row = next(r for r in srv.api_commitments(self.root)["rows"] if r["ID"] == "C-001")
+        self.assertEqual(row["plan"]["review"], "qa")
+        self.write("memory/task-results/C-001.md", "# C-001\n\n## 結論\nx\n\n## レビュー\n"
+                   "- レビュアー: @qa ／ 判定: 要修正 → 修正済み（1回）\n- 指摘と対応:\n  - [重大] 根拠 → 追記\n- 残った指摘: 表の単位\n")
+        row = next(r for r in srv.api_commitments(self.root)["rows"] if r["ID"] == "C-001")
+        self.assertEqual(row["review"], {"reviewer": "@qa", "verdict": "要修正 → 修正済み（1回）", "left": True})
+        self.assertEqual(srv.review_of("## レビュー\n- レビュアー: なし ／ 判定: なし（下調べ）\n- 残った指摘: なし\n")["left"], False)
+        self.assertEqual(srv.review_of("## 結論\nx\n"), {})
 
 
 class BoardGuardTest(TempRepo):

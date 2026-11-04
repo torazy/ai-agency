@@ -109,8 +109,18 @@ def main() -> None:
         if age <= 1:
             body = read(latest)
             def count(head: str) -> int:
+                # 末端の箇条だけ数える（案件見出しの親行と「該当なし」は数えない）
                 m = re.search(rf"^## {head}.*?$(.*?)(?=^## |\Z)", body, re.M | re.S)
-                return sum(1 for ln in m.group(1).splitlines() if ln.startswith("- ")) if m else 0
+                if not m:
+                    return 0
+                items = [ln for ln in m.group(1).splitlines() if re.match(r"^\s*- ", ln)]
+                depth = lambda ln: len(ln) - len(ln.lstrip())
+                n = 0
+                for i, ln in enumerate(items):
+                    is_parent = i + 1 < len(items) and depth(items[i + 1]) > depth(ln)
+                    if not is_parent and "該当なし" not in ln:
+                        n += 1
+                return n
             lines.append(
                 f"[朝のブリーフ] memory/briefs/{latest.name}（{'今日' if age == 0 else '昨日'}の無人実行）"
                 f"：今日中 {count('🔴')} 件・見ておく {count('🟡')} 件・取り込み候補は inbox へ。"

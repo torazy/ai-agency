@@ -28,7 +28,7 @@ $env:AI_AGENCY_UNATTENDED = "1"
 $allowed = @(
     "Read", "Glob", "Grep",
     "Bash(python tools/mem.py *)", "Bash(python3 tools/mem.py *)",
-    "Write(memory/briefs/**)", "Edit(memory/briefs/**)"
+    "Edit(memory/briefs/**)"
 )
 $log = "memory/briefs/_last-run.log"
 $stamp = { Get-Date -Format "yyyy-MM-dd HH:mm" }

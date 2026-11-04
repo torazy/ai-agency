@@ -54,6 +54,23 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
 | 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | ✅ 2026-11-04（/update コマンド・mem.py sync・inbox の重複防止・/morning-brief --unattended → memory/briefs/・tools/schedule の ps1/sh・ログの unattended 区別・起動フックとボードへの表示・/setup Step 6 をローカル定期実行に） |
 
+## テストインスタンスの観察（2026-11-04・第4段・OK／一部未検証）
+
+`tools/schedule/morning-brief.ps1` をタスク スケジューラと同じ呼び方（`powershell -File`）で実行した。
+
+| 観点 | 結果 |
+|---|---|
+| 1回目 | **失敗**：Windows PowerShell 5.1 が BOM 無し UTF-8 の日本語コメントを Shift_JIS で読み ParserError → ps1 を ASCII のみに |
+| 2回目 | 成功（約1分）。`memory/briefs/2026-11-04.md` を生成。送信・台帳の書き換えなし。標準出力は要約1行 |
+| 中身 | 約束の期限・未承認提案2件を案件見出しでまとめ、台帳（11/13）と situation/status（11/14）の食い違いを見つけて「提案」に回した（無人なので書き換えず） |
+| 見られなかったもの | Calendar・Gmail（無人の許可リストに無い＝設計どおり）、Backlog（接続失敗）、GitHub・Slack（座標なし）を末尾に明記 |
+| 許可ルール | `Write(path)` は効かず `Edit(path)` だけで足りると CLI が警告 → 外した |
+| 起動フック | 件数が親行・「該当なし」まで数えていた → 末端の箇条だけ数えるよう修正（今日中 0・見ておく 4） |
+| 操作ログ | briefs への書き込みは記録されず、無人の mem.py 呼び出しは「自動実行[unattended]」（単体で確認） |
+
+**未検証**：`/update` の対話モードと `--capture` を実際のコネクタで回すこと（テストインスタンスに本物のメールを取り込まないため）、
+デスクトップアプリの定期タスク（作業フォルダの扱いが文書化されていない）。実インスタンスでの初回利用時に確認する。
+
 ## テストインスタンスの観察（2026-11-04・第3段・OK）
 
 legal プラグインを `--scope local` で導入（marketplace もテストインスタンスの local 設定に宣言）→ headless の `claude -p` で

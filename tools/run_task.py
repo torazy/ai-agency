@@ -122,7 +122,7 @@ def set_plan(root: Path, cid: str, review: str, reason: str = "") -> dict:
 
 
 def allowed_tools() -> list[str]:
-    tools = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Agent", "Task",
+    tools = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Agent", "Task", "SendMessage",
              "Edit(memory/task-results/**)"]   # Edit(パス) は Write を含むファイル編集すべてに効く（Write(パス) は効かない）
     for py in ("python", "python3"):
         tools.append(f"Bash({py} tools/recall.py *)")

@@ -74,13 +74,13 @@ def main() -> None:
             pass
 
     # commitments.md の期限超過：ID 列（C-nnn）で始まる実データ行のうち、追加日より後の日付セルに
-    # 今日より前があり、状態が done でない行を数える（記法説明や雛形行は対象外）
+    # 今日より前があり、状態が done / dropped でない行を数える（記法説明や雛形行は対象外）
     commitments = read(mem / "commitments.md")
     overdue = 0
     today = date.today()
     for row in commitments.splitlines():
         cells = [c.strip() for c in row.strip().strip("|").split("|")] if row.startswith("|") else []
-        if len(cells) < 4 or not re.fullmatch(r"C-\d{3,}", cells[0]) or cells[-1] == "done":
+        if len(cells) < 4 or not re.fullmatch(r"C-\d{3,}", cells[0]) or cells[-1] in ("done", "dropped"):
             continue
         for d in re.findall(r"(\d{4}-\d{2}-\d{2})", " ".join(cells[2:])):
             try:
@@ -96,7 +96,7 @@ def main() -> None:
     inbox = read(mem / "inbox.md")
     pending = sum(1 for ln in inbox.splitlines() if ln.startswith("- [ ] "))
     if pending:
-        lines.append(f"[inbox] 未分類が {pending} 件ある（分類して `mem.py inbox resolve`）。")
+        lines.append(f"[inbox] 未分類（秘書の作業中トレイ）が {pending} 件ある。仕分けと配置は秘書の担当（CLAUDE.md §3-6・§5）。")
 
     # 無人実行の朝のブリーフ（tools/schedule/）。今日か昨日の分があれば件数だけ伝える
     briefs = sorted((mem / "briefs").glob("????-??-??.md")) if (mem / "briefs").exists() else []
@@ -123,7 +123,7 @@ def main() -> None:
                 return n
             lines.append(
                 f"[朝のブリーフ] memory/briefs/{latest.name}（{'今日' if age == 0 else '昨日'}の無人実行）"
-                f"：今日中 {count('🔴')} 件・見ておく {count('🟡')} 件・取り込み候補は inbox へ。"
+                f"：今日中 {count('🔴')} 件・見ておく {count('🟡')} 件。取り込みで記録したものと確認待ちはブリーフ末尾にある。"
             )
 
     print("\n".join(lines)[:9000])

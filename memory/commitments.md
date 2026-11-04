@@ -64,4 +64,4 @@
 
 ## 状態の凡例
 
-`open`（未着手）/ `in-progress` / `waiting`（相手待ち）/ `done`（→月次でアーカイブへ）
+`open`（未着手）/ `in-progress` / `waiting`（相手待ち）/ `done`（→月次でアーカイブへ）/ `dropped`（取り下げ。誤記録・不要になった約束。done と同じく閉じた扱い）

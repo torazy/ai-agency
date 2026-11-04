@@ -91,8 +91,8 @@ ai-agency/
 | 情報をファイリング | `/intake`（または会議メモ等を貼って「ファイリングして」） |
 | 忘れずに覚えさせる | 「覚えておいて」＋内容（分類前に inbox へ即時保存され、分類後に記録先が報告される。迷えば1行で確認される） |
 | タスク・指示を記録 | 「〇〇やっておく」「部長に△△を頼まれた」「鈴木さんに□□を依頼した」と言うだけ |
-| 今日の状況を把握 | `/morning-brief`（平日の朝に無人で回しておくと、`memory/briefs/` に用意され inbox に取り込み候補が入る） |
-| つながったサービスから取り込む | `/update`（カレンダー・メール・チャット等から前回以降の約束・依頼・人物の反応を拾い、選んだものだけ記録） |
+| 今日の状況を把握 | `/morning-brief`（平日の朝に無人で回しておくと、`memory/briefs/` に用意され、拾った約束は台帳に追記済み・要確認だけ inbox に残る） |
+| つながったサービスから取り込む | `/update`（カレンダー・メール・チャット等から前回以降の約束・依頼・人物の反応を拾い、秘書が記録して事後報告。確認が要るものだけ1問） |
 | 専門家を強くする | 「@legal を強くしたい」→ knowledge-work-plugins（legal / finance / human-resources / product-management）を承認制で導入。入れなくても動く |
 | 画面で見る・触る | 「ボードを開いて」（または `python tools/board/server.py` → http://127.0.0.1:8765/）。約束・inbox・案件・人物・決定を一覧し、状態変更や分類も画面から |
 | 過去の決定を検証 | `/review-decisions` |
@@ -111,8 +111,8 @@ ai-agency/
   - Windows：`tools/schedule/morning-brief.ps1` をタスク スケジューラに登録（コマンド例はスクリプト冒頭）
   - macOS / Linux：`tools/schedule/morning-brief.sh` を cron に登録（`30 8 * * 1-5 /path/to/tools/schedule/morning-brief.sh`）
 
-無人実行は `/morning-brief --unattended`：コネクタから前回以降の約束・依頼を拾って **inbox に入れるだけ**、外部への送信や
-台帳の書き換えはしない。結果は `memory/briefs/{日付}.md` に残り、次に会話を始めると件数が知らされ、ボードの「今日」にも出る。
+無人実行は `/morning-brief --unattended`：コネクタから前回以降の約束・依頼を拾い、確信のあるものは台帳等に**追記**、要確認だけ inbox に残す。
+外部への送信や既存行の書き換えはしない。結果は `memory/briefs/{日付}.md` に残り、次に会話を始めると件数が知らされ、ボードの「今日」にも出る。
 週次の `/review-decisions`・`/propose-delegation`、月次の `memory-maintenance` も同じ仕組みで登録できる。
 
 ---

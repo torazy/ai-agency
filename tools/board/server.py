@@ -186,7 +186,7 @@ def api_projects(root: Path) -> dict:
     for r in (mem.commitment_rows(root) if (root / "memory" / "commitments.md").exists() else []):
         for slug in set(re.findall(r"P:([A-Za-z0-9_-]+)", r.get("関連", ""))):
             totals[slug] = totals.get(slug, 0) + 1
-            if r.get("状態") != "done":
+            if r.get("状態") not in mem.CLOSED:
                 rels[slug] = rels.get(slug, 0) + 1
     if pdir.exists():
         for d in sorted(p for p in pdir.iterdir() if p.is_dir() and not p.name.startswith("_")):

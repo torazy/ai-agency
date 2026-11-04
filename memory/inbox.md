@@ -1,9 +1,9 @@
-# inbox（分類前の受け皿）
+# inbox（秘書の作業中トレイ）
 
-> 「覚えておいて」「あとで整理して」と言われたものを**分類する前に**ここへ即時保存する（取りこぼしゼロ）。
-> 追加は `python tools/mem.py inbox add "…" --source 会話`、分類できたら
-> `python tools/mem.py inbox resolve <ID> --to <記録先>` で ✅ にする。未分類が残っていれば
-> /morning-brief と memory-maintenance が仕分けを促す。原文は要点のみ（長文はファイルへ）。
+> ユーザーがざっくり渡したもの・無人実行が拾ったものを、**分類する前に**ここへ即時保存する（取りこぼしゼロ）。
+> **仕分けと正規の場所への配置は秘書が行う**（ユーザーが仕分ける場所ではない）。追加は
+> `python tools/mem.py inbox add "…" --source 会話`、配置したら `python tools/mem.py inbox resolve <ID> --to <記録先>` で ✅ にする。
+> 未分類に残るのは「確認待ち」だけが正常な状態。原文は要点のみ（長文はファイルへ）。
 
 ## 未分類
 

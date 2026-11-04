@@ -342,7 +342,8 @@ function toast(m,icon="check"){const t=$("#toast");t.innerHTML=ic(icon)+`<span>$
 function relDays(n){if(n==null)return"";if(n<0)return`${-n}日超過`;if(n===0)return"今日";if(n===1)return"明日";return`${n}日後`;}
 function due(d,n,icon="calendar"){d=val(d);if(!d||d==="なし")return `<span class="due none">${ic("calendar")}—</span>`;const cls=n==null?"":n<0?"over":n<=3?"soon":"";return `<span class="due ${cls}">${ic(n!=null&&n<0?"alert":icon)}${esc(d)}${n==null?"":` <span class="muted small">${relDays(n)}</span>`}</span>`;}
 const KIND={task:["自分","user","t-info"],received:["受けた","arrow-in","t-warn"],given:["出した","arrow-out","t-accent"]};
-const STATE={open:["未着手","circle"],"in-progress":["進行中","play"],waiting:["相手待ち","hourglass"],done:["完了","archive"]};
+const STATE={open:["未着手","circle"],"in-progress":["進行中","play"],waiting:["相手待ち","hourglass"],done:["完了","archive"],dropped:["取り下げ","x"]};
+const isClosed=r=>r["状態"]==="done"||r["状態"]==="dropped";
 const kindBadge=k=>{const [l,i,c]=KIND[k]||[k,"tag","t-muted"];return `<span class="badge ${c}">${ic(i)}${l}</span>`;};
 function decBadge(st){const c=st.startsWith("提案")?"t-warn":st.startsWith("検証")?"t-ok":st.startsWith("決定")?"t-accent":"t-muted";const i=st.startsWith("提案")?"lightbulb":st.startsWith("検証")?"badge-check":"check";return `<span class="badge ${c}">${ic(i)}${esc(st)}</span>`;}
 function lvMeter(lv){const n=parseInt((lv||"Lv0").replace("Lv",""))||0;return `<span class="lv" title="人物モデルの成熟度（Lv2 以上で /simulate 実用）"><span class="segs">${[1,2,3].map(i=>`<i class="${n>=i?"on":""}"></i>`).join("")}</span>${esc(lv||"Lv0")}</span>`;}
@@ -386,7 +387,7 @@ async function refresh(){
   $("#user").innerHTML=name?`${avatar("",name,"",name)}<div><div class="nm">${esc(nick||name)}</div><div class="rl">${esc(val(sum.role)||"—")}</div></div>`:`${avatar("user","?")}<div><div class="nm">プロフィール未設定</div><div class="rl">/setup を実行してください</div></div>`;
   $("#banner").innerHTML=sum.is_template?`<div class="banner">${ic("alert")}<span>このフォルダは本体（テンプレート）です。記憶は空のはずで、ここでの記録は配布物に混ざります。</span></div>`:"";
   $("#clock").textContent=new Date().toLocaleDateString("ja-JP",{month:"long",day:"numeric",weekday:"short"});
-  const rows=S.commitments.rows||[],open=rows.filter(r=>r["状態"]!=="done");
+  const rows=S.commitments.rows||[],open=rows.filter(r=>!isClosed(r));
   const urgent=open.filter(r=>(r.due_in!=null&&r.due_in<=3)||(r.follow_in!=null&&r.follow_in<=0));
   const proposed=(S.decisions.decisions||[]).filter(d=>d.status.startsWith("提案"));
   S.derived={open,urgent,proposed};
@@ -424,7 +425,7 @@ async function editDue(r){const o=await dialog({title:`${r.ID} の期限を変�
 async function editFollow(r){const o=await dialog({title:`${r.ID} のフォロー日を変更`,icon:"eye",fields:[{label:"内容",name:"c",value:r.content},{label:"新しいフォロー日",name:"f",type:"date",required:true}]});if(o)api("/api/commitment/follow",{id:r.ID,follow:o.f});}
 function renderCommitments(){
   const all=S.commitments.rows||[];const f=comFilter;
-  let rows=all.filter(r=>f.kind==="all"||r.kind===f.kind).filter(r=>f.state==="all"?true:f.state==="open"?r["状態"]!=="done":r["状態"]===f.state);
+  let rows=all.filter(r=>f.kind==="all"||r.kind===f.kind).filter(r=>f.state==="all"?true:f.state==="open"?!isClosed(r):r["状態"]===f.state);
   const fbtn=(k,v,l,i)=>act(l,i,()=>{comFilter[k]=v;renderCommitments();},f[k]===v?"on":"");
   $("#tab-commitments").innerHTML=`<div class="card"><div class="card-h">${ic("check-square")}約束台帳<span class="n">未完了 ${S.derived.open.length} / 全 ${all.length}</span></div>
     <div class="filters">${fbtn("kind","all","すべて","layers")}${fbtn("kind","task","自分","user")}${fbtn("kind","received","受けた","arrow-in")}${fbtn("kind","given","出した","arrow-out")}<span style="width:10px"></span>${fbtn("state","open","未完了","circle")}${fbtn("state","waiting","相手待ち","hourglass")}${fbtn("state","done","完了","archive")}${fbtn("state","all","全状態","eye")}</div>

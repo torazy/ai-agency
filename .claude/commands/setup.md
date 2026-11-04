@@ -107,7 +107,7 @@ GitHub リポジトリ / Drive フォルダ URL / Slack チャンネル）、主
 
 | 周期 | コマンド | 目的 |
 |---|---|---|
-| 平日の朝 | `/morning-brief --unattended` | 先回りの状況整理と、コネクタからの取り込み候補を inbox へ（Duet 的な常時稼働の入口） |
+| 平日の朝 | `/morning-brief --unattended` | 先回りの状況整理と、コネクタからの取り込み（確信のあるものは記録、要確認は inbox）。Duet 的な常時稼働の入口 |
 | 週次（金） | `/review-decisions` | 予測 vs 実際の答え合わせ |
 | 週次（月） | `/propose-delegation` | 承認実績から自動承認への昇格提案 |
 | 月次 | `memory-maintenance` | 記憶を育てても軽く保つ |

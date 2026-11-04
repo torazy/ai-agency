@@ -214,7 +214,8 @@ KIND_COLUMNS = {
     "received": ["ID", "受領日", "依頼者", "内容", "期限", "関連", "状態"],
     "given": ["ID", "依頼日", "相手", "内容", "期限", "フォロー日", "関連", "状態"],
 }
-STATES = {"open", "in-progress", "waiting", "done"}
+STATES = {"open", "in-progress", "waiting", "done", "dropped"}  # dropped = 取り下げ（誤記録・不要）
+CLOSED = {"done", "dropped"}
 
 
 def commitments_path(root: Path) -> Path:

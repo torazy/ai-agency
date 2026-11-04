@@ -54,6 +54,14 @@ scheduled task）を前提に設計する。他ツール向けファイルは削
 | 3 | 専門家の周辺スキル（knowledge-work-plugins）、重複スキルのホスト委譲 | ✅ 2026-11-04（expert-plugins スキル・専門家の共通規則と周辺スキル行・/setup Step 6b・roster の導入表・research-report と deliverable-create をホスト委譲に） |
 | 4 | /morning-brief の定期実行、`/update` 相当のコネクタ駆動取り込み | ✅ 2026-11-04（/update コマンド・mem.py sync・inbox の重複防止・/morning-brief --unattended → memory/briefs/・tools/schedule の ps1/sh・ログの unattended 区別・起動フックとボードへの表示・/setup Step 6 をローカル定期実行に） |
 
+## テストインスタンスの観察（2026-11-04・「配置は秘書」・OK）
+
+ざっくりした3件（定例の時間変更・部長の追加指示・同僚の会議室情報）を「覚えておいて」で渡した。inbox に3件保存 →
+同じターンで約束台帳（C-004、期限 11/11、中間報告に紐づけ）・部長の判断事例・鈴木さんの気づき・status.md に配置 →
+3件 resolve。ユーザーへの仕分け依頼・候補選択なし。気づき：秘書が status.md の古い期限（11/14）を台帳（11/13）に合わせて
+自分で直した（期限の正典は台帳なので妥当。事後報告あり）。関連欄に `P:kintai-saas（C-002）` のような非標準の書き方が出た
+（`--rel P:` の部分一致では拾えるので実害なし）。
+
 ## テストインスタンスの観察（2026-11-04・第4段・OK／一部未検証）
 
 `tools/schedule/morning-brief.ps1` をタスク スケジューラと同じ呼び方（`powershell -File`）で実行した。

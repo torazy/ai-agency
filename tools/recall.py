@@ -171,7 +171,8 @@ def load_entities(root: Path) -> list[Entity]:
         title = field(md, "役職")
         if len(parts) >= 2:
             sei, mei = parts[0], parts[-1]
-            e.aliases.update({sei + "さん", mei + "さん", sei + mei})
+            # 姓だけでも引ける（同姓が複数なら resolve が「曖昧」を返す）
+            e.aliases.update({sei, sei + "さん", mei + "さん", sei + mei})
             if title and len(title) <= 6:
                 e.aliases.add(sei + title)
         kana = field(md, "読み仮名")
@@ -305,9 +306,18 @@ def find_hits(root: Path, terms: list[str], types: set[str] | None = None, proje
                 per_term.append(c)
             if not all(per_term):
                 continue
+            # 全部の語が同じ行に揃う行（表なら同じ約束・同じ判断事例）
+            together = [k for k, x in enumerate(nbody) if all(any(v in x for v in vs) for vs in variants)]
+            is_table = sum(1 for x in body if x.startswith("|")) > len(body) / 2
             ntrail = norm(sec.trail)
+            heading_hits = sum(1 for vs in variants if any(v in ntrail for v in vs))
+            if len(variants) > 1 and is_table and not together and not heading_hits:
+                continue  # 大きな表で語が別々の行に散っているだけ（無関係な行どうしの偶然の一致）
             score = sum(min(c, 5) for c in per_term)
-            score += 3 * sum(1 for vs in variants if any(v in ntrail for v in vs))
+            score += 3 * heading_hits
+            if len(variants) > 1 and together:
+                score += 5
+                matched_lines = set(together)
             if sec.date:
                 age = (today - sec.date).days
                 score += 3 if age <= 30 else 2 if age <= 90 else 1 if age <= 365 else 0

@@ -11,6 +11,7 @@
 
 | ID | 要求 | 確かめること | 登録 |
 |---|---|---|---|
+| V-008 | R-006 | 新しいセッションで台帳が自動で読み込まれ、続きから始められるか（CLAUDE.local.md の @ 取り込み） → 新しいセッションがファイルを開く前から台帳の内容（要求・未検証10件・稼働中1件）を答えた（2026-11-05 確認） | 2026-11-05 |
+| V-009 | R-006 | 新しいセッションで dispatch・scout・run-task・independent-review が見えなくなっているか → 新しいセッションのスキル一覧に dispatch・scout・run-task・independent-review・setup が無く、maint-check-structure はある（2026-11-05 確認） | 2026-11-05 |
 
 ## 経過
-

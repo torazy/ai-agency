@@ -114,13 +114,16 @@ def _acquire_file_lock(root: Path) -> Path:
             with os.fdopen(fd, "w") as f:
                 f.write(f"{os.getpid()} {time.time():.0f}\n")
             return lock
-        except FileExistsError:
+        except (FileExistsError, PermissionError):
+            # PermissionError：Windows では、別プロセスが消している最中のロックファイルを作り直そうとするとこれになる（使用中と同じ扱い）
             try:
                 if time.time() - lock.stat().st_mtime > LOCK_STALE_SEC:  # 落ちたプロセスの置き土産
                     os.remove(lock)
                     continue
             except FileNotFoundError:
                 continue
+            except PermissionError:
+                pass
             if time.time() > deadline:
                 raise MemError("memory/ が他の書き込みでロック中（20秒待っても空かない）。少し待って再実行する")
             time.sleep(0.02)

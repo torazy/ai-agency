@@ -887,5 +887,88 @@ class OrderLimitIsTheBudgetTest(Base):
             del os.environ["MAX_BUDGET_USD"]
 
 
+class AgentEventOrderTest(Base):
+    """外部レビュー #11：別々のフックが書く記録（起動・起動の応答・終了）が逆順・重複・欠落で届いても、実行を正しく結ぶ。"""
+
+    def runs(self, rows):
+        self.write("memory/task-log/agent-runs.jsonl", "".join(json.dumps(r) + chr(10) for r in rows))
+        return {r["tuid"]: r for r in self.srv.agent_runs(self.root)}
+
+    def ev(self, t, ev, **kw):
+        return {"ts": self.t0 + t, "sid": "s", "ev": ev, **kw}
+
+    def setUp(self):
+        super().setUp()
+        self.t0 = time.time() - 60
+
+    def start(self, t, tuid, agent="generalist"):
+        return self.ev(t, "start", tuid=tuid, agent=agent, bg=True)
+
+    def test_normal_and_reversed_order(self):
+        for rows in ([self.start(0, "t1"), self.ev(0.3, "launched", tuid="t1", aid="a1"), self.ev(10, "stop", agent="generalist", aid="a1")],
+                     [self.start(0, "t1"), self.ev(0.2, "stop", agent="generalist", aid="a1"), self.ev(0.3, "launched", tuid="t1", aid="a1")]):
+            r = self.runs(rows)["t1"]
+            self.assertEqual(r["state"], "done")
+            self.assertEqual(r["end"], rows[2 if rows[2]["ev"] == "stop" else 1]["ts"])          # 終わった時刻は終了の記録
+        self.assertEqual(self.srv.api_activity(self.root)["running"], [])
+
+    def test_two_of_the_same_kind_both_stops_first(self):
+        r = self.runs([self.start(0, "t1"), self.start(1, "t2"),
+                       self.ev(2, "stop", agent="generalist", aid="a2"), self.ev(3, "stop", agent="generalist", aid="a1"),
+                       self.ev(4, "launched", tuid="t2", aid="a2"), self.ev(5, "launched", tuid="t1", aid="a1")])
+        self.assertEqual((r["t1"]["end"], r["t2"]["end"]), (self.t0 + 3, self.t0 + 2))
+
+    def test_duplicates_do_not_close_or_reopen_others(self):
+        r = self.runs([self.start(0, "old"), self.ev(0.1, "launched", tuid="old"),                 # 応答に agentId の無かった起動
+                       self.start(1, "t1"), self.ev(1.1, "launched", tuid="t1", aid="a1"),
+                       self.ev(5, "stop", agent="generalist", aid="a1"), self.ev(5.1, "stop", agent="generalist", aid="a1"),
+                       self.ev(6, "launched", tuid="t1", aid="a1")])
+        self.assertEqual((r["t1"]["state"], r["t1"]["end"]), ("done", self.t0 + 5))
+        self.assertEqual(r["old"]["state"], "background")                                           # 重複した終了で別の実行を閉じない
+
+    def test_early_stop_does_not_close_an_older_legacy_run(self):
+        r = self.runs([self.start(0, "old"), self.ev(0.1, "launched", tuid="old"),
+                       self.start(1, "t1"), self.ev(2, "stop", agent="generalist", aid="a1"),
+                       self.ev(2.1, "launched", tuid="t1", aid="a1")])
+        self.assertEqual((r["t1"]["state"], r["old"]["state"]), ("done", "background"))
+
+    def fg(self, t, tuid, aid=None):
+        """前景の呼び出し：フックは start → stop → end の順に書く（end には aid。古い記録には無い）。"""
+        end = self.ev(t + 0.3, "end", tuid=tuid, **({"aid": aid} if aid else {}))
+        return [self.ev(t, "start", tuid=tuid, agent="generalist", bg=False),
+                self.ev(t + 0.1, "stop", agent="generalist", aid=aid or "x" + tuid), end]
+
+    def legacy_bg(self, t, tuid):
+        return [self.start(t, tuid), self.ev(t + 0.1, "launched", tuid=tuid)]                     # 応答に agentId が無かった
+
+    def test_foreground_stop_never_closes_a_background_run(self):
+        for rows in (self.fg(0, "f1", "f1a") + self.legacy_bg(5, "L"),                             # 前景のあとに起動
+                     self.legacy_bg(0, "L") + self.fg(5, "f1", "f1a"),                             # 前景の前に起動
+                     self.legacy_bg(0, "L") + self.fg(5, "f1")):                                   # aid の無い古い end
+            r = self.runs(rows)
+            self.assertEqual((r["f1"]["state"], r["L"]["state"]), ("done", "background"), [x["ev"] for x in rows])
+
+    def test_stop_after_a_failed_launch_belongs_to_it(self):
+        r = self.runs(self.legacy_bg(0, "L") + [self.start(1, "t1"), self.ev(1.2, "fail", tuid="t1"),
+                                                self.ev(1.5, "stop", agent="generalist", aid="a1")])
+        self.assertEqual((r["t1"]["state"], r["L"]["state"]), ("failed", "background"))
+
+    def test_fresh_stop_waits_for_its_launched(self):
+        self.t0 = time.time() - 2                                                                  # 届いたばかり
+        r = self.runs(self.legacy_bg(0, "L") + [self.start(1, "t1"), self.ev(1.2, "stop", agent="generalist", aid="a1")])
+        self.assertEqual((r["L"]["state"], r["t1"]["state"]), ("background", "running"))           # 応答を待つ（L を閉じない）
+
+    def test_missing_launched_is_closed_by_its_stop(self):
+        r = self.runs(self.legacy_bg(0, "L") + [self.start(1, "t1"), self.ev(20, "stop", agent="generalist", aid="a1")])
+        self.assertEqual((r["t1"]["state"], r["L"]["state"]), ("done", "background"))              # 応答の欠けた起動のほうを閉じる
+
+    def test_legacy_stop_still_closes_by_approximation(self):
+        r = self.runs([self.start(0, "old"), self.ev(0.1, "launched", tuid="old"),
+                       self.ev(3, "stop", agent="generalist", aid="zz")])                          # aid の合う起動が最後まで来ない
+        self.assertEqual(r["old"]["state"], "done")
+        r = self.runs([self.start(0, "old"), self.ev(0.1, "launched", tuid="old"), self.ev(3, "stop", agent="generalist")])
+        self.assertEqual(r["old"]["state"], "done")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -226,6 +226,10 @@ def agent_runs(root: Path) -> list[dict]:
     except OSError:
         return []
     runs, by_tuid = [], {}
+    # 別々のフックのプロセスが書くので、記録は届く順が入れ替わる・重複することがある（外部レビュー #11）：
+    # 終了（SubagentStop）が起動の応答（launched）より先に届いたら、aid で覚えておき、後から来た launched で閉じる
+    early_stops: dict = {}   # (会話, aid) → 終了の記録
+    closed_aids: set = set()   # 閉じた (会話, aid)。同じ終了が2回届いても別の実行を閉じない
     now = datetime.now().timestamp()
     for ln in lines:
         try:
@@ -242,19 +246,39 @@ def agent_runs(root: Path) -> list[dict]:
                 by_tuid[r["tuid"]] = r
         elif ev in ("end", "launched", "fail") and e.get("tuid") in by_tuid:
             r = by_tuid[e["tuid"]]
+            if ev in ("end", "fail"):
+                _drop_own_stop(early_stops, closed_aids, r, e)
             if ev == "end" and r["state"] == "running":
                 r.update(state="done", end=e.get("ts"))
-            elif ev == "launched":
+            elif ev == "launched" and r["state"] == "running":   # 重複した応答で、閉じた実行を「動いている」に戻さない
                 r.update(state="background", aid=e.get("aid", ""))
+                st = early_stops.pop((r["sid"], r["aid"]), None) if r["aid"] else None
+                if st:   # 終了のほうが先に届いていた
+                    r.update(state="done", end=st.get("ts"))
+                    closed_aids.add((r["sid"], r["aid"]))
             elif ev == "fail":
                 r.update(state="failed", end=e.get("ts"))
         elif ev == "stop":  # バックグラウンドで動いていたものの終了：起動の応答の agentId で突き合わせる
+            key = (e.get("sid", ""), e.get("aid", ""))
+            if e.get("aid") and key in closed_aids:
+                continue   # 同じ終了の重複
             alive = [r for r in runs if r["sid"] == e.get("sid") and r["state"] == "background"]
             hit = next((r for r in alive if e.get("aid") and r.get("aid") == e.get("aid")), None)
-            if hit is None:  # aid の無い古い記録：同じ会話・同じ種類で、まだ動いている最も古いもの（近似）
-                hit = next((r for r in alive if not r.get("aid") and r["agent"] == e.get("agent")), None)
             if hit:
                 hit.update(state="done", end=e.get("ts"))
+                closed_aids.add(key)
+            elif any(r["sid"] == e.get("sid") and r["agent"] == e.get("agent") and r["state"] == "failed"
+                     and 0 <= (e.get("ts") or 0) - (r["end"] or 0) <= 10 for r in runs):
+                continue   # 失敗した起動の後から届いた終了（その起動のもの）。近似で別の実行を閉じない
+            elif e.get("aid"):
+                early_stops.setdefault(key, e)   # 起動の応答がまだ：後から来る launched で閉じる（近似で別の実行を閉じない）
+            else:
+                _close_legacy(runs, e)
+    for e in sorted(early_stops.values(), key=lambda x: x.get("ts") or 0):
+        # aid の合う起動の応答が来ないまま時間がたった終了：aid の無い記録（応答に agentId が無かった・応答の記録が欠けた）に
+        # 近似で当てる。届いたばかりのものは、応答がまだ書かれていないだけかもしれないので待つ（別の実行を閉じない）
+        if now - (e.get("ts") or now) >= EARLY_STOP_GRACE_SEC:
+            _close_legacy(runs, e)
     for r in runs:
         lim = RUN_STALE_SEC.get(r["state"])
         if lim and now - (r["start"] or 0) > lim:
@@ -262,6 +286,36 @@ def agent_runs(root: Path) -> list[dict]:
         r["elapsed"] = round(((r["end"] or now) - (r["start"] or now)))
         r["start_hm"] = datetime.fromtimestamp(r["start"]).strftime("%m/%d %H:%M") if r["start"] else ""
     return runs
+
+
+EARLY_STOP_GRACE_SEC = 30   # 起動の応答（launched）は起動の約0.3秒後に書かれる。これだけ待っても来なければ欠けたとみなす
+
+
+def _close_legacy(runs: list[dict], e: dict) -> None:
+    """aid で結べない終了：同じ会話・同じ種類で、その終了より前に起動し、aid の無いまま動いている背景の実行のうち
+    最も古いものを閉じる（近似）。起動の応答が欠けて「動いている（running）」のままの背景の実行も対象。"""
+    ts = e.get("ts") or 0
+    cands = [r for r in runs if r["sid"] == e.get("sid") and r["agent"] == e.get("agent") and not r.get("aid")
+             and r.get("bg") and r["state"] in ("background", "running") and (r["start"] or 0) <= ts]
+    # 起動の応答がまだ（欠けた）背景の実行を先に：aid 付きの終了は、応答の届いていない起動のものである見込みが高い
+    hit = next((r for r in cands if r["state"] == "running"), None) or next(iter(cands), None)
+    if hit:
+        hit.update(state="done", end=ts)
+
+
+def _drop_own_stop(early_stops: dict, closed_aids: set, r: dict, e: dict) -> None:
+    """前景の実行の終了（end・fail）が届いた：先に届いていたその実行の stop を、近似に回らないよう取り除く。
+    aid があれば aid で、無い古い記録は同じ会話・同じ種類で起動から終了までの間の stop を1つ。"""
+    if e.get("aid"):
+        early_stops.pop((r["sid"], e["aid"]), None)
+        closed_aids.add((r["sid"], e["aid"]))
+        return
+    lo, hi = r["start"] or 0, (e.get("ts") or 0) + 1
+    key = next((k for k, x in early_stops.items() if k[0] == r["sid"] and x.get("agent") == r["agent"]
+                and lo <= (x.get("ts") or 0) <= hi), None)
+    if key:
+        early_stops.pop(key)
+        closed_aids.add(key)
 
 
 def review_of(md: str) -> dict:

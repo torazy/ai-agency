@@ -696,5 +696,145 @@ class PrerequisiteTest(Base):
         self.assertEqual(self.w.propose_from_changes(self.root), [])
 
 
+class BoardShowsWhatHappenedTest(Base):
+    """R-023 の実地：終了不明の実行がカードに出ない・報告ダイアログで条件の変化が見えない・下限 0.5 では起動だけで打ち切られた。"""
+
+    def card(self, cid="C-001"):
+        return next(r for r in self.srv.api_commitments(self.root)["rows"] if r["ID"] == cid)
+
+    def test_unknown_run_is_shown_on_the_card(self):
+        rid = self.w.run_start(self.root, "C-001")
+        self.rt.state_path(self.root, rid).parent.mkdir(parents=True, exist_ok=True)
+        self.rt.state_path(self.root, rid).write_text(json.dumps({"start": time.time() - 60, "pid": _dead_pid()}), encoding="utf-8")
+        c = self.card()                                                                            # 表示の時点で後始末される
+        self.assertEqual((c["agent_state"], c["task_run"]["state"]), ("unknown", "unknown"))
+        self.assertEqual(self.w.run_row(self.root, rid)["結果"], "終了不明")
+
+    def test_stopped_run_is_shown_and_a_report_still_wins(self):
+        rid = self.w.run_start(self.root, "C-001")
+        self.w.run_end(self.root, rid, "停止", None)
+        self.assertEqual(self.card()["agent_state"], "stopped")
+        rid = self.w.run_start(self.root, "C-001")
+        self.w.run_end(self.root, rid, "終了不明", None)
+        self.report(rid)                                                                           # 報告を書いたあとに落ちた
+        self.assertEqual(self.card()["agent_state"], "review")                                     # 報告は読める（確認待ち）
+        self.mem("commitment", "set-state", "C-001", "dropped")
+        self.assertEqual(self.card()["agent_state"], "")                                           # 閉じた約束には出さない
+
+    def test_report_dialog_gets_the_stale_reason_before_approve(self):
+        self.w.ref_add(self.root, "C-001", "memory/projects/x/status.md#見積", "前提", "見積")
+        rid = self.finished_run()
+        self.assertEqual(self.srv.api_task_result(self.root, "C-001")["status"]["stale"], [])
+        self.write("memory/projects/x/status.md", STATUS_V2)
+        res = self.srv.api_task_result(self.root, "C-001")
+        self.assertEqual((res["run"], res["status"]["stale"]), (rid, ["memory/projects/x/status.md#見積"]))
+
+    def test_budget_floor_and_small_settings(self):
+        for b in (0.5, 0.99):
+            with self.assertRaisesRegex(ValueError, "1〜20"):
+                self.rt.check_budget(b)
+        self.rt.check_budget(1.0)
+        self.w.ensure_work(self.root)
+        sp = self.w.work_dir(self.root) / "settings.md"
+        t = sp.read_text(encoding="utf-8").replace("| 1回の上限（USD・レビューなし） | 1 |", "| 1回の上限（USD・レビューなし） | 0.5 |")
+        sp.write_text(t, encoding="utf-8")
+        # 設定が下限より小さくても下限で起動する。そのままだと毎回断られ、見直しが起動できない仕事のために起き続ける
+        self.assertEqual(self.w.limits(self.root)["run_usd"], 1.0)
+        self.assertEqual(self.rt.default_budget(self.root, "none"), 1.0)
+        self.rt.check_budget(self.rt.default_budget(self.root, "none"))
+        os.environ["MAX_BUDGET_USD"] = "0.5"                                                       # 朝のブリーフと共有の上書き
+        try:
+            self.assertEqual((self.rt.default_budget(self.root, "none"), self.w.task_budget(self.root, "C-001")), (1.0, 1.0))
+        finally:
+            del os.environ["MAX_BUDGET_USD"]
+
+
+def _set_setting(t, label, value):
+    import re
+    t.w.ensure_work(t.root)
+    sp = t.w.work_dir(t.root) / "settings.md"
+    txt = re.sub(r"^\| " + re.escape(label) + r" \| [^|]* \|", f"| {label} | {value} |", sp.read_text(encoding="utf-8"), flags=re.M)
+    sp.write_text(txt, encoding="utf-8")
+
+
+class BudgetRangeAgreesTest(Base):
+    """R-024 の独立レビュー：設定・環境変数の1回の上限が範囲（1〜20）の外でも、起動待ちの見込みと起動の判定が一致する。
+    食い違うと、起動は毎回断られるのに定期の見直しが毎回起きる。"""
+
+    def test_setting_above_20(self):
+        _set_setting(self, "1日の費用上限（USD）", "100")
+        _set_setting(self, "1回の上限（USD・レビューあり）", "30")
+        self.w.ensure_task(self.root, "C-001")
+        self.assertEqual([x["budget"] for x in self.w.launch_waiting(self.root)], [20.0])
+        self.assertEqual(self.rt.default_budget(self.root, "auto"), 20.0)
+        self.rt.check_budget(self.rt.default_budget(self.root, "auto"))
+
+    def test_env_above_20_or_not_a_number(self):
+        for v, want in (("25", 20.0), ("0.5", 1.0), ("nan", 2.5), ("inf", 2.5), ("abc", 2.5)):
+            os.environ["MAX_BUDGET_USD"] = v
+            try:
+                b = self.rt.default_budget(self.root, "auto")
+                self.assertEqual((v, b, self.w.task_budget(self.root, "C-001")), (v, want, want))
+                self.rt.check_budget(b)
+            finally:
+                del os.environ["MAX_BUDGET_USD"]
+
+
+class SubagentLogDoesNotHideRunStateTest(Base):
+    """R-024 の独立レビュー：作業セッションの中のサブエージェント（無人の記録）が、止めた・落ちた実行を「確認待ち」「稼働中」に見せない。"""
+
+    def log(self, *events):
+        p = self.root / "memory/task-log/agent-runs.jsonl"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "a", encoding="utf-8") as f:
+            for e in events:
+                f.write(json.dumps(e, ensure_ascii=False) + "\n")
+
+    def card(self, cid="C-001"):
+        return next(r for r in self.srv.api_commitments(self.root)["rows"] if r["ID"] == cid)
+
+    def start(self, tuid, ago, **kw):
+        return {"ts": time.time() - ago, "sid": "s1", "ev": "start", "tuid": tuid, "agent": "qa", "desc": "C-001 のレビュー",
+                "tasks": ["C-001"], **kw}
+
+    def test_stopped_after_reviewer_finished(self):
+        rid = self.w.run_start(self.root, "C-001")
+        self.log(self.start("t1", 120, unattended=True), {"ts": time.time() - 60, "sid": "s1", "ev": "end", "tuid": "t1", "unattended": True})
+        self.w.run_end(self.root, rid, "停止", None)
+        self.assertEqual(self.card()["agent_state"], "stopped")
+
+    def test_stopped_while_reviewer_running(self):
+        rid = self.w.run_start(self.root, "C-001")
+        self.log(self.start("t1", 30, unattended=True))                                           # 終了の記録はもう来ない
+        self.w.run_end(self.root, rid, "停止", None)
+        self.assertEqual(self.card()["agent_state"], "stopped")
+
+    def test_attended_delegation_after_a_run_still_shows(self):
+        rid = self.w.run_start(self.root, "C-001")
+        self.w.run_end(self.root, rid, "停止", None)
+        self.log(self.start("t2", 10))                                                             # 人の会話から改めて任せた
+        self.assertEqual(self.card()["agent_state"], "running")
+
+
+class NoApproveWhileRunningTest(Base):
+    """R-024 の独立レビュー：報告ファイルが書かれていても、実行中は完了にしない（どの経路でも）。"""
+
+    def test_approve_state_button_and_cli_refuse_running(self):
+        rid = self.w.run_start(self.root, "C-001")
+        self.rt._state_update(self.root, rid, start=round(time.time(), 1), pid=os.getpid(), budget=1.0)   # 生きている
+        self.report(rid, 0)
+        code, body = self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})
+        self.assertEqual(code, 400, body)
+        self.assertIn("実行中", body["error"])
+        code, body = self.srv.do_post(self.root, "/api/commitment/state", {"id": "C-001", "state": "done"})
+        self.assertEqual(code, 400, body)
+        self.assertNotIn("やり直させる", body["error"])
+        with self.assertRaises(self.w.mem.MemError):
+            self.w.mem.commitment_set_state_checked(self.root, "C-001", "done")
+        self.assertEqual(self.state(), "open")
+        self.w.run_end(self.root, rid, "完了", 0.5)                                                # 終わったら承認できる
+        self.assertEqual(self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})[0], 200)
+
+
 if __name__ == "__main__":
     unittest.main()

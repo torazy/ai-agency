@@ -209,11 +209,11 @@ class RunTaskTest(TempRepo):
         self.mem("commitment", "add", "--kind", "given", "--who", "@pm", "--content", "別件", "--due", d(5))
         self.fake_run("C-003", result="実行中", report=False)
         with self.assertRaisesRegex(ValueError, "同時実行"):
-            self.rt.check_capacity(self.root, 0.5)
+            self.rt.check_capacity(self.root, 1.0)
 
     def test_budget_floor_and_cut_off_leaves_note(self):
-        for b in (0.1, 0.49, 20.5):
-            with self.assertRaisesRegex(ValueError, "0.5〜20"):
+        for b in (0.1, 0.5, 0.99, 20.5):   # 0.5 では起動だけで 0.54 使い打ち切られた（実地 R-023）
+            with self.assertRaisesRegex(ValueError, "1〜20"):
                 self.rt.launch(self.root, "C-001", b)
         self.assertFalse((self.root / "memory/work/tasks/C-001.md").exists() and self.rt.work.read_task(self.root, "C-001")["runs"])
         # 上限で打ち切られて報告が無いときは、作業記録の途中の変更に残す（実地：0.1 USD で起動だけで 0.30 使い報告なし）
@@ -243,8 +243,9 @@ class RunTaskTest(TempRepo):
         calls = []
         srv.run_task.launch = lambda root, cid, budget=None, review=None, anyway=False: (
             calls.append((cid, budget)), {"id": cid, "run": cid + "-R1", "agent": "@pm", "budget": budget or 1})[-1]
-        self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "0.5"})[0], 200)
-        self.assertEqual(calls, [("C-001", 0.5)])
+        self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "1"})[0], 200)
+        self.assertEqual(calls, [("C-001", 1.0)])
+        self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "0.5"})[0], 400)
         self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "50"})[0], 400)
         self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "0.1"})[0], 400)
         self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "abc"})[0], 400)

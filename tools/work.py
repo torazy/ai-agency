@@ -46,6 +46,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import re
 import sys
@@ -101,7 +102,7 @@ SETTINGS_SKELETON = """# チームの自動運転の設定（work/settings.md）
 | 実行間隔（分） | 60 | 定期の見直しの間隔。スケジューラは15分ごとに呼び、ここで間引く |
 | 同時実行の上限 | 2 | 同時に動かす作業セッションの数 |
 | 1日の費用上限（USD） | 10 | その日に始めた実行の費用の合計がこれを超えるなら新しく起動しない |
-| 1回の上限（USD・レビューなし） | 1 | 作業セッション1回の上限 |
+| 1回の上限（USD・レビューなし） | 1 | 作業セッション1回の上限（1 以上。起動だけで 0.3〜0.55 使う） |
 | 1回の上限（USD・レビューあり） | 2.5 | 作成・レビュー・直しの3人分 |
 | 自動で着手 | しない | しない／委任範囲 |
 | 観察の間隔（時間） | 8 | 変化も確認待ちも無い回は Claude を起動しない（費用0）。観察（/scout）はこの間隔でだけ行い、/setup 前は行わない |
@@ -219,11 +220,33 @@ def _num(s: str, default: float) -> float:
     return float(m.group(0)) if m else default
 
 
+RUN_MIN_USD = 1.0   # 1回の上限の下限。作業セッションは起動だけで 0.30〜0.54 USD 使った（実測）。0.5 では起動だけで打ち切られる
+RUN_MAX_USD = 20.0  # 1回の上限の上限（run_task.check_budget と同じ）
+
+
+def clamp_run_budget(v: float) -> float:
+    """設定・環境変数の1回の上限を、起動の判定（check_budget の範囲）に揃える。範囲外のままだと起動は毎回断られるのに、
+    起動待ちの見込み（launch_waiting・pending）は起動できるとみなし、定期の見直しが空振りし続ける（R-024 の独立レビュー）。"""
+    return min(max(v, RUN_MIN_USD), RUN_MAX_USD)
+
+
+def env_run_budget() -> float | None:
+    """環境変数 MAX_BUDGET_USD（朝のブリーフと共有）。数でない・nan・無限は無いものとして設定に任せる。"""
+    try:
+        v = float(os.environ.get("MAX_BUDGET_USD") or "")
+    except ValueError:
+        return None
+    return clamp_run_budget(v) if math.isfinite(v) else None
+
+
 def limits(root: Path) -> dict:
     s = settings(root)
+    # 1回の上限が下限より小さい設定は下限に揃える。そのままだと起動が毎回断られ、定期の見直しが起動できない仕事のために
+    # 毎回 Claude を起こしてしまう（launch_waiting の見込みと run_task の判定が食い違う）
     return {"interval_min": _num(s["実行間隔（分）"], 60), "max_running": int(_num(s["同時実行の上限"], 2)),
-            "daily_usd": _num(s["1日の費用上限（USD）"], 10), "run_usd": _num(s["1回の上限（USD・レビューなし）"], 1),
-            "run_usd_review": _num(s["1回の上限（USD・レビューあり）"], 2.5),
+            "daily_usd": _num(s["1日の費用上限（USD）"], 10),
+            "run_usd": clamp_run_budget(_num(s["1回の上限（USD・レビューなし）"], 1)),
+            "run_usd_review": clamp_run_budget(_num(s["1回の上限（USD・レビューあり）"], 2.5)),
             "auto_start": s["自動で着手"].strip() == "委任範囲", "observe_h": _num(s["観察の間隔（時間）"], 8)}
 
 
@@ -552,6 +575,8 @@ def done_blocker(root: Path, cid: str) -> str:
     if not runs:
         return ""
     rid = runs[-1].get("実行ID", "")
+    if runs[-1].get("結果") == "実行中":
+        return f"{rid} がまだ実行中（報告は書きかけかもしれない）。終わるのを待つか、止めてから"
     if not RUN_RE.fullmatch(rid) or not (results_dir(root) / f"{rid}.md").exists():
         return ""
     stale = stale_refs(root, rid)
@@ -969,11 +994,8 @@ def launch_waiting(root: Path) -> list[dict]:
 
 def task_budget(root: Path, cid: str) -> float:
     """そのタスクを起動するときの1回の上限（run_task.default_budget と同じ決め方：レビューなしは run_usd、それ以外は run_usd_review）。"""
-    try:
-        if os.environ.get("MAX_BUDGET_USD"):
-            return float(os.environ["MAX_BUDGET_USD"])
-    except ValueError:
-        pass
+    if env_run_budget() is not None:
+        return env_run_budget()
     lim = limits(root)
     review = read_task(root, cid).get("order", {}).get("レビュー", "").strip()
     return lim["run_usd"] if review.startswith("none") else lim["run_usd_review"]

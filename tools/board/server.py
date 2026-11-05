@@ -365,12 +365,21 @@ def api_commitments(root: Path) -> dict:
         d["review"] = review_of(text(run_task.results_dir(root) / f"{task.get('run')}.md")) if d["has_result"] else {}
         d["changes"] = sorted({c["kind"] for c in changes_all if c["task"] == r.get("ID")})
         open_ = r.get("状態") not in mem.CLOSED
+        if task.get("run"):
+            # 作業セッション（run_task）の実行があるタスクは、その状態が正本。中で動いたサブエージェント（無人の記録）は
+            # 止めた・落ちたあとも「稼働中」「終わった」で残り、停止・終了不明を隠していた（R-024 の独立レビュー）。
+            # 人の会話から任せた分（無人でない記録）だけを見る
+            mine = [x for x in mine if not x.get("unattended")]
         if task.get("state") == "running" or any(x["state"] in ("running", "background") for x in mine):
             d["agent_state"] = "running"
         elif open_ and task.get("state") == "failed":
             d["agent_state"] = "failed"
-        elif open_ and (d["has_result"] or (mine and mine[-1]["state"] == "done")):
+        elif open_ and d["has_result"]:
             d["agent_state"] = "review"   # エージェントは終わった。人が報告を確かめて完了にする
+        elif open_ and task.get("state") in ("unknown", "stopped"):
+            d["agent_state"] = task["state"]   # 終了不明（プロセスが消えた・費用は予約額で数えた）／人が止めた
+        elif open_ and mine and mine[-1]["state"] == "done":
+            d["agent_state"] = "review"   # 人の会話から任せたサブエージェントが終わった
         elif open_ and mine and mine[-1]["state"] == "failed":
             d["agent_state"] = "failed"
         else:
@@ -564,7 +573,7 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
                 except work.MemError as e:
                     return 400, {"ok": False, "error": str(e)}
                 if why:
-                    return 400, {"ok": False, "error": why + "（やり直させる）"}
+                    return 400, {"ok": False, "error": why + ("（やり直させる）" if "古い条件" in why else "")}
             res = run_mem(mem.commitment_set_state, root, g("id", ""), g("state", ""))
         elif path == "/api/commitment/due":
             res = run_mem(mem.commitment_set_due, root, g("id", ""), g("due", ""))
@@ -590,6 +599,8 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
             st = run_task.read_status(root, g("id", ""))
             if not st.get("has_result"):
                 return 400, {"ok": False, "error": "報告が無い"}
+            if st.get("state") == "running":
+                return 400, {"ok": False, "error": f"{st['run']} がまだ実行中（報告は書きかけかもしれない）。終わってから承認する"}
             try:
                 # 確認役の受け入れは「確認した時点で妥当」。人が承認するまでに条件が変わることがあるので、毎回確かめる（外部レビュー #4）
                 stale = work.stale_refs(root, st["run"])

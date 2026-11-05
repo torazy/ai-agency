@@ -283,21 +283,18 @@ def build_command(cid: str, rid: str, budget: float, review: str = "auto") -> li
 
 def default_budget(root: Path, review: str = "auto") -> float:
     """1回の上限。環境変数 MAX_BUDGET_USD があればそれ、無ければ settings.md（レビューありは作成・レビュー・直しの3人分）。"""
-    try:
-        if os.environ.get("MAX_BUDGET_USD"):
-            return float(os.environ["MAX_BUDGET_USD"])
-    except ValueError:
-        pass
+    if work.env_run_budget() is not None:
+        return work.env_run_budget()   # 範囲（1〜20）に揃える。work.task_budget（起動待ちの見込み）と同じ決め方
     lim = work.limits(root)
     return lim["run_usd"] if review == "none" else lim["run_usd_review"]
 
 
-MIN_BUDGET_USD = 0.5   # 作業セッションは起動だけで約 0.3 USD 使う（実測）。それ未満の上限では報告も残らない
+MIN_BUDGET_USD = work.RUN_MIN_USD   # 作業セッションは起動だけで 0.30〜0.54 USD 使った（実測）。上限 0.5 では起動だけで打ち切られ報告も残らない
 
 
 def check_budget(budget: float) -> None:
-    if not MIN_BUDGET_USD <= budget <= 20:
-        raise ValueError(f"1回の上限は {MIN_BUDGET_USD:g}〜20 USD（作業セッションは起動だけで約 0.3 USD 使い、それ未満では報告も残らない）")
+    if not MIN_BUDGET_USD <= budget <= work.RUN_MAX_USD:
+        raise ValueError(f"1回の上限は {MIN_BUDGET_USD:g}〜{work.RUN_MAX_USD:g} USD（作業セッションは起動だけで 0.3〜0.55 USD 使い、それより少ない上限では報告も残らない）")
 
 
 def check_capacity(root: Path, budget: float) -> None:

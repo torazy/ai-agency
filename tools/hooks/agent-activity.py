@@ -4,7 +4,8 @@ agent-activity.py ── エージェント（サブエージェント）の起�
 
 登録するイベント（.claude/settings.json）：
   PreToolUse（Agent|Task）   起動：エージェントの種類・説明・任されたタスクの ID（説明や指示文の C-001 等）・バックグラウンドか
-  PostToolUse（Agent|Task）  前景で呼んだものは終了。バックグラウンドのものは「起動した」だけ（終了は SubagentStop で拾う）
+  PostToolUse（Agent|Task）  前景で呼んだものは終了。バックグラウンドのものは「起動した」だけ（終了は SubagentStop で拾う）。
+                             起動の応答（tool_response.agentId）を aid として残し、SubagentStop の agent_id と突き合わせる
   PostToolUseFailure         失敗
   SubagentStop               バックグラウンドで動いていたエージェントの終了
 
@@ -53,6 +54,10 @@ def main() -> None:
                         "bg": bool(inp.get("run_in_background"))})
         elif hook == "PostToolUse" and tool in AGENT_TOOLS:
             rec.update({"ev": "launched" if inp.get("run_in_background") else "end", "tuid": ev.get("tool_use_id", "")})
+            resp = ev.get("tool_response")
+            aid = resp.get("agentId") or resp.get("agent_id") if isinstance(resp, dict) else ""
+            if aid:
+                rec["aid"] = str(aid)
         elif hook == "PostToolUseFailure" and tool in AGENT_TOOLS:
             rec.update({"ev": "fail", "tuid": ev.get("tool_use_id", "")})
         elif hook == "SubagentStop":

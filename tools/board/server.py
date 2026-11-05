@@ -245,14 +245,16 @@ def agent_runs(root: Path) -> list[dict]:
             if ev == "end" and r["state"] == "running":
                 r.update(state="done", end=e.get("ts"))
             elif ev == "launched":
-                r["state"] = "background"
+                r.update(state="background", aid=e.get("aid", ""))
             elif ev == "fail":
                 r.update(state="failed", end=e.get("ts"))
-        elif ev == "stop":  # バックグラウンドで動いていたものの終了：同じ会話・同じ種類で、まだ動いている最も古いもの
-            for r in runs:
-                if r["sid"] == e.get("sid") and r["agent"] == e.get("agent") and r["state"] == "background":
-                    r.update(state="done", end=e.get("ts"))
-                    break
+        elif ev == "stop":  # バックグラウンドで動いていたものの終了：起動の応答の agentId で突き合わせる
+            alive = [r for r in runs if r["sid"] == e.get("sid") and r["state"] == "background"]
+            hit = next((r for r in alive if e.get("aid") and r.get("aid") == e.get("aid")), None)
+            if hit is None:  # aid の無い古い記録：同じ会話・同じ種類で、まだ動いている最も古いもの（近似）
+                hit = next((r for r in alive if not r.get("aid") and r["agent"] == e.get("agent")), None)
+            if hit:
+                hit.update(state="done", end=e.get("ts"))
     for r in runs:
         lim = RUN_STALE_SEC.get(r["state"])
         if lim and now - (r["start"] or 0) > lim:

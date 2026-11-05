@@ -58,7 +58,8 @@ class AgentActivityHookTest(TempRepo):
         self.hook(hook_ev("PostToolUse", tool_name="Agent", tool_use_id="t1", tool_input={}))
         self.hook(hook_ev("PreToolUse", tool_name="Agent", tool_use_id="t2",
                           tool_input={"description": "長い調査", "prompt": "x", "run_in_background": True}))
-        self.hook(hook_ev("PostToolUse", tool_name="Agent", tool_use_id="t2", tool_input={"run_in_background": True}))
+        self.hook(hook_ev("PostToolUse", tool_name="Agent", tool_use_id="t2", tool_input={"run_in_background": True},
+                          tool_response={"isAsync": True, "status": "async_launched", "agentId": "a1"}))
         self.hook(hook_ev("PostToolUseFailure", tool_name="Task", tool_use_id="t3", tool_input={}))
         self.hook(hook_ev("SubagentStop", agent_type="general-purpose", agent_id="a1"), env={"AI_AGENCY_UNATTENDED": "1"})
         self.hook(hook_ev("PostToolUse", tool_name="Bash", tool_input={"command": "ls"}))       # 関係ないものは記録しない
@@ -70,6 +71,7 @@ class AgentActivityHookTest(TempRepo):
         self.assertEqual(ev[2]["agent"], "general-purpose")
         self.assertTrue(ev[2]["bg"])
         self.assertTrue(ev[5].get("unattended"))
+        self.assertEqual((ev[3]["aid"], ev[5]["aid"]), ("a1", "a1"))                              # 起動と終了を agentId で結ぶ
 
 
 class BoardActivityTest(TempRepo):
@@ -104,6 +106,22 @@ class BoardActivityTest(TempRepo):
         with open(self.root / "memory/task-log/agent-runs.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps({"ts": time.time(), "sid": "s", "ev": "stop", "agent": "generalist"}) + "\n")
         self.assertEqual(self.srv.api_activity(self.root)["running"], [])
+
+    def test_background_stop_matches_agent_id(self):
+        # 同じ会話・同じ種類を2件バックグラウンドで起動し、後から起動した方が先に終わる（テストインスタンスで実測した順）
+        now = time.time()
+        rows = [
+            {"ts": now - 30, "sid": "s2", "ev": "start", "tuid": "x", "agent": "generalist", "desc": "C-901 長い", "tasks": [], "bg": True},
+            {"ts": now - 30, "sid": "s2", "ev": "launched", "tuid": "x", "aid": "ax"},
+            {"ts": now - 28, "sid": "s2", "ev": "start", "tuid": "y", "agent": "generalist", "desc": "C-902 短い", "tasks": [], "bg": True},
+            {"ts": now - 28, "sid": "s2", "ev": "launched", "tuid": "y", "aid": "ay"},
+            {"ts": now - 20, "sid": "s2", "ev": "stop", "agent": "generalist", "aid": "ay"},
+        ]
+        with open(self.root / "memory/task-log/agent-runs.jsonl", "a", encoding="utf-8") as f:
+            f.write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+        a = self.srv.api_activity(self.root)
+        self.assertEqual(sorted(r["tuid"] for r in a["running"]), ["b", "x"])     # 先に終わったのは短い方（y）
+        self.assertEqual({r["tuid"]: r["state"] for r in a["recent"]}.get("y"), "done")
 
     def test_commitments_assignee_and_agent_state(self):
         rows = {r["ID"]: r for r in self.srv.api_commitments(self.root)["rows"]}

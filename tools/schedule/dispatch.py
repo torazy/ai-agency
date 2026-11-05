@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-LOCK_STALE_SEC = 2 * 3600
+LOCK_STALE_SEC = 2 * 3600   # work.DISPATCH_LOCK_STALE_SEC と同じ
 
 
 def _load_work(root: Path, name: str = "work"):
@@ -95,14 +95,16 @@ def main() -> None:
         print(" ".join(build_command(a.budget)))
         return
     lim = work.limits(root)
-    if work.spent_today(root) >= lim["daily_usd"]:
-        print(f"今日の費用が上限 {lim['daily_usd']:g} USD に達している")
+    if work.committed_today(root) + a.budget > lim["daily_usd"]:
+        # 使った額＋実行中の予約＋この見直しの上限が1日の上限を超えるなら起動しない（外部レビュー #7）
+        print(f"今日の費用（予約を含む）{work.committed_today(root):g} USD＋見直しの上限 {a.budget:g} USD が"
+              f"1日の上限 {lim['daily_usd']:g} USD を超える")
         return
     if not a.force and not work.tick(root):
         return   # 間隔が来ていない
     # 終了の記録が無いまま実行のプロセスが無くなったもの（PC の再起動など）を閉じて、同時実行の枠を戻す
     _load_work(root, "run_task").reap(root)
-    pd = work.pending(root)
+    pd = work.pending(root, a.budget)
     sd = work.state_dir(root)
     if not a.force and not pd["work"] and not pd["observe"]:
         _save_last(sd, finished=time.strftime("%Y-%m-%d %H:%M"), exit=0, cost_usd=0, skipped="仕事なし")
@@ -111,8 +113,13 @@ def main() -> None:
     lock = sd / "dispatch.lock"
     try:
         fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(time.time()).encode())
+        os.write(fd, json.dumps({"at": time.time(), "budget": a.budget}).encode())   # 予約として数える（work.reserved）
         os.close(fd)
+        if work.committed_today(root) > lim["daily_usd"]:
+            # 確かめてからロックを書くまでの間に、ボードなどから起動された（予約が増えた）：起動しない
+            lock.unlink()
+            print(f"今日の費用（予約を含む）が1日の上限 {lim['daily_usd']:g} USD を超えるので見直しを起動しない")
+            return
     except FileExistsError:
         if time.time() - lock.stat().st_mtime < LOCK_STALE_SEC:
             print("前回の見直しがまだ動いている")

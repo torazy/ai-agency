@@ -481,6 +481,220 @@ class ChangeEventKeyTest(Base):
                 self.w.decide(self.root, sid, "reject", "", "影響なし")
         self.assertEqual(len(made), 3)                                                            # 予算の往復3回がそれぞれ提案になる
 
+    def test_predecessor_done_open_done_in_the_same_minute(self):
+        self.mem("commitment", "add", "--kind", "task", "--content", "前工程", "--due", d(5))      # C-002
+        self.w.ref_add(self.root, "C-001", "C-002", "後工程", "前工程")
+        made = []
+        for st in ("done", "open", "done"):
+            self.mem("commitment", "set-state", "C-002", st)
+            sids = self.w.propose_from_changes(self.root)
+            made += sids
+            self.w.ref_touch(self.root, "C-001")                                                  # 世代が進む
+            for sid in sids:
+                self.w.decide(self.root, sid, "reject", "", "確認した")
+        self.assertEqual(len([s for s in made if "着手" in next(r["何をするか"] for r in self.w.proposal_rows(self.root)
+                                                                  if r["ID"] == s)]), 2)
+
+
+class BudgetReservationTest(Base):
+    """#7 実行中の作業と動いている見直しの上限を予約として数え、1日の上限を超えて起動しない。"""
+
+    def setUp(self):
+        super().setUp()
+        self.mem("commitment", "add", "--kind", "given", "--who", "@pm", "--content", "別件", "--due", d(10))   # C-002
+        self.w.ensure_work(self.root)
+        p = self.root / "memory/work/settings.md"
+        t = p.read_text(encoding="utf-8")
+        import re
+        p.write_text(re.sub(r"\| 1日の費用上限（USD） \| [^|]+ \|", "| 1日の費用上限（USD） | 3 |", t), encoding="utf-8")
+        self.assertEqual(self.w.limits(self.root)["daily_usd"], 3)
+
+    def test_running_budget_is_reserved(self):
+        self.rt.start_run(self.root, "C-001", 2.5)                                                # 費用はまだ記録されていない
+        self.assertEqual(self.w.reserved(self.root), 2.5)
+        with self.assertRaisesRegex(ValueError, "予約"):
+            self.rt.start_run(self.root, "C-002", 2.5)                                            # 2.5＋2.5 は 3 を超える
+
+    def test_dispatch_lock_is_reserved(self):
+        sd = self.w.state_dir(self.root)
+        sd.mkdir(parents=True, exist_ok=True)
+        (sd / "dispatch.lock").write_text(json.dumps({"at": time.time(), "budget": 1.5}), encoding="utf-8")
+        self.assertEqual(self.w.reserved(self.root), 1.5)
+        with self.assertRaises(ValueError):
+            self.rt.start_run(self.root, "C-001", 2.0)                                            # 見直しの中から起動しても超えない
+        (sd / "dispatch.lock").write_text(str(time.time()), encoding="utf-8")                     # 以前の形のロック
+        self.assertEqual(self.w.reserved(self.root), 1.5)
+
+    def test_reservation_is_released_by_actual_cost(self):
+        rid = self.rt.start_run(self.root, "C-001", 2.5)
+        self.w.run_end(self.root, rid, "完了", 0.4)
+        self.assertEqual((self.w.reserved(self.root), self.w.spent_today(self.root)), (0, 0.4))
+        self.rt.start_run(self.root, "C-002", 2.5)                                                # 0.4＋2.5 ≤ 3
+
+    def test_two_launches_at_once_do_not_both_pass(self):
+        import threading
+        results = []
+
+        def go(cid):
+            try:
+                results.append(self.rt.start_run(self.root, cid, 2.0))
+            except ValueError as e:
+                results.append(str(e))
+        th = [threading.Thread(target=go, args=(c,)) for c in ("C-001", "C-002")]
+        for t in th:
+            t.start()
+        for t in th:
+            t.join()
+        self.assertEqual(len(self.w.running_runs(self.root)), 1)                                  # 確かめて記録するまでが一度
+        self.assertEqual(len([x for x in results if x.startswith("C-")]), 1)
+
+    def test_same_task_is_not_started_twice(self):
+        self.rt.start_run(self.root, "C-001", 0.5)
+        with self.assertRaisesRegex(ValueError, "実行中"):
+            self.rt.start_run(self.root, "C-001", 0.5)
+
+
+class BudgetEdgeTest(BudgetReservationTest):
+    """#7 の独立レビュー（R-022）：費用が分からない実行・見直し自身の予約・確かめてからロックまでの間。"""
+
+    def test_unknown_cost_counts_as_its_budget(self):
+        rid = self.rt.start_run(self.root, "C-001", 2.5)
+        self.w.run_end(self.root, rid, "終了不明", None, expect=("実行中",))                    # 落ちた：費用は分からない
+        self.assertEqual(self.w.committed_today(self.root), 2.5)                                  # 0 に戻さない
+        with self.assertRaises(ValueError):
+            self.rt.start_run(self.root, "C-002", 1.0)
+
+    def test_launch_failure_costs_nothing(self):
+        from unittest import mock
+        self.rt.shutil.which = lambda name: "claude"
+        with mock.patch.object(self.rt.subprocess, "Popen", side_effect=OSError("x")):
+            with self.assertRaises(ValueError):
+                self.rt.launch(self.root, "C-001", 2.5)
+        self.assertEqual(self.w.committed_today(self.root), 0)
+
+    def test_pending_counts_the_dispatch_budget(self):
+        self.w.ensure_task(self.root, "C-001")                                                    # 起動待ち（上限 2.5）
+        self.assertTrue(self.w.pending(self.root)["work"])                                        # 見直しの上限を含めないなら起こす
+        self.assertFalse(self.w.pending(self.root, 1.5)["work"])                                  # 1.5＋2.5 > 3：起こさない
+
+    def test_dispatch_rechecks_after_writing_its_lock(self):
+        import sys as _sys
+        import types
+        ds = self.load("tools/schedule/dispatch.py", "dispatch_scn")
+        w, rt, root = self.w, self.rt, self.root
+        self.w.ensure_task(self.root, "C-001")
+        ds._load_work = lambda r, name="work": rt if name == "run_task" else w
+        w.tick = lambda r: (rt.start_run(root, "C-001", 2.5), True)[1]                            # 確かめた後にボードから起動
+        w.pending = lambda r, b=0: {"work": True, "observe": False, "undecided": ["S-001"], "unjudged": [], "waiting": []}
+        ran = []
+        ds.subprocess = types.SimpleNamespace(run=lambda *a, **k: ran.append(1), PIPE=-1, DEVNULL=-3)
+        _sys.argv = ["dispatch.py", "--root", str(root)]
+        ds.main()
+        self.assertEqual(ran, [])                                                                 # 予約込みで超えるので起動しない
+        self.assertFalse((w.state_dir(root) / "dispatch.lock").exists())                          # ロックは残さない
+
+
+class AdoptOnceTest(Base):
+    """#9 同じ提案を二度採用しても、タスクは1件。判定済みの提案は上書きしない。"""
+
+    def setUp(self):
+        super().setUp()
+        self.sid = self.w.propose(self.root, "競合の料金を調べる", "定例に要る", "カレンダー", "当日慌てない", "@pm")
+
+    def test_board_adopt_twice(self):
+        c1, r1 = self.srv.do_post(self.root, "/api/proposal/adopt", {"sid": self.sid, "who": "@pm"})
+        c2, r2 = self.srv.do_post(self.root, "/api/proposal/adopt", {"sid": self.sid, "who": "@pm"})
+        self.assertEqual((c1, c2), (200, 200))
+        self.assertEqual(r1["id"], r2["id"])
+        self.assertIn("採用済み", r2["message"])
+        self.assertEqual(len([r for r in self.w.mem.commitment_rows(self.root) if "競合の料金" in (r.get("内容") or "")]), 1)
+
+    def test_concurrent_adopt(self):
+        import threading
+        out = []
+        th = [threading.Thread(target=lambda: out.append(self.w.adopt(self.root, self.sid, "@pm"))) for _ in range(3)]
+        for t in th:
+            t.start()
+        for t in th:
+            t.join()
+        self.assertEqual(len({c for c, _ in out}), 1)
+        self.assertEqual(sum(1 for _, made in out if made), 1)
+
+    def test_decided_proposal_is_not_overwritten(self):
+        self.w.decide(self.root, self.sid, "reject", "", "不要")
+        self.w.decide(self.root, self.sid, "reject", "", "不要")                                  # 同じ判定の二度目は何もしない
+        with self.assertRaises(self.w.MemError):
+            self.w.decide(self.root, self.sid, "adopt", "C-001", "やはり要る")
+        self.assertEqual(self.srv.do_post(self.root, "/api/proposal/adopt", {"sid": self.sid, "who": "@pm"})[0], 400)
+        s2 = self.w.propose(self.root, "別の調べもの", "x", "y", "z", "@pm")
+        self.w.decide(self.root, s2, "ask", "", "人に聞く")
+        self.w.decide(self.root, s2, "adopt", "C-001", "人が承認")                                # 要承認からは決められる
+        s3 = self.w.propose(self.root, "三つめ", "x", "y", "z", "@pm")
+        self.w.decide(self.root, s3, "hold", "", "後で")
+        self.w.decide(self.root, s3, "reject", "", "やはり不要")                                  # 保留からも決め直せる
+        code, res = self.srv.do_post(self.root, "/api/proposal/decide", {"sid": s3, "decision": "hold", "reason": "x"})
+        self.assertEqual(code, 400, res)                                                          # 判定済みの上書きは 500 でなく 400
+
+    def test_cli_adopt_is_idempotent(self):
+        out = [self.run_py("tools/work.py", "adopt", self.sid, "--who", "@pm", "--reason", "要る") for _ in range(2)]
+        self.assertEqual([o.returncode for o in out], [0, 0], out[0].stderr + out[1].stderr)
+        self.assertIn("採用済み", out[1].stdout)
+        last = [o.stdout.strip().splitlines()[-1].split("（")[0] for o in out]
+        self.assertEqual(last[0], last[1])
+
+
+class PrerequisiteTest(Base):
+    """#10 前工程が done でない・待ちが届いていないタスクは、起動の入口で止める（人が判断したときだけ --anyway）。"""
+
+    def setUp(self):
+        super().setUp()
+        self.mem("commitment", "add", "--kind", "task", "--content", "前工程", "--due", d(5))      # C-002
+        self.w.ref_add(self.root, "C-001", "C-002", "後工程", "前工程")
+        self.rt.shutil.which = lambda name: "claude"
+
+    def test_predecessor_must_be_done(self):
+        with self.assertRaisesRegex(ValueError, "着手条件"):
+            self.rt.check_task(self.root, "C-001")
+        code, res = self.srv.do_post(self.root, "/api/task/run", {"id": "C-001"})
+        self.assertEqual(code, 400)
+        self.assertIn("前工程 C-002", res["error"])
+        self.rt.check_task(self.root, "C-001", anyway=True)                                       # 人が判断したら通せる
+        self.mem("commitment", "set-state", "C-002", "done")
+        self.rt.check_task(self.root, "C-001")
+
+    def test_wait_must_have_arrived(self):
+        self.mem("commitment", "set-state", "C-002", "done")
+        self.w.ref_add(self.root, "C-001", "memory/projects/x/status.md#見積", "待ち", "見積")
+        with self.assertRaisesRegex(ValueError, "まだ届いていない"):
+            self.rt.check_task(self.root, "C-001")
+        self.write("memory/projects/x/status.md", STATUS_V2)
+        sid = next(s for s in self.w.propose_from_changes(self.root)
+                   if "再開" in next(r["何をするか"] for r in self.w.proposal_rows(self.root) if r["ID"] == s))
+        self.w.decide(self.root, sid, "hold", "", "人に確かめる")                                  # 保留しても
+        self.w.decide(self.root, sid, "merge", "C-001", "届いた")                                  # あとで決め直せる（手順は merge）
+        self.rt.check_task(self.root, "C-001")
+
+    def test_anyway_is_for_people_and_dropped_predecessor_is_explained(self):
+        self.mem("commitment", "set-state", "C-002", "dropped")
+        with self.assertRaisesRegex(ValueError, "取り下げられた"):
+            self.rt.check_task(self.root, "C-001")
+        os.environ["AI_AGENCY_UNATTENDED"] = "1"
+        try:
+            with self.assertRaisesRegex(ValueError, "人の判断"):
+                self.rt.check_task(self.root, "C-001", anyway=True)                               # 無人では外せない
+        finally:
+            del os.environ["AI_AGENCY_UNATTENDED"]
+        self.rt.check_task(self.root, "C-001", anyway=True)
+
+    def test_old_style_key_is_the_same_event(self):
+        self.w.ref_add(self.root, "C-001", "memory/projects/x/status.md#見積", "前提", "見積")
+        self.write("memory/projects/x/status.md", STATUS_V2)
+        c = next(x for x in self.w.changes(self.root) if x["place"].endswith("#見積"))
+        self.w.propose(self.root, "前の版で作った提案", "x", "y", "z", "@chief",
+                       f"C-001|{c['place']}|{c['old']}→{c['new']}#0")                             # bff2cc1 の形の識別
+        self.w.decide(self.root, next(r["ID"] for r in self.w.proposal_rows(self.root)), "hold", "", "後で")
+        self.assertEqual(self.w.propose_from_changes(self.root), [])
+
 
 if __name__ == "__main__":
     unittest.main()

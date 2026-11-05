@@ -389,6 +389,12 @@ def ref_add(root: Path, cid: str, place: str, use: str, label: str) -> None:
     ok(f"{cid} の参照に {place}（{use}・版 {v or '手動'}）")
 
 
+def _next_eval(prev: str) -> str:
+    """評価日の欄：評価した時刻＋世代（「2026-11-06 10:00 #3」）。世代は ref touch のたびに増え、変化の出来事を分ける。"""
+    m = re.search(r"#(\d+)\s*$", prev or "")
+    return f"{mem.now_hm()} #{int(m.group(1)) + 1 if m else 2}"
+
+
 @locked
 def ref_touch(root: Path, cid: str, place: str | None = None) -> list[str]:
     p = task_path(root, cid)
@@ -401,7 +407,7 @@ def ref_touch(root: Path, cid: str, place: str | None = None) -> list[str]:
             continue
         v = version_of(root, r.get("場所", ""))
         if v is not None and v != r.get("評価した版"):
-            _set_row(lines, "参照", "場所", r["場所"], {"評価した版": v, "評価日": mem.now_hm()})
+            _set_row(lines, "参照", "場所", r["場所"], {"評価した版": v, "評価日": _next_eval(r.get("評価日", ""))})
             done.append(r["場所"])
     if place and not done and not any(r.get("場所") == place for r in table_rows(lines, "参照")):
         fail(f"{cid} は {place} を参照していない")
@@ -624,6 +630,53 @@ def record_cost(root: Path, kind: str, cost: float | None) -> None:
         f.write(json.dumps({"date": mem.today(), "at": mem.now_hm(), "kind": kind, "cost": round(float(cost), 2)}, ensure_ascii=False) + "\n")
 
 
+DISPATCH_LOCK_STALE_SEC = 2 * 3600   # tools/schedule/dispatch.py のロックがこれより古ければ止まったものとみなす
+
+
+def reserved(root: Path) -> float:
+    """これから使うかもしれない額（外部レビュー #7）：実行中の作業セッションの上限（.state の budget）と、
+    動いている定期の見直しの上限（dispatch.lock）。終われば実際の費用に置き換わり、予約は外れる。"""
+    total = 0.0
+    lim = limits(root)
+    for r in running_runs(root):
+        total += _run_budget(root, r.get("実行ID", ""), r.get("task", ""))
+    lock = state_dir(root) / "dispatch.lock"
+    try:
+        if time.time() - lock.stat().st_mtime < DISPATCH_LOCK_STALE_SEC:
+            try:
+                total += float(json.loads(lock.read_text(encoding="utf-8")).get("budget", 0))
+            except (ValueError, TypeError, AttributeError):
+                total += 1.5   # 以前の形のロック（時刻だけ）：既定の見直しの上限で見込む
+    except OSError:
+        pass
+    return round(total, 2)
+
+
+def committed_today(root: Path) -> float:
+    """1日の上限と比べる額：使った額＋予約。"""
+    return round(spent_today(root) + reserved(root), 2)
+
+
+@locked
+def start_run_within_limits(root: Path, cid: str, budget: float) -> str:
+    """同時実行の上限・1日の費用上限（予約を含む）・同じタスクの二重起動を確かめ、通れば実行を記録して予約する。
+    確かめてから記録するまでを1つのロックの中で行う（同時に2つ起動されても両方は通らない）。"""
+    lim = limits(root)
+    running = running_runs(root)
+    if any(x.get("task") == cid for x in running):
+        fail(f"{cid} は実行中（止めてやり直すなら --stop）")
+    if len(running) >= lim["max_running"]:
+        fail(f"同時実行の上限 {lim['max_running']} に達している（実行中：{', '.join(x['実行ID'] for x in running)}）")
+    spent, res = spent_today(root), reserved(root)
+    if spent + res + budget > lim["daily_usd"]:
+        fail(f"今日の費用 {spent:g} USD＋実行中の予約 {res:g} USD＋今回の上限 {budget:g} USD が1日の上限 {lim['daily_usd']:g} USD を超える")
+    rid = run_start(root, cid)
+    p = state_dir(root) / f"{rid}.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    mem.write_text_atomic(p, json.dumps({"budget": budget, "reserved_at": round(time.time(), 1)}))
+    return rid
+
+
 def spent_today(root: Path) -> float:
     """今日使った額：今日始めた作業セッションの費用（実行履歴）＋定期の見直しなどの費用（.state/costs.jsonl）。"""
     total = 0.0
@@ -640,23 +693,29 @@ def spent_today(root: Path) -> float:
         pass
     for p in sorted((work_dir(root) / "tasks").glob("C-*.md")) if (work_dir(root) / "tasks").exists() else []:
         for r in table_rows(read(p), "実行履歴"):
-            if r.get("開始", "").startswith(d):
-                try:
-                    total += float(r.get("費用") or 0)
-                except ValueError:
-                    pass
+            if not r.get("開始", "").startswith(d) or r.get("結果") in ("", "実行中"):
+                continue   # 実行中のものは予約（reserved）で数える
+            try:
+                total += float(r.get("費用"))
+            except (TypeError, ValueError):
+                # 終わったが費用が分からない（終了不明・停止・失敗）：上限まで使ったかもしれないので予約額で数える。
+                # 0 にすると、落ちて再起動を繰り返すたびに1日の上限が効かなくなる（R-022 の独立レビュー）
+                total += _run_budget(root, r.get("実行ID", ""), p.stem)
     return round(total, 2)
+
+
+def _run_budget(root: Path, rid: str, cid: str) -> float:
+    """その実行に予約した上限（.state の budget）。記録が無ければ、そのタスクを起動するときの上限で見込む。"""
+    try:
+        return float(json.loads((state_dir(root) / f"{rid}.json").read_text(encoding="utf-8")).get("budget"))
+    except (OSError, ValueError, TypeError):
+        return task_budget(root, cid)
 
 
 # ---------------------------------------------------------------- changes
 def changes(root: Path) -> list[dict]:
     """参照している情報の変化。タスク本文が変わらなくても、依存している情報・条件が変われば拾う。"""
     states = {r.get("ID"): r.get("状態", "") for r in mem.commitment_rows(root)}
-    seen: dict = {}   # (タスク, 場所) → これまでに提案した遷移（old→new）の並び
-    for s in proposal_rows(root) if (work_dir(root) / "proposals.md").exists() else []:   # 読むだけ（雛形を作らない）
-        parts = s.get("起因", "").split("／")   # 表のセルでは「|」が「／」になる。場所の中の「／」もあるので両端で切る
-        if len(parts) >= 3 and CID_RE.fullmatch(parts[0]) and "→" in parts[-1]:
-            seen.setdefault((parts[0], "／".join(parts[1:-1])), []).append(parts[-1].split("#")[0])
     out = []
     for p in sorted((work_dir(root) / "tasks").glob("C-*.md")) if (work_dir(root) / "tasks").exists() else []:
         cid = p.stem
@@ -683,11 +742,10 @@ def changes(root: Path) -> list[dict]:
                 continue
             out.append({"task": cid, "label": r.get("情報", ""), "place": place, "use": use, "old": old, "new": new,
                         "kind": kind, "running": running, "task_state": st,
-                        # 変化の出来事の識別：どの版からどの版へ＋この参照でそれまでに起きた「別の遷移」の数。
-                        # 値だけで識別すると 100→200→100→200 の最後が最初の 200 と同じ扱いになる（外部レビュー #6）。
-                        # 判定しても版を進めていない（ref touch していない）間は同じ遷移のままなので、二度は提案しない
-                        "key": f"{cid}|{place}|{old}→{new}#"
-                               f"{sum(1 for x in seen.get((cid, esc(place)), []) if x != f'{old}→{new}')}",
+                        # 変化の出来事の識別：どの評価（版と、ref touch のたびに増える世代）からどの版へ。値だけで識別すると
+                        # 100→200→100→200 の最後が最初の 200 と同じ扱いになる（外部レビュー #6）。判定しても版を進めていない
+                        # （touch していない）間は同じ識別なので二度は提案しない。時刻だけでは同じ分の往復を分けられない
+                        "key": f"{cid}|{place}|{old}@{r.get('評価日', '')}→{new}",
                         "legacy_key": f"{cid}|{place}|{new}",
                         "content": t["order"].get("目的", "")})
     return out
@@ -727,6 +785,9 @@ def propose(root: Path, what: str, why: str, evidence: str, effect: str, who: st
     return sid
 
 
+REDECIDABLE = ("要承認", "保留")   # 人の確認待ち・後回し：あとで採用・却下などに決め直せる
+
+
 @locked
 def decide(root: Path, sid: str, decision: str, task: str = "", reason: str = "") -> None:
     if decision not in DECISIONS:
@@ -740,10 +801,39 @@ def decide(root: Path, sid: str, decision: str, task: str = "", reason: str = ""
     p = proposals_path(root)
     lines = read(p)
     label = DECISIONS[decision] + (f"→{task}" if task else "")
-    if not _set_row(lines, "提案", "ID", sid, {"判定": label, "判定理由": reason}):
+    cur = next((x for x in table_rows(lines, "提案") if x.get("ID") == sid), None)
+    if cur is None:
         fail(f"{sid} が無い")
+    if cur.get("判定") and not cur["判定"].startswith(REDECIDABLE):
+        if cur["判定"] == label:
+            return   # 同じ判定の二度目（再送・二重クリック）：何もしない
+        fail(f"{sid} はもう「{cur['判定']}」と判定されている（変えるなら新しい提案にする）")   # 外部レビュー #9
+    _set_row(lines, "提案", "ID", sid, {"判定": label, "判定理由": reason})
     write(p, lines)
     ok(f"{sid} を「{label}」に（{reason}）")
+
+
+@locked
+def adopt(root: Path, sid: str, who: str, content: str = "", due: str | None = None, rel: str | None = None,
+          reason: str = "人がボードで採用") -> tuple:
+    """提案を採用し、担当に任せる約束を足す。すでに採用済みなら新しく作らずにその約束を返す（再送・二重クリック・
+    別の画面からの操作で同じ仕事が2件にならないように。外部レビュー #9）。確かめて足して判定するまでを1つのロックで行う。
+    戻り値：(C-ID, 新しく作ったか)"""
+    row = next((x for x in proposal_rows(root) if x.get("ID") == sid), None)
+    if not row:
+        fail(f"{sid} が無い")
+    m = re.match(r"(?:採用|統合)→(C-\d{3,})", row.get("判定", ""))
+    if m:
+        return m.group(1), False
+    if row.get("判定") and not row["判定"].startswith(REDECIDABLE):
+        fail(f"{sid} はもう「{row['判定']}」と判定されている")
+    from argparse import Namespace
+    before = {x.get("ID") for x in mem.commitment_rows(root)}
+    mem.commitment_add(root, Namespace(kind="given", content=content or row.get("何をするか", ""), who=who, due=due,
+                                       follow=None, rel=rel, state=None))
+    cid = next(x.get("ID") for x in mem.commitment_rows(root) if x.get("ID") not in before)
+    decide(root, sid, "adopt", cid, reason)
+    return cid, True
 
 
 def scan(root: Path) -> list[dict]:
@@ -775,8 +865,10 @@ def propose_from_changes(root: Path) -> list[str]:
     made = []
     for c in changes(root):
         what, why = CHANGE_TEXT[c["kind"]]
-        if any(r.get("起因") == esc(c["legacy_key"]) and not r.get("判定") for r in proposal_rows(root)):
-            continue   # 以前の形の識別で、まだ判定していない提案がある（同じ出来事）
+        mid = esc(f"{c['task']}|{c['place']}|{c['old']}→{c['new']}#")
+        if any((r.get("起因") == esc(c["legacy_key"]) and not r.get("判定")) or r.get("起因", "").startswith(mid)
+               for r in proposal_rows(root)):
+            continue   # 以前の形の識別で同じ出来事の提案がある（C-x|場所|新 は未判定のもの、C-x|場所|旧→新#n はすべて）
         sid = propose(root, what.format(**c), why, f"{c['task']} の参照 {c['place']}：版 {c['old']} → {c['new']}",
                       "古い前提のまま進めない・待ちを解消する", "@chief（割り振り）", c["key"])
         if sid:
@@ -813,6 +905,28 @@ def unjudged_runs(root: Path) -> list[dict]:
     return out
 
 
+def unmet_conditions(root: Path, cid: str, t: dict | None = None) -> list[str]:
+    """着手条件のうち満たしていないもの（外部レビュー #10）。後工程：前工程の約束が done でない。
+    待ち：待っていたものが届いた（その変化の提案を採用・統合した）ことになっていない。前提は着手条件ではない（変われば見直す）。"""
+    t = t if t is not None else read_task(root, cid)
+    out = []
+    adopted = None
+    for x in t.get("refs", []):
+        place = x.get("場所", "")
+        if x.get("使い方") == "後工程" and version_of(root, place) != "done":
+            now = version_of(root, place)
+            out.append(f"前工程 {place} が取り下げられた（進めるかは人が決める）" if now == "dropped"
+                       else f"前工程 {place} が done でない（今 {now}）")
+        elif x.get("使い方") == "待ち":
+            if adopted is None:
+                adopted = {sp.split("／")[0] + "／" + "／".join(sp.split("／")[1:-1])
+                           for sp in (q.get("起因", "") for q in (proposal_rows(root) if (work_dir(root) / "proposals.md").exists() else [])
+                                      if q.get("判定", "").startswith(("採用", "統合")))}
+            if f"{cid}／{esc(place)}" not in adopted:
+                out.append(f"待っている「{x.get('情報') or place}」がまだ届いていない")
+    return out
+
+
 DEFER_MARK = INFO_MARK + "見送り："
 RERUN_VERDICTS = ("差し戻し", "古い条件")
 
@@ -824,9 +938,6 @@ def launch_waiting(root: Path) -> list[dict]:
     除くもの：閉じた・相手待ち（waiting）の約束、待ち・後工程の参照があるもの（変化の提案で再開する）、
     最後の記録が「見送り」のもの（`work.py defer`。新しい途中の変更が入れば戻る）。"""
     rows = {r.get("ID"): r for r in mem.commitment_rows(root)}
-    adopted = {s.get("起因", "").split("／")[0] + "／" + "／".join(s.get("起因", "").split("／")[1:-1])
-               for s in (proposal_rows(root) if (work_dir(root) / "proposals.md").exists() else [])
-               if s.get("判定", "").startswith(("採用", "統合"))}
     out = []
     for p in sorted((work_dir(root) / "tasks").glob("C-*.md")) if (work_dir(root) / "tasks").exists() else []:
         r = rows.get(p.stem)
@@ -834,10 +945,7 @@ def launch_waiting(root: Path) -> list[dict]:
                 or not (r.get("相手") or "").startswith("@"):
             continue
         t = read_task(root, p.stem)
-        # 待ち：届いた（変化の提案を採用した）まで外す。後工程：前工程が done になるまで外す。どちらも変化の提案で動く
-        if any(x.get("使い方") == "後工程" and version_of(root, x.get("場所", "")) != "done" for x in t["refs"]):
-            continue
-        if any(x.get("使い方") == "待ち" and f"{p.stem}／{esc(x.get('場所', ''))}" not in adopted for x in t["refs"]):
+        if unmet_conditions(root, p.stem, t):   # 着手条件がそろうまでは変化の提案で動く
             continue
         if t["notes"] and t["notes"][-1][17:].startswith(DEFER_MARK):
             continue
@@ -888,7 +996,8 @@ def status(root: Path) -> dict:
     return {"limits": lim, "spent_today": spent_today(root), "running": running_runs(root),
             "unjudged_runs": unjudged_runs(root), "changes": changes(root), "launch_waiting": launch_waiting(root),
             "proposals_open": [r for r in props if not r.get("判定") or r.get("判定", "").startswith("要承認")],
-            "can_start": len(running_runs(root)) < lim["max_running"] and spent_today(root) < lim["daily_usd"]}
+            "reserved": reserved(root),
+            "can_start": len(running_runs(root)) < lim["max_running"] and committed_today(root) < lim["daily_usd"]}
 
 
 def tick(root: Path) -> bool:
@@ -924,7 +1033,7 @@ def memory_ready(root: Path) -> bool:
     return bool(list((m / "projects").glob("*/overview.md")) if (m / "projects").exists() else []) or bool(people)
 
 
-def pending(root: Path) -> dict:
+def pending(root: Path, dispatch_budget: float = 0.0) -> dict:
     """トークンを使わずに分かる、割り振り役・確認役の仕事。機械的な提案はここで足してしまう（重複はしない）。
     何も無く観察の間隔も来ていなければ、定期の見直しは Claude を起動しない（空振りに費用を使わない）。"""
     made = propose_from_changes(root) + propose_from_scan(root)
@@ -933,9 +1042,9 @@ def pending(root: Path) -> dict:
     lw = launch_waiting(root)
     waiting = [x["task"] for x in lw]
     lim = limits(root)
-    spent, free = spent_today(root), len(running_runs(root)) < lim["max_running"]
+    spent, free = committed_today(root), len(running_runs(root)) < lim["max_running"]
     # 起動の判定（run_task.check_capacity）と同じ式で、実際に起動できるものがあるときだけ見直しを起こす
-    can_start = free and any(x["startable"] and spent + x["budget"] <= lim["daily_usd"] for x in lw)
+    can_start = free and any(x["startable"] and spent + dispatch_budget + x["budget"] <= lim["daily_usd"] for x in lw)
     observe = (time.time() - _last(root).get("observed_at", 0) >= lim["observe_h"] * 3600 - 60
                and memory_ready(root))
     # 起動待ちは、起動できる枠と費用があるときだけ見直しを起こす（起動できないのに毎回 Claude を起動しない）
@@ -945,7 +1054,7 @@ def pending(root: Path) -> dict:
 
 # ---------------------------------------------------------------- CLI
 UNATTENDED_OK = {"order", "ref", "changes", "scan", "propose", "decide", "note", "handoff", "accept", "status", "tick", "show", "pending",
-                 "defer"}
+                 "defer", "adopt"}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -973,6 +1082,9 @@ def main(argv: list[str] | None = None) -> None:
         s.add_argument(f"--{f}", required=True)
     s.add_argument("--key", default="観察")
     s = sub.add_parser("decide"); s.add_argument("id"); s.add_argument("decision"); s.add_argument("--task", default=""); s.add_argument("--reason", default="")
+    s = sub.add_parser("adopt", help="提案を採用して担当に任せる約束を足す（採用済みなら既存の C-ID を返す）")
+    s.add_argument("id"); s.add_argument("--who", required=True); s.add_argument("--content", default="")
+    s.add_argument("--due", default=None); s.add_argument("--rel", default=None); s.add_argument("--reason", required=True)
     s = sub.add_parser("note"); s.add_argument("id"); s.add_argument("text")
     s.add_argument("--info", action="store_true", help="成果物を変えない記録（鮮度の判定に数えない）")
     s = sub.add_parser("handoff"); s.add_argument("id"); s.add_argument("text")
@@ -1011,6 +1123,9 @@ def main(argv: list[str] | None = None) -> None:
                 print("（同じ起因・同じ内容の提案が既にあるので足さない）")
         elif a.cmd == "decide":
             decide(root, a.id, a.decision, a.task, a.reason)
+        elif a.cmd == "adopt":
+            cid, made = adopt(root, a.id, a.who, a.content, a.due, a.rel, a.reason)
+            print(f"{cid}（{'新しく足した' if made else '採用済み・新しくは作らない'}）")
         elif a.cmd == "note":
             note(root, a.id, a.text, a.info)
         elif a.cmd == "handoff":

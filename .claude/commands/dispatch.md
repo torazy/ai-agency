@@ -63,19 +63,18 @@ python tools/work.py decide S-007 ask --reason "部長への催促は人の判�
 
 **採用する**とき（委任範囲のみ。それ以外は ask）：
 
-1. 約束台帳に載せる：`python tools/mem.py commitment add --kind given --who @pm --content "…" --due … --rel P:…`
+1. 採用して約束台帳に載せる：`python tools/work.py adopt S-008 --who @pm --content "…" --due … --rel P:… --reason "…"`（出力の C-ID を使う。採用済みの提案なら新しく作らずに既存の C-ID を返すので、やり直しても仕事が2件にならない）
 2. 作業依頼を書く：`python tools/work.py order C-012 --purpose … --deliverable … --done-when … --ops "読み取り・Web 調査・報告の作成"
    --limit "2.5 USD" --review "qa（部長に出すため）" --escalate "…"`（進め方は independent-review の 1 で決める）
 3. 参照を登録する：その仕事が依存する情報（`ref add C-012 "memory/…#節" --use 前提|待ち`、前工程は `C-006 --use 後工程`）。
    **ここを書くことで、本文が変わらなくても関連情報の変化で再評価される**
-4. `python tools/work.py decide S-008 adopt --task C-012 --reason "…"`
-5. 着手できるなら起動：`python tools/run_task.py C-012`（上限に当たれば次回）
+4. 着手できるなら起動：`python tools/run_task.py C-012`（上限に当たれば次回）
 
 ## 4. 変化に由来する提案の扱い
 
 | 種類 | 割り振り役の判断 |
 |---|---|
-| 再開（待ちが解消） | 待っていたものが本当に届いたかを確かめ、`work.py note` に届いた内容の座標を書いて起動。届いていなければ `ref touch` して却下 |
+| 再開（待ちが解消） | 待っていたものが本当に届いたかを確かめ、`work.py note` に届いた内容の座標を書き、`work.py decide S-… merge --task C-… --reason "…"` で届いたことにしてから起動（判定する前は着手条件がそろわず起動できない）。届いていなければ `ref touch` して却下。人に確かめるなら hold（あとで決め直せる） |
 | 着手（前工程が完了） | 前工程の成果（報告）の座標を `note` に書いて起動 |
 | 見直し（前提が変化） | **まず影響を判断する**（毎回作り直さない）。結論・成果物・進め方に影響しない → `ref touch` して却下（理由に「影響なし：…」）。影響する → `note` に変化と影響を書き、やり直し（起動）か要承認 |
 | 実行中に変化 | 次の4つから選ぶ：①継続（影響が小さい）②軌道修正（`work.py note` に変化を書く。作業セッションは報告前に読む）③止めてやり直す（`python tools/run_task.py --stop C-007 --reason "…"` → 起動）④今の成果を受け取ってから追加作業（終わった後の差し戻しか新しい提案） |

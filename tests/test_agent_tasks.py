@@ -241,7 +241,7 @@ class RunTaskTest(TempRepo):
         srv = self.load("tools/board/server.py", "board_runtask")
         srv.mem.ok = lambda m: srv.mem.LAST_OK.append(m)
         calls = []
-        srv.run_task.launch = lambda root, cid, budget=None, review=None: (
+        srv.run_task.launch = lambda root, cid, budget=None, review=None, anyway=False: (
             calls.append((cid, budget)), {"id": cid, "run": cid + "-R1", "agent": "@pm", "budget": budget or 1})[-1]
         self.assertEqual(srv.do_post(self.root, "/api/task/run", {"id": "C-001", "budget": "0.5"})[0], 200)
         self.assertEqual(calls, [("C-001", 0.5)])

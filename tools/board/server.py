@@ -480,7 +480,7 @@ def run_mem(fn, *args, **kwargs) -> dict:
     mem.LAST_OK.clear()
     try:
         fn(*args, **kwargs)
-    except mem.MemError as e:
+    except (mem.MemError, work.MemError) as e:   # work は mem の別の写しを読むので、例外の型も別
         return {"ok": False, "error": str(e)}
     return {"ok": True, "message": mem.LAST_OK[-1] if mem.LAST_OK else ""}
 
@@ -575,7 +575,7 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
                 budget = float(g("budget")) if g("budget") else None
                 if budget is not None:
                     run_task.check_budget(budget)
-                info = run_task.launch(root, g("id", ""), budget, g("review") or None)
+                info = run_task.launch(root, g("id", ""), budget, g("review") or None, g("anyway") == "1")
             except (ValueError, work.MemError) as e:
                 return 400, {"ok": False, "error": str(e)}
             res = {"ok": True, "message": f"{info['run']} を {info['agent']} の作業セッションで起動（上限 {info['budget']:g} USD）。終わると報告が届く"}
@@ -607,17 +607,12 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
             res = run_mem(work.decide, root, g("sid", ""), g("decision", ""), g("task", ""), g("reason", ""))
         elif path == "/api/proposal/adopt":
             # 人が提案を採用：担当（@handle）に任せる約束を足し、提案を採用に
-            row = next((x for x in work.proposal_rows(root) if x.get("ID") == g("sid")), None)
-            if not row:
-                return 400, {"ok": False, "error": f"{g('sid')} が無い"}
-            ns = Namespace(kind="given", content=g("content") or row.get("何をするか", ""), who=g("who", ""), due=g("due"),
-                           follow=None, rel=g("rel"), state=None)
-            res = run_mem(mem.commitment_add, root, ns)
-            if res.get("ok"):
-                m = re.search(r"C-\d{3,}", res.get("message", ""))
-                if m:
-                    run_mem(work.decide, root, g("sid"), "adopt", m.group(0), "人がボードで採用")
-                    res["message"] += f"／{g('sid')} を採用"
+            try:
+                cid, made = work.adopt(root, g("sid", ""), g("who", ""), g("content", ""), g("due"), g("rel"))
+            except work.MemError as e:
+                return 400, {"ok": False, "error": str(e)}
+            res = {"ok": True, "id": cid,
+                   "message": f"{g('sid')} を採用し {cid} を足した" if made else f"{g('sid')} はもう {cid} として採用済み（新しくは作らない）"}
         elif path == "/api/task/plan":
             try:
                 plan = run_task.set_plan(root, g("id", ""), g("review", ""), g("reason", ""))

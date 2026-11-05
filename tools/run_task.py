@@ -191,7 +191,7 @@ def reap(root: Path, only: str | None = None) -> list[str]:
     return closed
 
 
-def check_task(root: Path, cid: str, child: bool = False) -> dict:
+def check_task(root: Path, cid: str, child: bool = False, anyway: bool = False) -> dict:
     """着手できるタスクか確かめ、その行を返す。だめなら ValueError（理由つき）。"""
     if not CID_RE.fullmatch(cid or ""):
         raise ValueError(f"ID の形が違う：{cid}")
@@ -210,6 +210,12 @@ def check_task(root: Path, cid: str, child: bool = False) -> dict:
         raise ValueError(f"{cid} は既に {row.get('状態')}")
     if not child and read_status(root, cid).get("state") == "running":
         raise ValueError(f"{cid} は実行中（止めてやり直すなら --stop）")
+    if anyway and os.environ.get("AI_AGENCY_UNATTENDED"):
+        raise ValueError("着手条件を外す（--anyway）のは人の判断。無人の実行では使わない（人に確認する）")
+    if not child and not anyway:
+        unmet = work.unmet_conditions(root, cid)
+        if unmet:   # 前工程・待ちがそろうまで起動しない（外部レビュー #10。人が判断したときだけ --anyway）
+            raise ValueError(f"{cid} の着手条件がそろっていない：{'／'.join(unmet)}。人が判断して始めるなら --anyway（ボードは確認して着手）")
     return row
 
 
@@ -295,15 +301,24 @@ def check_budget(budget: float) -> None:
 
 
 def check_capacity(root: Path, budget: float) -> None:
+    """起動の前の見込み（ボードの表示・早めの断り用）。最後の判定と記録は start_run（ロックの中）で行う。"""
     check_budget(budget)
     reap(root)
     lim = work.limits(root)
     running = work.running_runs(root)
     if len(running) >= lim["max_running"]:
         raise ValueError(f"同時実行の上限 {lim['max_running']} に達している（実行中：{', '.join(r['実行ID'] for r in running)}）")
-    spent = work.spent_today(root)
-    if spent + budget > lim["daily_usd"]:
-        raise ValueError(f"今日の費用 {spent:g} USD＋今回の上限 {budget:g} USD が1日の上限 {lim['daily_usd']:g} USD を超える")
+    spent, res = work.spent_today(root), work.reserved(root)
+    if spent + res + budget > lim["daily_usd"]:
+        raise ValueError(f"今日の費用 {spent:g} USD＋実行中の予約 {res:g} USD＋今回の上限 {budget:g} USD が"
+                         f"1日の上限 {lim['daily_usd']:g} USD を超える")
+
+
+def start_run(root: Path, cid: str, budget: float) -> str:
+    try:
+        return work.start_run_within_limits(root, cid, budget)
+    except work.MemError as e:
+        raise ValueError(str(e)) from e
 
 
 def _parse_output(stdout: str) -> dict:
@@ -373,9 +388,9 @@ def run_foreground(root: Path, cid: str, rid: str, budget: float) -> int:
     return code
 
 
-def launch(root: Path, cid: str, budget: float | None = None, review: str | None = None) -> dict:
+def launch(root: Path, cid: str, budget: float | None = None, review: str | None = None, anyway: bool = False) -> dict:
     """新しい作業セッションを裏で起動して、すぐ戻る。review を渡すと進め方（レビュー）も更新する。"""
-    row = check_task(root, cid)
+    row = check_task(root, cid, anyway=anyway)
     if review is not None:
         check_review(root, row, review)
     work.ensure_task(root, cid)   # 作業依頼が無ければ台帳から最小のものを作る
@@ -386,7 +401,7 @@ def launch(root: Path, cid: str, budget: float | None = None, review: str | None
     del exe_ok
     if review is not None and plan_of(root, cid).get("review") != rv:
         set_plan(root, cid, rv, "ボードで指定")
-    rid = work.run_start(root, cid)
+    rid = start_run(root, cid, budget)
     args = [sys.executable, str(root / "tools" / "run_task.py"), cid, "--wait", "--child", rid, "--budget", f"{budget:g}",
             "--root", str(root)]
     kw: dict = {"cwd": root, "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
@@ -397,7 +412,7 @@ def launch(root: Path, cid: str, budget: float | None = None, review: str | None
     try:
         p = subprocess.Popen(args, **kw)
     except OSError as e:
-        work.run_end(root, rid, "失敗", None)
+        work.run_end(root, rid, "失敗", 0)   # 起動できなかった：費用はかかっていない
         raise ValueError(f"起動できない: {e}") from e
     _state_update(root, rid, start=round(time.time(), 1), pid=p.pid, budget=budget)
     return {"id": cid, "run": rid, "agent": row.get("相手"), "budget": budget, "review": rv}
@@ -452,6 +467,7 @@ def main() -> None:
     ap.add_argument("--budget", type=float, default=None, help="1回の上限（USD）")
     ap.add_argument("--root", type=Path, default=ROOT)
     ap.add_argument("--child", metavar="RUN", help=argparse.SUPPRESS)
+    ap.add_argument("--anyway", action="store_true", help="着手条件（前工程・待ち）がそろっていなくても始める（人が判断したとき）")
     a = ap.parse_args()
     root = a.root.resolve()
     try:
@@ -484,18 +500,18 @@ def main() -> None:
         if a.child:
             sys.exit(run_foreground(root, a.id, a.child, a.budget or default_budget(root)))
         if a.wait:
-            info = launch_wait(root, a.id, a.budget, a.review)
+            info = launch_wait(root, a.id, a.budget, a.review, a.anyway)
             sys.exit(info)
-        info = launch(root, a.id, a.budget, a.review)
+        info = launch(root, a.id, a.budget, a.review, a.anyway)
         print(f"▶ {info['run']} を {info['agent']} の作業セッションで起動した（レビュー {info['review']}・上限 {info['budget']:g} USD）。"
               f"報告は memory/work/results/{info['run']}.md")
     except (ValueError, work.MemError) as e:
         sys.exit(f"✗ {e}")
 
 
-def launch_wait(root: Path, cid: str, budget: float | None, review: str | None) -> int:
+def launch_wait(root: Path, cid: str, budget: float | None, review: str | None, anyway: bool = False) -> int:
     """前景で実行する（定期実行やテスト用）。"""
-    row = check_task(root, cid)
+    row = check_task(root, cid, anyway=anyway)
     if review is not None:
         set_plan(root, cid, review, "指定")
     rv = plan_of(root, cid).get("review", "auto")
@@ -503,7 +519,7 @@ def launch_wait(root: Path, cid: str, budget: float | None, review: str | None) 
     check_capacity(root, budget)
     build_command(cid, "x", budget)
     del row
-    rid = work.run_start(root, cid)
+    rid = start_run(root, cid, budget)
     return run_foreground(root, cid, rid, budget)
 
 

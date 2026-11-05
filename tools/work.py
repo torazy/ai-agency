@@ -72,9 +72,11 @@ fail, ok, read, write, cells, esc, locked = mem.fail, mem.ok, mem.read, mem.writ
 CID_RE = re.compile(r"C-\d{3,}")
 RUN_RE = re.compile(r"(C-\d{3,})-R(\d+)")
 SID_RE = re.compile(r"S-\d{3,}")
-USES = ("前提", "待ち", "後工程")
+USES = ("前提", "待ち", "後工程", "不足")
 DECISIONS = {"adopt": "採用", "hold": "保留", "reject": "却下", "merge": "統合", "ask": "要承認"}
-VERDICTS = {"accept": "受け入れ", "return": "差し戻し", "ask": "人へ確認"}
+VERDICTS = {"accept": "受け入れ", "return": "差し戻し", "ask": "人へ確認", "wait": "条件待ち"}
+NEED_MET = ("done", "dropped")   # 不足の約束がこの状態なら満たした（dropped＝無しで進めると人が決めた）
+MAX_OPEN_NEEDS = 3   # 1つの仕事に開いている不足の上限（超えたら人へ確認。集め過ぎ・費用の暴走を防ぐ）
 MAX_RETURNS = 2   # 同じタスクの差し戻しはここまで。超えたら人へ確認
 
 PROPOSAL_COLS = ["ID", "日付", "起因", "何をするか", "なぜ今", "根拠", "期待する効果", "担当候補", "判定", "判定理由"]
@@ -400,8 +402,8 @@ def ref_add(root: Path, cid: str, place: str, use: str, label: str) -> None:
     if use not in USES:
         fail(f"使い方は {' / '.join(USES)}")
     place = place.strip().strip("`")
-    if use == "後工程" and not CID_RE.fullmatch(place):
-        fail("後工程の場所は約束の ID（C-006 など）")
+    if use in ("後工程", "不足") and not CID_RE.fullmatch(place):
+        fail(f"{use}の場所は約束の ID（C-006 など）")
     p = ensure_task(root, cid)
     lines = read(p)
     if any(r.get("場所") == place for r in table_rows(lines, "参照")):
@@ -428,6 +430,8 @@ def ref_touch(root: Path, cid: str, place: str | None = None) -> list[str]:
     for r in table_rows(lines, "参照"):
         if place and r.get("場所") != place:
             continue
+        if not place and r.get("使い方") == "不足":
+            continue   # 不足は場所を指定して進める（別の変化の処理のついでに解消を消費しない）
         v = version_of(root, r.get("場所", ""))
         if v is not None and v != r.get("評価した版"):
             _set_row(lines, "参照", "場所", r["場所"], {"評価した版": v, "評価日": _next_eval(r.get("評価日", ""))})
@@ -571,10 +575,16 @@ def unread_notes(root: Path, rid: str, row: dict | None = None, used: dict | Non
 def done_blocker(root: Path, cid: str) -> str:
     """任せたタスクを完了にしてよいか。最新の実行に報告があり、それが今の条件で古ければ理由を返す（空文字＝よい）。
     ボードの承認・状態ボタン・CLI の set-state done のどの経路からでも同じ検査を通す（外部レビュー #4 と独立レビュー）。"""
-    runs = read_task(root, cid).get("runs", []) if task_path(root, cid).exists() else []
+    t = read_task(root, cid) if task_path(root, cid).exists() else {}
+    opened = open_needs(root, cid, t)
+    if opened:   # 不足が残ったまま完了にすると、揃っても再開されない（独立レビュー R-032 の 1）
+        return f"{cid} は不足がそろっていない（{', '.join(n['id'] + '「' + n['content'] + '」' for n in opened)}）。そろえてからやり直す"
+    runs = t.get("runs", [])
     if not runs:
         return ""
     rid = runs[-1].get("実行ID", "")
+    if runs[-1].get("判定", "").startswith("条件待ち"):
+        return f"{rid} は不足があって途中までの成果（条件待ち）。不足がそろったのでやり直す"
     if runs[-1].get("結果") == "実行中":
         return f"{rid} がまだ実行中（報告は書きかけかもしれない）。終わるのを待つか、止めてから"
     if not RUN_RE.fullmatch(rid) or not (results_dir(root) / f"{rid}.md").exists():
@@ -596,9 +606,17 @@ def stale_refs(root: Path, rid: str) -> list[str]:
     if unread:
         out.append(f"途中の変更（報告のあとに {len(unread)} 件）")
     for r in read_task(root, cid).get("refs", []):
+        place = r.get("場所", "")
+        if r.get("使い方") == "不足":
+            # 使った版に無い不足は、実行のあと（報告のあと）に足したもの＝その実行のときはそろっていなかった（独立レビュー R-032 の 1）
+            now, was = version_of(root, place), used.get(place, "open") in NEED_MET
+            if now == "done" and not was:
+                out.append(f"不足 {place}（そろった。そろう前に作った成果）")
+            elif was and now not in NEED_MET:
+                out.append(f"不足 {place}（そろっていない状態に戻った）")
+            continue   # 取り下げ（dropped）は「無しで進める」と決めたので、無しで作った成果を古くしない
         if r.get("使い方") != "前提":
             continue
-        place = r.get("場所", "")
         now = version_of(root, place)
         if now is not None and place in used and used[place] != now:
             out.append(place)
@@ -613,6 +631,10 @@ def accept(root: Path, rid: str, verdict: str, reason: str = "") -> str:
     cid = RUN_RE.fullmatch(rid).group(1)
     label = VERDICTS[verdict]
     if verdict == "accept":
+        if open_needs(root, cid):
+            fail(f"{cid} に開いている不足がある。部分的な成果は「条件待ち」（wait）にする")
+        if row.get("判定", "").startswith("条件待ち"):
+            fail(f"{rid} は条件待ち（不足がそろう前の成果）。受け入れに書き換えず、そろったらやり直す")
         later = [r for r in read_task(root, cid).get("runs", []) if r.get("実行ID") != rid
                  and RUN_RE.fullmatch(r.get("実行ID", "")) and int(RUN_RE.fullmatch(r["実行ID"]).group(2)) > int(RUN_RE.fullmatch(rid).group(2))]
         if later:
@@ -621,6 +643,8 @@ def accept(root: Path, rid: str, verdict: str, reason: str = "") -> str:
         if stale:
             label = "古い条件"
             reason = f"条件が変わった：{', '.join(stale)}。" + (reason or "")
+    if verdict == "wait" and not open_needs(root, cid):
+        fail(f"{cid} に開いている不足が無い。先に `work.py need {cid} …` で不足を約束にする")
     if verdict == "return":
         returns = sum(1 for r in read_task(root, cid).get("runs", []) if r.get("判定", "").startswith("差し戻し"))
         if returns >= MAX_RETURNS:
@@ -683,9 +707,13 @@ def committed_today(root: Path) -> float:
 
 
 @locked
-def start_run_within_limits(root: Path, cid: str, budget: float) -> str:
-    """同時実行の上限・1日の費用上限（予約を含む）・同じタスクの二重起動を確かめ、通れば実行を記録して予約する。
-    確かめてから記録するまでを1つのロックの中で行う（同時に2つ起動されても両方は通らない）。"""
+def start_run_within_limits(root: Path, cid: str, budget: float, anyway: bool = False) -> str:
+    """同時実行の上限・1日の費用上限（予約を含む）・同じタスクの二重起動・着手条件を確かめ、通れば実行を記録して予約する。
+    確かめてから記録するまでを1つのロックの中で行う（同時に2つ起動されても両方は通らない。確かめたあとに不足が足されても通らない）。"""
+    if not anyway:
+        unmet = unmet_conditions(root, cid)
+        if unmet:
+            fail(f"{cid} の着手条件がそろっていない：{'／'.join(unmet)}")
     lim = limits(root)
     running = running_runs(root)
     if any(x.get("task") == cid for x in running):
@@ -755,7 +783,16 @@ def changes(root: Path) -> list[dict]:
             if new is None or new == old:
                 continue
             closed = st in mem.CLOSED
-            if use == "待ち" and not closed:
+            if use == "不足":
+                if (old in NEED_MET) == (new in NEED_MET):
+                    continue   # 担当の作業の途中（open→in-progress 等）・done と dropped の入れ替わり
+                if new in NEED_MET:
+                    kind = "再開" if not closed else None
+                else:   # そろっていたのに戻った（再オープン）：その条件で作った成果を見直す
+                    kind = "完了済みの見直し" if closed else ("実行中に変化" if running else "見直し")
+                if kind is None:
+                    continue
+            elif use == "待ち" and not closed:
                 kind = "再開"
             elif use == "後工程" and not closed and new == "done":
                 kind = "着手"
@@ -942,6 +979,9 @@ def unmet_conditions(root: Path, cid: str, t: dict | None = None) -> list[str]:
             now = version_of(root, place)
             out.append(f"前工程 {place} が取り下げられた（進めるかは人が決める）" if now == "dropped"
                        else f"前工程 {place} が done でない（今 {now}）")
+        elif x.get("使い方") == "不足":
+            if version_of(root, place) not in NEED_MET:
+                out.append(f"不足 {place}「{x.get('情報', '').split('｜')[0] or place}」がそろっていない")
         elif x.get("使い方") == "待ち":
             if adopted is None:
                 adopted = {sp.split("／")[0] + "／" + "／".join(sp.split("／")[1:-1])
@@ -952,8 +992,136 @@ def unmet_conditions(root: Path, cid: str, t: dict | None = None) -> list[str]:
     return out
 
 
+def _needs_met_since(root: Path, t: dict, run: dict) -> list[str]:
+    """その実行のときは満たしていなかった不足のうち、今は満たしているもの。"""
+    used = _parse_snapshot(run.get("使った版", ""))
+    return [x.get("場所", "") for x in t.get("refs", []) if x.get("使い方") == "不足"
+            and used.get(x.get("場所", ""), "open") not in NEED_MET and version_of(root, x.get("場所", "")) == "done"]
+
+
+def open_needs(root: Path, cid: str, t: dict | None = None) -> list[dict]:
+    """その仕事を止めている、まだそろっていない不足（約束）。"""
+    if t is None:
+        t = read_task(root, cid) if task_path(root, cid).exists() else {}
+    rows = {r.get("ID"): r for r in mem.commitment_rows(root)}
+    out = []
+    for x in t.get("refs", []):
+        if x.get("使い方") != "不足":
+            continue
+        r = rows.get(x.get("場所", ""), {})
+        if r.get("状態") in NEED_MET:
+            continue
+        out.append({"id": x.get("場所", ""), "content": x.get("情報", "").split("｜")[0], "info": x.get("情報", ""),
+                    "who": r.get("相手") or r.get("依頼者") or ("自分" if r.get("kind") == "task" else ""),
+                    "due": r.get("期限", ""), "state": r.get("状態", "なし")})
+    return out
+
+
+def needs_map(root: Path) -> dict:
+    """不足の逆引き：不足の約束 C-ID → それが止めている仕事の C-ID（止める関係の正本は仕事の側の参照だけ）。"""
+    out: dict = {}
+    for p in sorted((work_dir(root) / "tasks").glob("C-*.md")) if (work_dir(root) / "tasks").exists() else []:
+        for x in table_rows(read(p), "参照"):
+            if x.get("使い方") == "不足":
+                out.setdefault(x.get("場所", ""), []).append(p.stem)
+    return out
+
+
+def _clean_need(s: str) -> str:
+    """表に書く前に、区切りに使う文字（| と ｜）を「／」へ（情報欄は「｜」で内容・理由・確かめ方を区切る）。"""
+    return (s or "").strip().replace("|", "／").replace("｜", "／")
+
+
+def _norm_need(s: str) -> str:
+    """二度押しの判定用。空白・読点・括弧を除き、数字の間ではない . と , も除く（3.5万円 と 35万円 は別）。"""
+    s = re.sub(r"[\s、。・（）()「」]", "", _clean_need(s))
+    return re.sub(r"(?<!\d)[.,]|[.,](?!\d)", "", s).lower()
+
+
+def _need_order(root: Path, cid: str, nid: str, content: str, due: str | None, check: str) -> None:
+    order_set(root, nid, {"目的": f"{cid} の不足をそろえる：{content}",
+                          "成果物": "報告（そろえた内容と出所・記憶への記録先の案）",
+                          "完了条件": "そろえた内容に出所がある。" + (f"確かめ方：{check}" if check else ""),
+                          "実行してよい操作": "読み取り・Web 調査・報告の作成",
+                          "期限": due, "レビュー": "none（不足の収集）",
+                          "行き詰まったら": "そろえられない理由と、誰に何を聞けばよいかを報告の「確認してほしいこと」に書いて終える（新しい不足は作らない）"})
+
+
+@locked
+def need(root: Path, cid: str, who: str = "", content: str = "", due: str | None = None, why: str = "", check: str = "",
+         link: str = "", follow: str | None = None) -> tuple:
+    """エージェントに任せた仕事 cid に足りないものを約束にして、参照「不足」で止める（外部レビュー #12・設計 v2）。
+    担当：@handle（集める仕事。作業依頼も書く）／自分（自分のタスク）／人の名前（人に出した指示。フォロー日が要る）。
+    link を渡すと、既にある約束をこの仕事の不足にも足す。戻り値：(不足の C-ID, 新しく作ったか)。
+    冪等：同じ仕事に開いている同じ内容の不足があればそれを返す（二度押し・確認役と人の同時。ロックの中で読み直す）。
+    書く順は 約束 → 作業依頼 → 参照（最後の参照が確定の印）。途中で落ちても、やり直せば残った約束を使って続きを書く。"""
+    rows = {r.get("ID"): r for r in mem.commitment_rows(root)}
+    row = rows.get(cid)
+    if not row:
+        fail(f"{cid} が約束台帳に無い")
+    if row.get("状態") in mem.CLOSED:
+        fail(f"{cid} は既に {row.get('状態')}")
+    if row.get("kind") != "given" or not (row.get("相手") or "").startswith("@"):
+        # 着手・完了の関門と再開はエージェントに任せた仕事のためのもの。自分のタスク・受けた指示は人が進める
+        fail(f"{cid} はエージェントに任せた仕事ではない（不足で止められるのは、出した指示で相手が @handle のものだけ）")
+    nmap = needs_map(root)
+    if cid in nmap:
+        # 集める仕事が不足に当たった：新しい不足を作らない（連鎖で費用を使い続けない。独立レビュー R-032 の 5）
+        fail(f"{cid} は別の仕事の不足を集める仕事。新しい不足は作らない（集められなければ人へ確認：work.py accept … ask）")
+    t = read_task(root, cid) if task_path(root, cid).exists() else {"refs": []}
+    opened = open_needs(root, cid, t)
+    if link:
+        if not CID_RE.fullmatch(link) or link not in rows:
+            fail(f"{link} が約束台帳に無い")
+        if link == cid:
+            fail("自分自身は不足にできない")
+        if any(x.get("場所") == link for x in t["refs"]):
+            return link, False
+        if any(x.get("使い方") == "不足" for x in (read_task(root, link)["refs"] if task_path(root, link).exists() else [])):
+            fail(f"{link} は不足を持つ仕事。不足にはできない（循環・連鎖になる）")
+        if rows[link].get("状態") not in NEED_MET and len(opened) >= MAX_OPEN_NEEDS:
+            fail(f"{cid} の開いている不足が {len(opened)} 件（上限 {MAX_OPEN_NEEDS}）。人へ確認する")
+        label = _clean_need(rows[link].get("内容") or rows[link].get("タスク") or link)
+        ref_add(root, cid, link, "不足", label + (f"｜理由：{_clean_need(why)}" if why else ""))
+        return link, False
+    content = _clean_need(content)
+    if not content:
+        fail("--content（足りないもの）が空")
+    same = next((n for n in opened if _norm_need(n["content"]) == _norm_need(content)), None)
+    if same:
+        if (rows.get(same["id"], {}).get("相手") or "").startswith("@") and not task_path(root, same["id"]).exists():
+            _need_order(root, cid, same["id"], content, due, check)   # 前回は作業依頼の前で落ちた
+        return same["id"], False
+    if len(opened) >= MAX_OPEN_NEEDS:
+        fail(f"{cid} の開いている不足が {len(opened)} 件（上限 {MAX_OPEN_NEEDS}）。人へ確認する")
+    who = (who or "").strip()
+    if not who:
+        fail("--who（誰がそろえるか：@handle／自分／人の名前）が要る")
+    text = f"{content}（{cid} の不足）"
+    # 前回、約束を足したあと参照の前で落ちた：その約束を使い直す（2件にしない）
+    nid = next((x.get("ID") for x in rows.values() if x.get("状態") not in mem.CLOSED
+                and _norm_need(x.get("内容") or x.get("タスク") or "") == _norm_need(text) and x.get("ID") not in nmap), None)
+    if not nid:
+        from argparse import Namespace
+        if who == "自分":
+            ns = Namespace(kind="task", content=text, who=None, due=due, follow=None, rel=row.get("関連") or None, state=None)
+        else:
+            if not who.startswith("@") and not (follow or due):
+                fail("人に頼む不足は --due か --follow が要る（催促の日）")
+            ns = Namespace(kind="given", content=text, who=who, due=due, follow=None if who.startswith("@") else (follow or due),
+                           rel=row.get("関連") or None, state=None)
+        before = set(rows)
+        mem.commitment_add(root, ns)
+        nid = next(x.get("ID") for x in mem.commitment_rows(root) if x.get("ID") not in before)
+    if who.startswith("@") and not task_path(root, nid).exists():
+        _need_order(root, cid, nid, content, due, check)
+    info = content + (f"｜理由：{_clean_need(why)}" if why else "") + (f"｜確かめ方：{_clean_need(check)}" if check else "")
+    ref_add(root, cid, nid, "不足", info)
+    return nid, True
+
+
 DEFER_MARK = INFO_MARK + "見送り："
-RERUN_VERDICTS = ("差し戻し", "古い条件")
+RERUN_VERDICTS = ("差し戻し", "古い条件", "条件待ち")
 
 
 def launch_waiting(root: Path) -> list[dict]:
@@ -963,12 +1131,15 @@ def launch_waiting(root: Path) -> list[dict]:
     除くもの：閉じた・相手待ち（waiting）の約束、待ち・後工程の参照があるもの（変化の提案で再開する）、
     最後の記録が「見送り」のもの（`work.py defer`。新しい途中の変更が入れば戻る）。"""
     rows = {r.get("ID"): r for r in mem.commitment_rows(root)}
+    nmap = needs_map(root)
     out = []
     for p in sorted((work_dir(root) / "tasks").glob("C-*.md")) if (work_dir(root) / "tasks").exists() else []:
         r = rows.get(p.stem)
         if not r or r.get("状態") in mem.CLOSED or r.get("状態") == "waiting" or r.get("kind") != "given" \
                 or not (r.get("相手") or "").startswith("@"):
             continue
+        if p.stem in nmap and all(rows.get(c, {}).get("状態") in mem.CLOSED for c in nmap[p.stem]):
+            continue   # 不足を集める仕事だが、待っている仕事がもう無い（取り下げ・完了）。費用を使って起こさない
         t = read_task(root, p.stem)
         if unmet_conditions(root, p.stem, t):   # 着手条件がそろうまでは変化の提案で動く
             continue
@@ -977,8 +1148,13 @@ def launch_waiting(root: Path) -> list[dict]:
         runs = t["runs"]
         if not runs:
             why = "作業依頼はあるが、まだ起動していない"
-        elif runs[-1].get("判定", "").startswith(RERUN_VERDICTS) and runs[-1].get("結果") != "実行中":
+        elif runs[-1].get("結果") == "実行中":
+            continue
+        elif runs[-1].get("判定", "").startswith(RERUN_VERDICTS):
             why = f"{runs[-1].get('実行ID')} が{runs[-1].get('判定', '')[:4]}で、次の実行が無い"
+        elif _needs_met_since(root, t, runs[-1]):
+            # 最後の実行は不足がそろわないまま作った。今はそろった（再開の提案を処理・touch したあとでも拾う。独立レビュー R-032 の 2）
+            why = f"{runs[-1].get('実行ID')} のあとに不足がそろった（{', '.join(_needs_met_since(root, t, runs[-1]))}）"
         else:
             continue
         handle = (r.get("相手") or "")[1:]
@@ -1101,7 +1277,7 @@ def pending(root: Path, dispatch_budget: float = 0.0) -> dict:
 
 # ---------------------------------------------------------------- CLI
 UNATTENDED_OK = {"order", "ref", "changes", "scan", "propose", "decide", "note", "handoff", "accept", "status", "tick", "show", "pending",
-                 "defer", "adopt"}
+                 "defer", "adopt", "need"}   # need は割り振り役（確認役）が使う。作業役の allowed_tools には入れない
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -1132,6 +1308,10 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("adopt", help="提案を採用して担当に任せる約束を足す（採用済みなら既存の C-ID を返す）")
     s.add_argument("id"); s.add_argument("--who", required=True); s.add_argument("--content", default="")
     s.add_argument("--due", default=None); s.add_argument("--rel", default=None); s.add_argument("--reason", required=True)
+    s = sub.add_parser("need", help="仕事に足りないものを約束にして止める（そろうまで起動・完了しない）")
+    s.add_argument("id"); s.add_argument("--who", default=""); s.add_argument("--content", default="")
+    s.add_argument("--due", default=None); s.add_argument("--follow", default=None)
+    s.add_argument("--why", default=""); s.add_argument("--check", default=""); s.add_argument("--link", default="")
     s = sub.add_parser("note"); s.add_argument("id"); s.add_argument("text")
     s.add_argument("--info", action="store_true", help="成果物を変えない記録（鮮度の判定に数えない）")
     s = sub.add_parser("handoff"); s.add_argument("id"); s.add_argument("text")
@@ -1153,6 +1333,8 @@ def main(argv: list[str] | None = None) -> None:
         if a.cmd == "order":
             order_set(root, a.id, {k: getattr(a, k) for k in ORDER_KEYS})
         elif a.cmd == "ref":
+            if a.sub == "add" and a.use == "不足":
+                fail("不足は `work.py need ID --link C-…`（または --content）で足す（循環・連鎖・上限の検査を通す）")
             ref_add(root, a.id, a.place, a.use, a.label) if a.sub == "add" else ref_touch(root, a.id, a.place)
         elif a.cmd in ("changes", "scan"):
             items = changes(root) if a.cmd == "changes" else scan(root)
@@ -1173,6 +1355,9 @@ def main(argv: list[str] | None = None) -> None:
         elif a.cmd == "adopt":
             cid, made = adopt(root, a.id, a.who, a.content, a.due, a.rel, a.reason)
             print(f"{cid}（{'新しく足した' if made else '採用済み・新しくは作らない'}）")
+        elif a.cmd == "need":
+            nid, made = need(root, a.id, a.who, a.content, a.due, a.why, a.check, a.link, a.follow)
+            print(f"{nid}（{'新しく足した' if made else '既にある不足'}）が {a.id} を止める")
         elif a.cmd == "note":
             note(root, a.id, a.text, a.info)
         elif a.cmd == "handoff":

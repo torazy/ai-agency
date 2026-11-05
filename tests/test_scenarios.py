@@ -970,5 +970,208 @@ class AgentEventOrderTest(Base):
         self.assertEqual(r["old"]["state"], "done")
 
 
+class NeedsTest(Base):
+    """外部レビュー #12（設計 v2）：足りないものを約束にして仕事を止め、そろったら再開する。順序を入れ替えて確かめる。"""
+
+    def setUp(self):
+        super().setUp()
+        self.write(".claude/agents/researcher.md", "---\nname: researcher\n---\n")
+        self.w.order_set(self.root, "C-001", {"目的": "費用比較"})
+
+    def need(self, cid="C-001", content="B社の月額", who="@researcher", **kw):
+        return self.w.need(self.root, cid, who, content, kw.get("due", d(3)), kw.get("why", "比較の2行目"), kw.get("check", ""),
+                           kw.get("link", ""))
+
+    def done(self, cid, state="done"):
+        self.w.mem.commitment_set_state(self.root, cid, state)
+
+    def card(self, cid="C-001"):
+        return next(r for r in self.srv.api_commitments(self.root)["rows"] if r["ID"] == cid)
+
+    def test_need_blocks_start_and_done_then_resumes(self):
+        nid, made = self.need()
+        self.assertTrue(made)
+        self.assertEqual(self.w.read_task(self.root, nid)["order"]["レビュー"], "none（不足の収集）")   # 集める仕事の作業依頼
+        self.assertTrue(self.w.unmet_conditions(self.root, "C-001"))
+        with self.assertRaisesRegex(self.w.mem.MemError, "着手条件"):
+            self.w.start_run_within_limits(self.root, "C-001", 1.0)
+        self.assertIn("不足", self.w.done_blocker(self.root, "C-001"))
+        self.assertEqual(self.srv.do_post(self.root, "/api/commitment/state", {"id": "C-001", "state": "done"})[0], 400)
+        self.assertEqual([x["task"] for x in self.w.launch_waiting(self.root)], [nid])          # 集める仕事は起動待ち（元は出ない）
+        self.assertEqual((self.card()["agent_state"], self.card(nid)["blocks"]), ("needs", ["C-001"]))
+        self.done(nid)
+        self.assertEqual(self.w.unmet_conditions(self.root, "C-001"), [])
+        self.assertEqual([c["kind"] for c in self.w.changes(self.root) if c["task"] == "C-001"], ["再開"])
+        self.w.ref_touch(self.root, "C-001", nid)                                                 # 提案を処理した
+        self.assertIn("C-001", [x["task"] for x in self.w.launch_waiting(self.root)])           # 一度も起動していないので起動待ち
+
+    def test_partial_report_waits_and_resumes_after_touch(self):
+        nid, _ = self.need()
+        rid = self.w.start_run_within_limits(self.root, "C-001", 1.0, anyway=True)               # 人が判断して起動した
+        self.w.run_end(self.root, rid, "完了", 0.5)
+        self.report(rid)
+        self.assertEqual(self.w.accept(self.root, rid, "wait", "B社が無い"), "条件待ち")
+        self.assertEqual(self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})[0], 400)
+        self.assertNotIn("C-001", [x["task"] for x in self.w.launch_waiting(self.root)])        # そろうまで出ない
+        self.done(nid)
+        self.w.ref_touch(self.root, "C-001")                                                      # 場所なし：不足は進めない
+        self.assertEqual([c["kind"] for c in self.w.changes(self.root) if c["task"] == "C-001"], ["再開"])
+        self.w.ref_touch(self.root, "C-001", nid)
+        self.assertIn("C-001", [x["task"] for x in self.w.launch_waiting(self.root)])           # 条件待ちのあと、そろった
+        self.assertIn("条件待ち", self.w.done_blocker(self.root, "C-001"))                       # 部分的な成果は完了にしない
+
+    def test_accepted_run_made_without_the_need_resumes(self):
+        nid, _ = self.need()
+        rid = self.w.start_run_within_limits(self.root, "C-001", 1.0, anyway=True)
+        self.w.run_end(self.root, rid, "完了", 0.5)
+        self.report(rid)
+        self.w.accept(self.root, rid, "ask", "人へ")
+        self.done(nid)
+        self.w.ref_touch(self.root, "C-001", nid)
+        self.assertIn("のあとに不足がそろった", next(x["why"] for x in self.w.launch_waiting(self.root) if x["task"] == "C-001"))
+        self.assertIn(f"不足 {nid}", "".join(self.w.stale_refs(self.root, rid)))                 # 不足なしで作った成果は古い
+
+    def test_shared_need_and_double_click_and_limit(self):
+        self.mem("commitment", "add", "--kind", "given", "--who", "@pm", "--content", "別件", "--due", d(10))   # C-002
+        nid, _ = self.need()
+        self.assertEqual(self.need(content="B社の月額。"), (nid, False))                          # 二度押し（表記ゆれ）
+        self.assertEqual(self.need("C-002", link=nid), (nid, False))
+        self.assertEqual(self.w.needs_map(self.root)[nid], ["C-001", "C-002"])
+        self.done(nid)
+        self.assertEqual({c["task"] for c in self.w.changes(self.root) if c["kind"] == "再開"}, {"C-001", "C-002"})
+        for i in range(3):
+            self.need(content=f"別の不足{i}")
+        with self.assertRaisesRegex(self.w.mem.MemError, "上限"):
+            self.need(content="4つ目")
+
+    def test_gathering_task_cannot_chain(self):
+        nid, _ = self.need()
+        with self.assertRaisesRegex(self.w.mem.MemError, "新しい不足は作らない"):
+            self.need(nid, content="B社の営業の連絡先")
+
+    def test_intermediate_states_do_not_propose(self):
+        nid, _ = self.need()
+        self.done(nid, "in-progress")                                                             # 担当が作業中
+        self.assertEqual([c for c in self.w.changes(self.root) if c["task"] == "C-001"], [])
+        self.assertFalse(self.w.pending(self.root)["undecided"])
+
+    def test_dropped_need_lets_it_go_and_reopen_makes_results_stale(self):
+        nid, _ = self.need()
+        self.done(nid, "dropped")                                                                 # 無しで進めると決めた
+        self.assertEqual(self.w.unmet_conditions(self.root, "C-001"), [])
+        self.w.ref_touch(self.root, "C-001", nid)                                                 # 再開の提案を処理した
+        rid = self.w.start_run_within_limits(self.root, "C-001", 1.0)
+        self.w.run_end(self.root, rid, "完了", 0.5)
+        self.report(rid)
+        self.assertEqual(self.w.stale_refs(self.root, rid), [])
+        self.done(nid, "open")                                                                    # やはり要る（再オープン）
+        self.assertIn(f"不足 {nid}", "".join(self.w.stale_refs(self.root, rid)))
+        self.assertIn("見直し", [c["kind"] for c in self.w.changes(self.root) if c["task"] == "C-001"])
+
+    def test_need_added_between_check_and_start_is_refused(self):
+        self.rt.check_task(self.root, "C-001")                                                    # 起動前の検査は通った
+        self.need()                                                                               # その間に不足が足された
+        with self.assertRaisesRegex(ValueError, "着手条件"):
+            self.rt.start_run(self.root, "C-001", 1.0)
+
+    def test_wait_verdict_needs_an_open_need_and_is_not_a_return(self):
+        rid = self.finished_run()
+        with self.assertRaisesRegex(self.w.mem.MemError, "不足が無い"):
+            self.w.accept(self.root, rid, "wait")
+        self.need()
+        self.w.accept(self.root, rid, "wait")
+        for _ in range(2):
+            r = self.w.run_start(self.root, "C-001")
+            self.w.run_end(self.root, r, "完了", 0.5)
+            self.w.accept(self.root, r, "return", "直す")
+        r = self.w.run_start(self.root, "C-001")
+        self.w.run_end(self.root, r, "完了", 0.5)
+        self.assertEqual(self.w.accept(self.root, r, "return", "直す"), "人へ確認")               # 差し戻しの2回に条件待ちは数えない
+
+    def test_self_and_person_needs(self):
+        nid, _ = self.need(who="自分", content="予算の上限を決める")
+        self.assertEqual(next(r for r in self.w.mem.commitment_rows(self.root) if r["ID"] == nid)["kind"], "task")
+        with self.assertRaisesRegex(self.w.mem.MemError, "--due"):
+            self.w.need(self.root, "C-001", "佐藤", "見積の再送", None)
+        pid, _ = self.need(who="佐藤", content="見積の再送")
+        row = next(r for r in self.w.mem.commitment_rows(self.root) if r["ID"] == pid)
+        self.assertEqual((row["kind"], row["フォロー日"]), ("given", d(3)))
+        self.assertFalse(self.w.task_path(self.root, pid).exists())                               # 人への依頼は作業依頼を作らない
+
+    # ---- 独立レビュー（段階1の実装）の反例
+    def test_need_added_after_the_report_still_counts(self):
+        rid = self.finished_run()                                                                 # 報告 → 確認役が不足を見つける（普通の順）
+        nid, _ = self.need()
+        with self.assertRaisesRegex(self.w.mem.MemError, "開いている不足"):
+            self.w.accept(self.root, rid, "accept")                                               # 受け入れにはできない
+        self.w.accept(self.root, rid, "wait")
+        self.done(nid)
+        with self.assertRaisesRegex(self.w.mem.MemError, "条件待ち"):
+            self.w.accept(self.root, rid, "accept")                                               # 条件待ちを受け入れに書き換えない
+        self.assertIn(f"不足 {nid}", "".join(self.w.stale_refs(self.root, rid)))                 # そろう前の成果は古い
+        self.w.ref_touch(self.root, "C-001", nid)
+        self.assertIn("C-001", [x["task"] for x in self.w.launch_waiting(self.root)])
+        self.assertEqual(self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})[0], 400)
+
+    def test_dropped_need_does_not_make_the_partial_result_stale(self):
+        rid = self.finished_run()
+        nid, _ = self.need()
+        self.done(nid, "dropped")                                                                 # 無しで進めると決めた
+        self.assertEqual(self.w.stale_refs(self.root, rid), [])
+
+    def test_links_cannot_make_cycles_or_chains(self):
+        nid, _ = self.need()
+        self.mem("commitment", "add", "--kind", "given", "--who", "@pm", "--content", "別件", "--due", d(10))
+        other = next(r["ID"] for r in self.w.mem.commitment_rows(self.root) if r.get("内容") == "別件")
+        self.need(other, content="別件の不足")
+        with self.assertRaisesRegex(self.w.mem.MemError, "不足を持つ仕事"):
+            self.need("C-001", link=other)                                                        # 不足を持つ仕事を不足にしない（循環）
+        with self.assertRaisesRegex(self.w.mem.MemError, "集める仕事"):
+            self.need(nid, link=other)                                                            # 集める仕事に link で付けない
+
+    def test_unattended_ref_add_cannot_bypass_need(self):
+        nid, _ = self.need()
+        os.environ["AI_AGENCY_UNATTENDED"] = "1"
+        try:
+            with self.assertRaises(SystemExit):
+                self.w.main(["--root", str(self.root), "ref", "add", nid, "C-001", "--use", "不足"])
+        finally:
+            del os.environ["AI_AGENCY_UNATTENDED"]
+        self.assertNotIn(nid, self.w.unmet_conditions(self.root, nid))
+
+    def test_need_recovers_after_a_crash(self):
+        real = self.w.ref_add
+        self.w.ref_add = lambda *a, **k: (_ for _ in ()).throw(OSError("落ちた"))
+        try:
+            with self.assertRaises(OSError):
+                self.need()                                                                       # 約束と作業依頼のあと、参照の前で落ちた
+        finally:
+            self.w.ref_add = real
+        nid, made = self.need()
+        self.assertTrue(made)
+        self.assertEqual(sum(1 for r in self.w.mem.commitment_rows(self.root) if "C-001 の不足" in (r.get("内容") or "")), 1)
+        self.assertTrue(self.w.task_path(self.root, nid).exists())
+
+    def test_need_text_normalization(self):
+        a, _ = self.need(content="A|B 社の月額")
+        self.assertEqual(self.need(content="A|B 社の月額")[0], a)                                 # | を含んでも二度押しは1件
+        self.assertEqual(self.w.open_needs(self.root, "C-001")[0]["content"], "A／B 社の月額")
+        b, _ = self.need(content="単価3.5万円の確認")
+        c, made = self.need(content="単価35万円の確認")
+        self.assertTrue(made and b != c)                                                          # 数字の小数点は区別する
+
+    def test_dropping_the_blocked_task_stops_the_gathering(self):
+        nid, _ = self.need()
+        self.done("C-001", "dropped")
+        self.assertNotIn(nid, [x["task"] for x in self.w.launch_waiting(self.root)])            # 待つ仕事が無いので起こさない
+        self.assertEqual(self.card(nid)["blocks"], [])
+
+    def test_only_delegated_work_can_be_blocked(self):
+        self.mem("commitment", "add", "--kind", "task", "--content", "自分の作業", "--due", d(2))
+        mine = next(r["ID"] for r in self.w.mem.commitment_rows(self.root) if r.get("タスク") == "自分の作業")
+        with self.assertRaisesRegex(self.w.mem.MemError, "エージェントに任せた仕事ではない"):
+            self.need(mine)
+
+
 if __name__ == "__main__":
     unittest.main()

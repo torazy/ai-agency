@@ -397,6 +397,11 @@ def api_commitments(root: Path) -> dict:
         changes_all = work.changes(root)
     except Exception:  # noqa: BLE001 ── 変化の検知に失敗してもタスク一覧は出す
         changes_all = []
+    try:
+        nmap = work.needs_map(root)   # 不足の約束 → 止めている仕事（逆引き。正本は仕事の側の参照）
+    except Exception:  # noqa: BLE001
+        nmap = {}
+    states = {r.get("ID"): r.get("状態") for r in rows}
     out = []
     for r in rows:
         d = dict(r)
@@ -423,6 +428,9 @@ def api_commitments(root: Path) -> dict:
         d["review"] = review_of(text(run_task.results_dir(root) / f"{task.get('run')}.md")) if d["has_result"] else {}
         d["changes"] = sorted({c["kind"] for c in changes_all if c["task"] == r.get("ID")})
         open_ = r.get("状態") not in mem.CLOSED
+        # 仕事を止めている不足（そろっていないもの）と、この約束が不足として止めている仕事（外部レビュー #12）
+        d["needs"] = work.open_needs(root, r.get("ID", "")) if open_ and work.task_path(root, r.get("ID", "")).exists() else []
+        d["blocks"] = [c for c in nmap.get(r.get("ID", ""), []) if states.get(c) not in mem.CLOSED] if open_ else []
         if task.get("run"):
             # 作業セッション（run_task）の実行があるタスクは、その状態が正本。中で動いたサブエージェント（無人の記録）は
             # 止めた・落ちたあとも「稼働中」「終わった」で残り、停止・終了不明を隠していた（R-024 の独立レビュー）。
@@ -430,6 +438,8 @@ def api_commitments(root: Path) -> dict:
             mine = [x for x in mine if not x.get("unattended")]
         if task.get("state") == "running" or any(x["state"] in ("running", "background") for x in mine):
             d["agent_state"] = "running"
+        elif open_ and d["needs"]:
+            d["agent_state"] = "needs"   # 不足がそろうまで、承認も起動もしない（報告があっても「確認待ち」より先に出す）
         elif open_ and task.get("state") == "failed":
             d["agent_state"] = "failed"
         elif open_ and d["has_result"]:
@@ -659,6 +669,11 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
                 return 400, {"ok": False, "error": "報告が無い"}
             if st.get("state") == "running":
                 return 400, {"ok": False, "error": f"{st['run']} がまだ実行中（報告は書きかけかもしれない）。終わってから承認する"}
+            opened = work.open_needs(root, g("id", ""))
+            if opened:   # 不足が残ったまま完了にしない（そろっても再開されなくなる）
+                return 400, {"ok": False, "error": f"{g('id')} は不足がそろっていない（{', '.join(n['id'] for n in opened)}）。そろってからやり直す"}
+            if st.get("verdict", "").startswith("条件待ち"):
+                return 400, {"ok": False, "error": f"{st['run']} は不足があって途中までの成果（条件待ち）。やり直させる"}
             try:
                 # 確認役の受け入れは「確認した時点で妥当」。人が承認するまでに条件が変わることがあるので、毎回確かめる（外部レビュー #4）
                 stale = work.stale_refs(root, st["run"])

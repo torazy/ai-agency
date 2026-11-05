@@ -315,9 +315,9 @@ def check_capacity(root: Path, budget: float) -> None:
                          f"1日の上限 {lim['daily_usd']:g} USD を超える")
 
 
-def start_run(root: Path, cid: str, budget: float) -> str:
+def start_run(root: Path, cid: str, budget: float, anyway: bool = False) -> str:
     try:
-        return work.start_run_within_limits(root, cid, budget)
+        return work.start_run_within_limits(root, cid, budget, anyway)
     except work.MemError as e:
         raise ValueError(str(e)) from e
 
@@ -402,7 +402,7 @@ def launch(root: Path, cid: str, budget: float | None = None, review: str | None
     del exe_ok
     if review is not None and plan_of(root, cid).get("review") != rv:
         set_plan(root, cid, rv, "ボードで指定")
-    rid = start_run(root, cid, budget)
+    rid = start_run(root, cid, budget, anyway)
     args = [sys.executable, str(root / "tools" / "run_task.py"), cid, "--wait", "--child", rid, "--budget", f"{budget:g}",
             "--root", str(root)]
     kw: dict = {"cwd": root, "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
@@ -520,7 +520,7 @@ def launch_wait(root: Path, cid: str, budget: float | None, review: str | None, 
     check_capacity(root, budget)
     build_command(cid, "x", budget)
     del row
-    rid = start_run(root, cid, budget)
+    rid = start_run(root, cid, budget, anyway)
     return run_foreground(root, cid, rid, budget)
 
 

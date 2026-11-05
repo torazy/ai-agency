@@ -32,6 +32,7 @@ work.py ── チームの仕事の記録（提案・作業依頼・参照と�
   python tools/work.py propose --what … --why … --evidence … --effect … --who @pm [--key 指紋]
   python tools/work.py decide S-003 adopt|hold|reject|merge|ask [--task C-012] --reason …
   python tools/work.py note C-007 "部長から新しい条件：…"   # 実行中・次回の作業に渡す途中の変更
+  python tools/work.py note C-007 "部長：報告のままで可" --info   # 成果物を変えない記録（古い条件の判定に数えない）
   python tools/work.py handoff C-007 "ここまで…次は…"
   python tools/work.py accept C-007-R2 accept|return|ask --reason …   # 確認役の判定（古い条件なら accept できない）
   python tools/work.py applied C-007-R2                  # 報告の「記憶に入れる候補」を記録し終えた
@@ -409,11 +410,16 @@ def ref_touch(root: Path, cid: str, place: str | None = None) -> list[str]:
     return done
 
 
+INFO_MARK = "［記録］"   # 成果物を変えない記録（停止の理由・打ち切り・期限の延長・人の回答で「そのままで可」等）。鮮度の判定に数えない
+
+
 @locked
-def note(root: Path, cid: str, text: str) -> None:
+def note(root: Path, cid: str, text: str, info: bool = False) -> None:
     p = ensure_task(root, cid)
     lines = read(p)
-    i = mem.find_section(lines, "途中の変更")
+    if info and not text.startswith(INFO_MARK):
+        text = INFO_MARK + text
+    i = mem.find_heading(lines, "## 途中の変更")
     j = i + 1
     while j < len(lines) and not lines[j].startswith("## "):
         j += 1
@@ -441,13 +447,29 @@ def handoff(root: Path, cid: str, text: str) -> None:
 
 
 # ---------------------------------------------------------------- runs
+# 何を作るかを決める欄。進め方・上限・報告先は成果物を変えない。期限は延ばしても成果物は古くならないので含めず、
+# 前倒しだけを途中の変更として伝える（mem._sync_work_order）
+ORDER_SPEC_KEYS = ("目的", "成果物", "完了条件", "実行してよい操作", "行き詰まったら")
+ORDER_V, NOTES_V = "作業依頼", "途中の変更"
+
+
+def order_version(root: Path, cid: str) -> str:
+    """作業依頼のうち、何を作るかを決める欄の版。"""
+    order = read_task(root, cid).get("order", {})
+    text = "\n".join(f"{k}={order.get(k, '')}" for k in ORDER_SPEC_KEYS)
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+
+
 def snapshot(root: Path, cid: str) -> str:
-    """実行に使った版（「場所=版」の並び）。"""
+    """実行に使った版（「場所=版」の並び）。参照に加えて、作業依頼の版と途中の変更の件数も残す
+    （要求そのものが変わったのに、参照の版が同じだから新しい成果として受け入れる、を防ぐ。外部レビュー #3）。"""
     parts = []
     for r in read_task(root, cid).get("refs", []):
         v = version_of(root, r.get("場所", ""))
         parts.append(f"{r.get('場所')}={v if v is not None else '手動'}")
-    return "; ".join(parts) or "参照なし"
+    parts.append(f"{ORDER_V}={order_version(root, cid)}")
+    parts.append(f"{NOTES_V}={len(read_task(root, cid).get('notes', []))}")
+    return "; ".join(parts)
 
 
 def _parse_snapshot(s: str) -> dict:
@@ -490,12 +512,52 @@ def run_row(root: Path, rid: str) -> dict:
     return row
 
 
+def unread_notes(root: Path, rid: str, row: dict | None = None, used: dict | None = None) -> list[str]:
+    """その実行の開始後に足された途中の変更のうち、作業セッションが読めていないもの。
+    作業セッションは報告を書く直前に途中の変更を読む（/run-task 手順6）ので、報告ファイルの更新時刻より後の変更は
+    読めていない。終了の記録（run_end）の時刻では測らない：報告を書いてからプロセスが終わるまでの間や、
+    終了の記録が無いまま落ちた実行で取りこぼすため。時刻は分単位なので、報告と同じ分の変更は読めていない側に倒す（古い成果を完了にするより、やり直しの方が安い）。"""
+    row = row or run_row(root, rid)
+    used = used if used is not None else _parse_snapshot(row.get("使った版", ""))
+    start = used.get(NOTES_V, "")
+    if not start.isdigit():
+        return []
+    report = results_dir(root) / f"{rid}.md"
+    if report.exists():
+        seen = datetime.fromtimestamp(report.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+    elif row.get("終了"):
+        seen = row["終了"]
+    else:
+        return []   # 実行中で報告もまだ無い
+    after = read_task(root, RUN_RE.fullmatch(rid).group(1)).get("notes", [])[int(start):]
+    return [n for n in after if INFO_MARK not in n[:24] and n[:16] >= seen]
+
+
+def done_blocker(root: Path, cid: str) -> str:
+    """任せたタスクを完了にしてよいか。最新の実行に報告があり、それが今の条件で古ければ理由を返す（空文字＝よい）。
+    ボードの承認・状態ボタン・CLI の set-state done のどの経路からでも同じ検査を通す（外部レビュー #4 と独立レビュー）。"""
+    runs = read_task(root, cid).get("runs", []) if task_path(root, cid).exists() else []
+    if not runs:
+        return ""
+    rid = runs[-1].get("実行ID", "")
+    if not RUN_RE.fullmatch(rid) or not (results_dir(root) / f"{rid}.md").exists():
+        return ""
+    stale = stale_refs(root, rid)
+    return f"{rid} は古い条件で作られた（{', '.join(stale)}）。新しい条件でやり直す" if stale else ""
+
+
 def stale_refs(root: Path, rid: str) -> list[str]:
-    """その実行が使った版のうち、前提が今は変わっているもの（古い条件で作られた成果）。"""
+    """その実行が使った版のうち、今は変わっているもの（古い条件で作られた成果）：前提の参照・作業依頼・
+    報告を書いたあとに足された途中の変更（［記録］は除く）。版を残していない古い記録は、その項目を比べない。"""
     row = run_row(root, rid)
     used = _parse_snapshot(row.get("使った版", ""))
     cid = RUN_RE.fullmatch(rid).group(1)
     out = []
+    if ORDER_V in used and used[ORDER_V] != order_version(root, cid):
+        out.append("作業依頼（実行の開始後に変わった）")
+    unread = unread_notes(root, rid, row, used)
+    if unread:
+        out.append(f"途中の変更（報告のあとに {len(unread)} 件）")
     for r in read_task(root, cid).get("refs", []):
         if r.get("使い方") != "前提":
             continue
@@ -521,7 +583,7 @@ def accept(root: Path, rid: str, verdict: str, reason: str = "") -> str:
         stale = stale_refs(root, rid)
         if stale:
             label = "古い条件"
-            reason = f"前提が変わった：{', '.join(stale)}。" + (reason or "")
+            reason = f"条件が変わった：{', '.join(stale)}。" + (reason or "")
     if verdict == "return":
         returns = sum(1 for r in read_task(root, cid).get("runs", []) if r.get("判定", "").startswith("差し戻し"))
         if returns >= MAX_RETURNS:
@@ -816,6 +878,7 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--key", default="観察")
     s = sub.add_parser("decide"); s.add_argument("id"); s.add_argument("decision"); s.add_argument("--task", default=""); s.add_argument("--reason", default="")
     s = sub.add_parser("note"); s.add_argument("id"); s.add_argument("text")
+    s.add_argument("--info", action="store_true", help="成果物を変えない記録（鮮度の判定に数えない）")
     s = sub.add_parser("handoff"); s.add_argument("id"); s.add_argument("text")
     s = sub.add_parser("accept"); s.add_argument("run"); s.add_argument("verdict"); s.add_argument("--reason", default="")
     s = sub.add_parser("applied"); s.add_argument("run")
@@ -852,7 +915,7 @@ def main(argv: list[str] | None = None) -> None:
         elif a.cmd == "decide":
             decide(root, a.id, a.decision, a.task, a.reason)
         elif a.cmd == "note":
-            note(root, a.id, a.text)
+            note(root, a.id, a.text, a.info)
         elif a.cmd == "handoff":
             handoff(root, a.id, a.text)
         elif a.cmd == "accept":

@@ -176,6 +176,15 @@ def find_section(lines: list[str], heading_substr: str) -> int:
     return -1
 
 
+def find_heading(lines: list[str], heading: str) -> int:
+    """見出し行（例「## 途中の変更」）と完全に一致する最初の行番号。無ければ -1。
+    find_section は部分一致なので、タイトルや本文に同じ語があると取り違える。"""
+    for i, ln in enumerate(lines):
+        if ln.strip() == heading:
+            return i
+    return -1
+
+
 def find_table(lines: list[str], start: int) -> tuple[int, int]:
     """start 以降で最初の表（ヘッダ行, 末尾行番号+1）。見つからなければ (-1, -1)。次の見出しで打ち切る。"""
     i = start + 1
@@ -471,9 +480,69 @@ def commitment_set_state(root: Path, cid: str, state: str) -> None:
     _commitment_update_cell(root, cid, "状態", state, "状態")
 
 
+def commitment_set_state_checked(root: Path, cid: str, state: str, force: bool = False) -> None:
+    """CLI の set-state。任せたタスクを done にするとき、最新の報告が今の条件で古ければ止める
+    （ボードの承認・状態ボタンと同じ検査。work.py を読み込むのはロックの外。人が影響なしと判断したら --force）。"""
+    if state == "done" and not force:
+        spec = importlib.util.spec_from_file_location("work_for_mem", Path(__file__).resolve().parent / "work.py")
+        w = importlib.util.module_from_spec(spec)
+        assert spec.loader
+        spec.loader.exec_module(w)
+        why = w.done_blocker(root, cid)
+        if why:
+            fail(why + "。人が影響なしと判断したなら --force")
+    commitment_set_state(root, cid, state)
+
+
+@locked
 def commitment_set_due(root: Path, cid: str, due: str) -> None:
     due = check_date(due, "期限") or "なし"
+    old = next((r.get("期限", "") for r in commitment_rows(root) if r.get("ID") == cid), "")
+    old = "なし" if old.strip() in ("", "-") else old
     _commitment_update_cell(root, cid, "期限", due, "期限")
+    if old != due:
+        _sync_work_order(root, cid, "期限", old, due)
+
+
+def _sync_work_order(root: Path, cid: str, key: str, old: str, new: str) -> None:
+    """台帳の内容・期限を変えたら、作業依頼（memory/work/tasks/{cid}.md）にも伝える。
+    作業セッションは作業依頼だけを読むので、台帳だけ直すと古い目的・期限で仕事が進む（外部レビュー #2）。
+    期限の正本は台帳なので作業依頼の期限は必ず合わせる。目的は秘書が書き足していることがあるので、
+    台帳の旧い内容と同じときだけ置き換える。どちらの場合も「途中の変更」に1行残す（実行中なら報告前に読まれ、
+    報告のあとなら古い成果として扱われる）。期限の延長・削除は成果物を変えないので［記録］として残す。"""
+    p = root / "memory" / "work" / "tasks" / f"{cid}.md"
+    if not p.is_file():
+        return
+    lines = read(p)
+    sec, replaced = None, False
+    for i, ln in enumerate(lines):
+        if ln.startswith("## "):
+            sec = ln[3:].strip()
+            continue
+        if sec == "作業依頼" and TABLE_ROW_RE.match(ln):
+            c = cells(ln)
+            if len(c) >= 2 and c[0] == key and (key == "期限" or c[1] == esc(old)):
+                c[1] = esc(new)
+                lines[i] = "| " + " | ".join(c) + " |"
+                replaced = True
+    if replaced and key == "目的" and lines and lines[0].startswith(f"# {cid} "):
+        lines[0] = f"# {cid} {new}"
+    label = "内容" if key == "目的" else key
+    msg = f"台帳の{label}が変わった：{old or '（なし）'} → {new}" + ("" if replaced else "（作業依頼の目的は書き足されているので、新しい内容に合わせて見直す）")
+    earlier = DATE_ARG_RE.match(new) and (not DATE_ARG_RE.match(old) or new < old)
+    if key == "期限" and not earlier:
+        msg = "［記録］" + msg   # 延長・削除：成果物は古くならない（work.INFO_MARK と同じ印）
+    i = find_heading(lines, "## 途中の変更")
+    if i >= 0:
+        j = i + 1
+        while j < len(lines) and not lines[j].startswith("## "):
+            j += 1
+        body = [ln for ln in lines[i + 1:j] if ln.strip() != "- （記録なし）"]
+        while body and not body[-1].strip():
+            body.pop()
+        lines = lines[:i + 1] + body + [f"- {now_hm()} {esc(msg)}", ""] + lines[j:]
+    lines = [f"- **更新**: {today()}" if ln.startswith("- **更新**:") else ln for ln in lines]
+    write(p, lines)
 
 
 @locked
@@ -491,10 +560,13 @@ def commitment_set_content(root: Path, cid: str, content: str) -> None:
         elif TABLE_ROW_RE.match(ln) and cells(ln)[:1] == [cid]:
             col = "タスク" if "タスク" in header else "内容"
             c = cells(ln)
+            old = c[header.index(col)]
             c[header.index(col)] = esc(content)
             lines[i] = "| " + " | ".join(c) + " |"
             write(p, touch_updated(lines))
             ok(f"{cid} の内容を「{content}」に")
+            if old != esc(content):
+                _sync_work_order(root, cid, "目的", old, content)
             return
     fail(f"{cid} が見つからない")
 
@@ -1155,6 +1227,7 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--content", required=True); s.add_argument("--who"); s.add_argument("--due")
     s.add_argument("--follow"); s.add_argument("--rel"); s.add_argument("--state")
     s = cm.add_parser("set-state"); s.add_argument("id"); s.add_argument("state")
+    s.add_argument("--force", action="store_true", help="任せたタスクの報告が古くても完了にする（人が影響なしと判断したとき）")
     s = cm.add_parser("set-due"); s.add_argument("id"); s.add_argument("due")
     s = cm.add_parser("set-follow"); s.add_argument("id"); s.add_argument("follow")
     s = cm.add_parser("set-content"); s.add_argument("id"); s.add_argument("content")
@@ -1229,7 +1302,7 @@ def dispatch(root: Path, a: argparse.Namespace) -> None:
          "list": lambda: inbox_list(root)}[a.sub]()
     elif a.cmd == "commitment":
         {"add": lambda: commitment_add(root, a),
-         "set-state": lambda: commitment_set_state(root, a.id, a.state),
+         "set-state": lambda: commitment_set_state_checked(root, a.id, a.state, a.force),
          "set-due": lambda: commitment_set_due(root, a.id, a.due),
          "set-follow": lambda: commitment_set_follow(root, a.id, a.follow),
          "set-content": lambda: commitment_set_content(root, a.id, a.content),

@@ -85,6 +85,8 @@ def read_status(root: Path, cid: str) -> dict:
     st.update({"run": rid, "state": state, "result": result, "verdict": run.get("判定", ""), "applied": run.get("反映", ""),
                "start": extra.get("start"), "end": extra.get("end"), "cost_usd": cost, "used": run.get("使った版", ""),
                "has_result": (results_dir(root) / f"{rid}.md").exists()})
+    # 終わった実行の成果が今の条件に合っているか（ボードは承認ボタンを押す前に見せる。承認時にも確かめ直す）
+    st["stale"] = work.stale_refs(root, rid) if state != "running" and st["has_result"] else []
     return st
 
 
@@ -255,7 +257,7 @@ def run_foreground(root: Path, cid: str, rid: str, budget: float) -> int:
     work.run_end(root, rid, result, cost)
     if result == "上限で打ち切り" and not has_result:   # 報告が無いと次の実行も人も手がかりが無いので、作業記録に残す
         work.note(root, cid, f"{rid} は上限 {budget:g} USD で打ち切られ、報告が残っていない"
-                  f"（費用 {cost if cost is not None else '不明'} USD）。上限を上げるか、作業を分けてやり直す")
+                  f"（費用 {cost if cost is not None else '不明'} USD）。上限を上げるか、作業を分けてやり直す", info=True)
     return code
 
 
@@ -310,7 +312,7 @@ def stop(root: Path, cid: str, reason: str = "") -> str:
             pass
     work.run_end(root, rid, "停止", None)
     if reason:
-        work.note(root, cid, f"{rid} を止めた：{reason}")
+        work.note(root, cid, f"{rid} を止めた：{reason}", info=True)
     return rid
 
 

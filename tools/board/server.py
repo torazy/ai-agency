@@ -557,6 +557,14 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
                            follow=g("follow"), rel=g("rel"), state=g("state"))
             res = run_mem(mem.commitment_add, root, ns)
         elif path == "/api/commitment/state":
+            # 状態ボタン・かんばんで done にする経路も、任せたタスクの報告が古くないかを承認と同じく確かめる
+            if g("state") == "done":
+                try:
+                    why = work.done_blocker(root, g("id", ""))
+                except work.MemError as e:
+                    return 400, {"ok": False, "error": str(e)}
+                if why:
+                    return 400, {"ok": False, "error": why + "（やり直させる）"}
             res = run_mem(mem.commitment_set_state, root, g("id", ""), g("state", ""))
         elif path == "/api/commitment/due":
             res = run_mem(mem.commitment_set_due, root, g("id", ""), g("due", ""))
@@ -583,6 +591,11 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
             if not st.get("has_result"):
                 return 400, {"ok": False, "error": "報告が無い"}
             try:
+                # 確認役の受け入れは「確認した時点で妥当」。人が承認するまでに条件が変わることがあるので、毎回確かめる（外部レビュー #4）
+                stale = work.stale_refs(root, st["run"])
+                if stale:
+                    work.accept(root, st["run"], "accept", "人が承認しようとした")   # 判定を「古い条件」に書き換えて残す
+                    return 400, {"ok": False, "error": f"{st['run']} は古い条件で作られた（{', '.join(stale)}）。新しい条件でやり直す（やり直させる）"}
                 if not st.get("verdict", "").startswith("受け入れ"):
                     label = work.accept(root, st["run"], "accept", "人が承認")
                     if label != "受け入れ":

@@ -82,7 +82,9 @@ description: 作業役。割り振られたタスク（約束台帳の出した�
 ## 人が承認したあと（対話のとき）
 
 - 起動時の案内に「報告が届いて確認待ち」が出たら、報告を読んで要点を伝え、承認を1問で聞く。承認なら
-  `python tools/work.py accept {実行ID} accept` → `commitment set-state … done`（古い条件なら受け入れられない。やり直す）
+  `python tools/work.py accept {実行ID} accept` → `commitment set-state … done`（古い条件なら受け入れられない。やり直す）。
+  確認役が受け入れ済みでも accept をもう一度通す（確認のあとに前提・作業依頼・途中の変更が変わっていることがある）
+  完了にする命令（`commitment set-state … done`）も、報告が今の条件で古ければ止まる。人が影響なしと判断したときだけ `--force`。成果物を変えない記録（回答・経緯）は `work.py note … --info`
 - 「承認済みで記憶への反映待ち」（ボードで「承認して完了」されたもの）が出たら、報告の「記憶に入れる候補」を通常の手順
   （intake-and-file・commitment-track・person-model-update）で記録する。決定は**提案（未承認）**として入れ、「確認してほしいこと」は
   約束台帳や issues に残す。記録し終えたら `python tools/run_task.py --applied C-…` を実行し、記録先を事後報告する

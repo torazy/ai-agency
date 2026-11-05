@@ -8,6 +8,7 @@ Claude Code のセッション**（無人）で進める。会話全体ではな
   python tools/run_task.py C-007 --dry-run    # 実行するコマンドだけ表示
   python tools/run_task.py --status C-007     # 最新の実行・進め方（JSON）
   python tools/run_task.py --stop C-007       # 実行中のセッションを止める（新しい条件でやり直すとき）
+  python tools/run_task.py --stop C-007-R1    # 古い実行が「実行中」のまま残っているとき、実行ID で個別に閉じる
   python tools/run_task.py --plan C-007 --review qa --reason "部長に出す提案書"   # 進め方（レビュー）を作業依頼に記録
   python tools/run_task.py --applied C-007    # 最新の報告の「記憶に入れる候補」を記録し終えた
 
@@ -35,7 +36,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CID_RE = re.compile(r"C-\d{3,}")
-RUNNING_STALE_SEC = 3 * 3600
 
 
 def _load(name: str):
@@ -74,10 +74,13 @@ def read_status(root: Path, cid: str) -> dict:
         extra = json.loads(state_path(root, rid).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         extra = {}
+    try:
+        if run.get("結果") == "実行中" and reap(root, rid):
+            run = latest_run(root, cid)   # プロセスが無くなっていた：終了不明として閉じた
+    except work.MemError:
+        pass   # ロックが取れない（ほかが書いている）：今回は後始末しない。一覧の表示は止めない
     result = run.get("結果", "")
-    state = {"実行中": "running", "完了": "done", "停止": "stopped"}.get(result, "failed")
-    if state == "running" and time.time() - extra.get("start", time.time()) > RUNNING_STALE_SEC:
-        state = "unknown"   # 終了の記録が無いまま時間がたった（PC の再起動など）
+    state = {"実行中": "running", "完了": "done", "停止": "stopped", "終了不明": "unknown"}.get(result, "failed")
     try:
         cost = float(run.get("費用")) if run.get("費用") else None
     except ValueError:
@@ -87,7 +90,105 @@ def read_status(root: Path, cid: str) -> dict:
                "has_result": (results_dir(root) / f"{rid}.md").exists()})
     # 終わった実行の成果が今の条件に合っているか（ボードは承認ボタンを押す前に見せる。承認時にも確かめ直す）
     st["stale"] = work.stale_refs(root, rid) if state != "running" and st["has_result"] else []
+    if state == "running" and not extra.get("pid") and not extra.get("child"):
+        try:
+            started = time.mktime(time.strptime(run.get("開始", ""), "%Y-%m-%d %H:%M"))
+        except ValueError:
+            started = 0
+        if time.time() - started >= NO_STATE_GRACE_SEC:
+            st["unverifiable"] = f"実行の記録（.state）が無く、生きているか確かめられない。止めるなら run_task.py --stop {rid}"
     return st
+
+
+def _proc_started(pid: int):
+    """pid のプロセスが生きていれば開始時刻（UNIX 秒。分からなければ None）、いなければ False。"""
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.OpenProcess.restype = wintypes.HANDLE
+        h = k.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return None if ctypes.get_last_error() == 5 else False   # 5 = 権限が無い（別のユーザーのプロセス）
+        try:
+            code = wintypes.DWORD()
+            if not k.GetExitCodeProcess(h, ctypes.byref(code)) or code.value != 259:   # 259 = STILL_ACTIVE
+                return False
+            t = [wintypes.FILETIME() for _ in range(4)]
+            if not k.GetProcessTimes(h, *[ctypes.byref(x) for x in t]):
+                return None
+            return ((t[0].dwHighDateTime << 32) | t[0].dwLowDateTime) / 1e7 - 11644473600
+        finally:
+            k.CloseHandle(h)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return None
+    except OSError:
+        return False
+    try:
+        out = subprocess.run(["ps", "-o", "etime=", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout.strip()
+        days, _, hms = out.rpartition("-")
+        secs = 0
+        for part in hms.split(":"):
+            secs = secs * 60 + int(part)
+        return time.time() - secs - int(days or 0) * 86400
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def _ours(pid, since: float) -> bool:
+    """記録した pid が、今もこの実行のプロセスか（PC の再起動後は別のプロセスに番号が使い回される）。"""
+    started = _proc_started(pid)
+    if started is False:
+        return False
+    return started is None or not since or started <= since + REUSE_SLACK_SEC
+
+
+REUSE_SLACK_SEC = 300      # 記録した開始時刻より後に作られたプロセスは別物（時計の補正の揺れは見込む）
+NO_STATE_GRACE_SEC = 600   # 起動の記録（.state）が書かれる前の実行は、この間は閉じない
+
+
+def _host() -> str:
+    import socket
+    return socket.gethostname()
+
+
+def reap(root: Path, only: str | None = None) -> list[str]:
+    """「実行中」のまま、実行のプロセスがもう無いものを「終了不明」として閉じ、同時実行の枠を戻す。
+    PC の再起動・プロセスの異常終了で終了の記録が途切れると、枠を占め続けて自律運転が止まるため（外部レビュー #8）。
+    時間だけでは閉じない（本当に長く動いているものと二重に走らせない）。"""
+    closed = []
+    for r in work.running_runs(root):
+        rid = r.get("実行ID", "")
+        if only and rid != only:
+            continue
+        sp = state_path(root, rid)
+        try:
+            extra = json.loads(sp.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            extra = None
+        except (OSError, ValueError):
+            continue   # 書きかけ・読めない：生きているかもしれないので閉じない
+        if extra and extra.get("host") and extra["host"] != _host():
+            continue   # 別の PC で起動した実行（memory/ を同期している）：ここではプロセスを確かめられない
+        pids = [p for p in ((extra or {}).get("pid"), (extra or {}).get("child")) if p]
+        if not pids:
+            # 起動の記録（pid）が無い：起動の途中か、.state が消された（生きているか確かめようがない）。
+            # どちらも自動では閉じない。時間がたったものは read_status が「確かめられない」と出し、人が --stop 実行ID で閉じる
+            continue
+        elif any(_ours(p, extra.get("start", 0)) for p in pids):
+            continue
+        if not work.run_end(root, rid, "終了不明", None, expect=("実行中",)):
+            continue   # 調べている間に実行役が終わりを書いた
+        work.note(root, r["task"], f"{rid} は終了の記録が無いまま、実行のプロセスが無くなっていた（PC の再起動・異常終了など）。"
+                  "報告があれば確認役が見る。無ければやり直す", info=True)
+        closed.append(rid)
+    return closed
 
 
 def check_task(root: Path, cid: str, child: bool = False) -> dict:
@@ -195,6 +296,7 @@ def check_budget(budget: float) -> None:
 
 def check_capacity(root: Path, budget: float) -> None:
     check_budget(budget)
+    reap(root)
     lim = work.limits(root)
     running = work.running_runs(root)
     if len(running) >= lim["max_running"]:
@@ -225,36 +327,46 @@ def summarize_output(stdout: str) -> str:
     return str(out.get("result") or out.get("subtype") or "").strip()
 
 
+def _state_update(root: Path, rid: str, **fields) -> None:
+    p = state_path(root, rid)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        st = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        st = {}
+    st.update(fields, host=_host())
+    work.mem.write_text_atomic(p, json.dumps(st))   # 書きかけを読ませない（後始末が生きている実行を閉じないように）
+
+
 def run_foreground(root: Path, cid: str, rid: str, budget: float) -> int:
     check_task(root, cid, child=True)
     cmd = build_command(cid, rid, budget, plan_of(root, cid).get("review", "auto"))
     results_dir(root).mkdir(parents=True, exist_ok=True)
-    state_path(root, rid).parent.mkdir(parents=True, exist_ok=True)
-    state_path(root, rid).write_text(json.dumps({"start": round(time.time(), 1), "pid": os.getpid(), "budget": budget}), encoding="utf-8")
+    _state_update(root, rid, start=round(time.time(), 1), pid=os.getpid(), budget=budget)
     env = dict(os.environ, AI_AGENCY_UNATTENDED="1", AI_AGENCY_TASK=cid, AI_AGENCY_RUN=rid, PYTHONUTF8="1")
     cost, subtype = None, ""
     with open(state_path(root, rid, "log"), "w", encoding="utf-8") as log:
         log.write(f"[{time.strftime('%Y-%m-%d %H:%M')}] start {rid}\n")
         log.flush()
         try:
-            r = subprocess.run(cmd, cwd=root, env=env, stdout=subprocess.PIPE, stderr=log, stdin=subprocess.DEVNULL,
-                               text=True, encoding="utf-8", errors="replace")
-            code = r.returncode
-            log.write(summarize_output(r.stdout) + "\n")
-            cost = cost_of(r.stdout)
-            subtype = str(_parse_output(r.stdout).get("subtype") or "")
+            pr = subprocess.Popen(cmd, cwd=root, env=env, stdout=subprocess.PIPE, stderr=log, stdin=subprocess.DEVNULL,
+                                  text=True, encoding="utf-8", errors="replace")
+            _state_update(root, rid, child=pr.pid)   # claude 本体の pid（実行役が落ちても生きているかを確かめる）
+            stdout, _ = pr.communicate()
+            code = pr.returncode
+            log.write(summarize_output(stdout) + "\n")
+            cost = cost_of(stdout)
+            subtype = str(_parse_output(stdout).get("subtype") or "")
         except OSError as e:
             log.write(f"起動できない: {e}\n")
             code = 127
         log.write(f"[{time.strftime('%Y-%m-%d %H:%M')}] exit {code}" + (f" cost {cost:.2f} USD" if cost is not None else "") + "\n")
-    st = json.loads(state_path(root, rid).read_text(encoding="utf-8"))
-    st.update(end=round(time.time(), 1), exit=code)
-    state_path(root, rid).write_text(json.dumps(st), encoding="utf-8")
-    if latest_run(root, cid).get("結果") == "停止":
-        return code   # 途中で止められた（--stop が記録済み）
+    _state_update(root, rid, end=round(time.time(), 1), exit=code)
     has_result = (results_dir(root) / f"{rid}.md").exists()
     result = "完了" if code == 0 and has_result else ("上限で打ち切り" if "budget" in subtype else "失敗")
-    work.run_end(root, rid, result, cost)
+    # 停止が記録済みなら上書きしない。後始末が誤って終了不明にしていたら、こちらの方が確かなので書き直す
+    if not work.run_end(root, rid, result, cost, expect=("実行中", "終了不明")):
+        return code
     if result == "上限で打ち切り" and not has_result:   # 報告が無いと次の実行も人も手がかりが無いので、作業記録に残す
         work.note(root, cid, f"{rid} は上限 {budget:g} USD で打ち切られ、報告が残っていない"
                   f"（費用 {cost if cost is not None else '不明'} USD）。上限を上げるか、作業を分けてやり直す", info=True)
@@ -287,22 +399,27 @@ def launch(root: Path, cid: str, budget: float | None = None, review: str | None
     except OSError as e:
         work.run_end(root, rid, "失敗", None)
         raise ValueError(f"起動できない: {e}") from e
-    state_path(root, rid).parent.mkdir(parents=True, exist_ok=True)
-    state_path(root, rid).write_text(json.dumps({"start": round(time.time(), 1), "pid": p.pid, "budget": budget}), encoding="utf-8")
+    _state_update(root, rid, start=round(time.time(), 1), pid=p.pid, budget=budget)
     return {"id": cid, "run": rid, "agent": row.get("相手"), "budget": budget, "review": rv}
 
 
-def stop(root: Path, cid: str, reason: str = "") -> str:
-    """実行中のセッションを止める（プロセスごと）。実行履歴は「停止」。"""
-    run = latest_run(root, cid)
-    if run.get("結果") != "実行中":
-        raise ValueError(f"{cid} は実行中ではない")
+def stop(root: Path, ident: str, reason: str = "") -> str:
+    """実行中のセッションを止める（プロセスごと）。実行履歴は「停止」。ident は C-ID（そのタスクで実行中の最新）か
+    実行ID（古い実行が「実行中」のまま残っているときに個別に閉じる）。"""
+    m = work.RUN_RE.fullmatch(ident or "")
+    cid = m.group(1) if m else ident
+    running = [r for r in work.read_task(root, cid).get("runs", []) if r.get("結果") == "実行中"]
+    run = next((r for r in running if r.get("実行ID") == ident), None) if m else (running[-1] if running else None)
+    if not run:
+        raise ValueError(f"{ident} は実行中ではない")
     rid = run["実行ID"]
     try:
-        pid = json.loads(state_path(root, rid).read_text(encoding="utf-8")).get("pid")
+        extra = json.loads(state_path(root, rid).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        pid = None
-    if pid:
+        extra = {}
+    for pid in (extra.get("pid"), extra.get("child")):
+        if not pid or (extra.get("host") and extra["host"] != _host()) or not _ours(pid, extra.get("start", 0)):
+            continue   # もういない・番号が使い回されている・別の PC の実行：殺さない
         try:
             if os.name == "nt":
                 subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True)
@@ -310,7 +427,7 @@ def stop(root: Path, cid: str, reason: str = "") -> str:
                 os.killpg(os.getpgid(pid), signal.SIGTERM)
         except (OSError, ProcessLookupError):
             pass
-    work.run_end(root, rid, "停止", None)
+    work.run_end(root, rid, "停止", None, expect=("実行中",))
     if reason:
         work.note(root, cid, f"{rid} を止めた：{reason}", info=True)
     return rid

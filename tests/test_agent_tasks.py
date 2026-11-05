@@ -1,6 +1,8 @@
 """エージェントに任せるタスク（約束台帳の @handle）と、エージェントの動きの記録（agent-activity フック → ボード）。"""
 
 import json
+import os
+import subprocess
 import sys
 import time
 import unittest
@@ -167,12 +169,14 @@ class RunTaskTest(TempRepo):
             self.assertIn(why, str(cm.exception))
         rid = self.fake_run(result="実行中", report=False)
         self.rt.state_path(self.root, rid).parent.mkdir(parents=True, exist_ok=True)
-        self.rt.state_path(self.root, rid).write_text(json.dumps({"start": time.time()}), encoding="utf-8")
+        self.rt.state_path(self.root, rid).write_text(json.dumps({"start": time.time(), "pid": os.getpid()}), encoding="utf-8")
         with self.assertRaises(ValueError):
-            self.rt.check_task(self.root, "C-001")                      # 二重起動しない
+            self.rt.check_task(self.root, "C-001")                      # 二重起動しない（プロセスが生きている）
         self.rt.check_task(self.root, "C-001", child=True)              # 起動した本人は通す
-        self.rt.state_path(self.root, rid).write_text(json.dumps({"start": time.time() - 4 * 3600}), encoding="utf-8")
-        self.assertEqual(self.rt.read_status(self.root, "C-001")["state"], "unknown")
+        dead = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True, text=True)
+        self.rt.state_path(self.root, rid).write_text(json.dumps({"start": time.time() - 60, "pid": int(dead.stdout)}), encoding="utf-8")
+        self.assertEqual(self.rt.read_status(self.root, "C-001")["state"], "unknown")  # プロセスが無い：終了不明として閉じる
+        self.assertEqual(self.rt.work.run_row(self.root, rid)["結果"], "終了不明")
         self.mem("commitment", "set-state", "C-001", "done")
         with self.assertRaises(ValueError):
             self.rt.check_task(self.root, "C-001")

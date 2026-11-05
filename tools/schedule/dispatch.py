@@ -32,8 +32,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 LOCK_STALE_SEC = 2 * 3600
 
 
-def _load_work(root: Path):
-    spec = importlib.util.spec_from_file_location("work_dispatch", root / "tools" / "work.py")
+def _load_work(root: Path, name: str = "work"):
+    spec = importlib.util.spec_from_file_location(f"{name}_dispatch", root / "tools" / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader
     spec.loader.exec_module(mod)
@@ -100,6 +100,8 @@ def main() -> None:
         return
     if not a.force and not work.tick(root):
         return   # 間隔が来ていない
+    # 終了の記録が無いまま実行のプロセスが無くなったもの（PC の再起動など）を閉じて、同時実行の枠を戻す
+    _load_work(root, "run_task").reap(root)
     pd = work.pending(root)
     sd = work.state_dir(root)
     if not a.force and not pd["work"] and not pd["observe"]:
@@ -124,7 +126,8 @@ def main() -> None:
         (root / "memory" / "briefs").mkdir(parents=True, exist_ok=True)
         with open(sd / "dispatch.log", "w", encoding="utf-8") as log:
             log.write(f"[{time.strftime('%Y-%m-%d %H:%M')}] start（未判定の提案 {len(pd['undecided'])}・"
-                      f"未確認の実行 {len(pd['unjudged'])}・観察 {'する' if observe else 'しない'}）\n")
+                      f"未確認の実行 {len(pd['unjudged'])}・起動待ち {len(pd.get('waiting', []))}・"
+                      f"観察 {'する' if observe else 'しない'}）\n")
             log.flush()
             r = subprocess.run(cmd, cwd=root, env=env, stdout=subprocess.PIPE, stderr=log, stdin=subprocess.DEVNULL,
                                text=True, encoding="utf-8", errors="replace")

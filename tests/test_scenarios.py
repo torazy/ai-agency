@@ -314,12 +314,19 @@ class ReapTest(Base):
     def test_stop_by_run_id_and_never_kill_reused_pid(self):
         from unittest import mock
         old = self.running("C-001", start=time.time() - 10 * 86400, pid=os.getpid())              # 孤児（番号は使い回し）
-        self.w.read_task(self.root, "C-001")
         new = self.w.run_start(self.root, "C-001")                                                # やり直しが動いている
-        with mock.patch.object(self.rt.subprocess, "run") as run, mock.patch.object(self.rt.os, "killpg", create=True) as kp:
+        real_run, kills = self.rt.subprocess.run, []
+
+        def run(args, *a, **k):                                                                    # 生死の確認（ps）は本物、taskkill は記録だけ
+            if args and args[0] == "taskkill":
+                kills.append(args)
+                return None
+            return real_run(args, *a, **k)
+        with mock.patch.object(self.rt.subprocess, "run", side_effect=run), \
+                mock.patch.object(self.rt.os, "killpg", create=True) as kp:
             self.assertEqual(self.rt.stop(self.root, old, "孤児を閉じる"), old)
-            run.assert_not_called()                                                                # 使い回された番号は殺さない
-            kp.assert_not_called()
+        self.assertEqual(kills, [])                                                                # 使い回された番号は殺さない
+        kp.assert_not_called()
         self.assertEqual(self.w.run_row(self.root, old)["結果"], "停止")
         self.assertEqual(self.w.run_row(self.root, new)["結果"], "実行中")
         with self.assertRaises(ValueError):

@@ -14,7 +14,7 @@ description: 割り振り役＋確認役（定期の見直しの本体）。変�
 ## 守ること
 
 - 本体（`.ai-agency-template`）では何もしない
-- 上限はプログラムが強制する（`work/settings.md`：同時実行の上限・1日の費用上限・1回の上限）。超えたら起動しないで次回へ
+- 上限はプログラムが強制する（`work/settings.md`：同時実行の上限・1日の費用上限・1回の上限。1回の上限は作業依頼の「上限」があればそれ）。超えたら起動しないで次回へ
 - **自動で着手してよいのは**、`work/settings.md` の「自動で着手」が `委任範囲` で、かつ `memory/delegation.md` の
   「チームの自動運転で任せてよい仕事」に当たるものだけ。それ以外は判定を**要承認**にして人に回す（推奨の担当・期限・理由を添える）
 - 無人では：質問しない。約束を完了にしない（受け入れまで。完了は人）。記憶（人物・案件・決定）を書き換えない。外部へ送信しない
@@ -65,7 +65,9 @@ python tools/work.py decide S-007 ask --reason "部長への催促は人の判�
 
 1. 採用して約束台帳に載せる：`python tools/work.py adopt S-008 --who @pm --content "…" --due … --rel P:… --reason "…"`（出力の C-ID を使う。採用済みの提案なら新しく作らずに既存の C-ID を返すので、やり直しても仕事が2件にならない）
 2. 作業依頼を書く：`python tools/work.py order C-012 --purpose … --deliverable … --done-when … --ops "読み取り・Web 調査・報告の作成"
-   --limit "2.5 USD" --review "qa（部長に出すため）" --escalate "…"`（進め方は independent-review の 1 で決める）
+   --limit "2.5 USD" --review "qa（部長に出すため）" --escalate "…"`（進め方は independent-review の 1 で決める。
+   `--limit` の USD が起動の上限の既定になる（1〜20。書かなければ work/settings.md の1回の上限。環境変数 MAX_BUDGET_USD があればそれが優先）。
+   レビューを変えたら `--limit` も見直す（レビューありは作成・レビュー・直しの3人分）。人がボードで今回だけ別の額にしても作業依頼は変わらない
 3. 参照を登録する：その仕事が依存する情報（`ref add C-012 "memory/…#節" --use 前提|待ち`、前工程は `C-006 --use 後工程`）。
    **ここを書くことで、本文が変わらなくても関連情報の変化で再評価される**
 4. 着手できるなら起動：`python tools/run_task.py C-012`（上限に当たれば次回）

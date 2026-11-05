@@ -277,12 +277,16 @@ def build_command(cid: str, rid: str, budget: float, review: str = "auto") -> li
     exe = shutil.which("claude")
     if not exe:
         raise ValueError("claude コマンドが見つからない（Claude Code の CLI をインストールし PATH を通す）")
-    return [exe, "-p", f"/run-task {cid} --run {rid} --review {review}", "--allowedTools", *allowed_tools(),
+    # 今回の上限は指示にも書く（作業依頼の「上限」は割り振り役の既定。ボードで今回だけ別の額にすることがある）
+    return [exe, "-p", f"/run-task {cid} --run {rid} --review {review} --budget {budget:g}", "--allowedTools", *allowed_tools(),
             "--max-budget-usd", f"{budget:g}", "--no-session-persistence", "--output-format", "json"]
 
 
-def default_budget(root: Path, review: str = "auto") -> float:
-    """1回の上限。環境変数 MAX_BUDGET_USD があればそれ、無ければ settings.md（レビューありは作成・レビュー・直しの3人分）。"""
+def default_budget(root: Path, review: str = "auto", cid: str | None = None) -> float:
+    """1回の上限。タスクが分かれば work.task_budget（環境変数 → 作業依頼の上限 → settings.md）。
+    無ければ環境変数 MAX_BUDGET_USD、settings.md（レビューありは作成・レビュー・直しの3人分）。"""
+    if cid:
+        return work.task_budget(root, cid, review)
     if work.env_run_budget() is not None:
         return work.env_run_budget()   # 範囲（1〜20）に揃える。work.task_budget（起動待ちの見込み）と同じ決め方
     lim = work.limits(root)
@@ -392,7 +396,7 @@ def launch(root: Path, cid: str, budget: float | None = None, review: str | None
         check_review(root, row, review)
     work.ensure_task(root, cid)   # 作業依頼が無ければ台帳から最小のものを作る
     rv = review.lstrip("@") if review is not None else plan_of(root, cid).get("review", "auto")
-    budget = budget if budget is not None else default_budget(root, rv)
+    budget = budget if budget is not None else default_budget(root, rv, cid)
     check_capacity(root, budget)
     exe_ok = build_command(cid, "x", budget)   # claude が無ければここで止める
     del exe_ok
@@ -491,11 +495,11 @@ def main() -> None:
             check_budget(a.budget)
         if a.dry_run:
             check_task(root, a.id)
-            b = a.budget if a.budget is not None else default_budget(root, plan_of(root, a.id).get("review", "auto"))
+            b = a.budget if a.budget is not None else default_budget(root, plan_of(root, a.id).get("review", "auto"), a.id)
             print(" ".join(build_command(a.id, "C-xxx-Rn", b, plan_of(root, a.id).get("review", "auto"))))
             return
         if a.child:
-            sys.exit(run_foreground(root, a.id, a.child, a.budget or default_budget(root)))
+            sys.exit(run_foreground(root, a.id, a.child, a.budget or default_budget(root, cid=a.id)))
         if a.wait:
             info = launch_wait(root, a.id, a.budget, a.review, a.anyway)
             sys.exit(info)
@@ -512,7 +516,7 @@ def launch_wait(root: Path, cid: str, budget: float | None, review: str | None, 
     if review is not None:
         set_plan(root, cid, review, "指定")
     rv = plan_of(root, cid).get("review", "auto")
-    budget = budget if budget is not None else default_budget(root, rv)
+    budget = budget if budget is not None else default_budget(root, rv, cid)
     check_capacity(root, budget)
     build_command(cid, "x", budget)
     del row

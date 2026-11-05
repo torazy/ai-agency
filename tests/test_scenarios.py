@@ -836,5 +836,56 @@ class NoApproveWhileRunningTest(Base):
         self.assertEqual(self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})[0], 200)
 
 
+class OrderLimitIsTheBudgetTest(Base):
+    """R-027：作業依頼の「上限」欄・作業セッションが読む上限・実際の --max-budget-usd・起動待ちの見込みを一つに。"""
+
+    def limit(self, cid="C-001"):
+        return self.order(cid).get("上限", "")
+
+    def test_order_limit_is_the_default_and_the_estimate(self):
+        self.w.order_set(self.root, "C-001", {"目的": "費用比較", "上限": "2.5 USD・30分", "レビュー": "none"})
+        self.assertEqual(self.w.task_budget(self.root, "C-001"), 2.5)                            # レビューなしでも依頼の指定が勝つ
+        self.assertEqual(self.rt.default_budget(self.root, "none", "C-001"), 2.5)
+        self.assertEqual([x["budget"] for x in self.w.launch_waiting(self.root)], [2.5])
+        self.w.order_set(self.root, "C-001", {"上限": "50 USD"})
+        self.assertEqual(self.w.task_budget(self.root, "C-001"), 20.0)                           # 範囲に揃える
+        self.w.order_set(self.root, "C-001", {"上限": "30分"})
+        self.assertEqual(self.w.task_budget(self.root, "C-001"), 1.0)                            # USD が無ければ設定（none）
+
+    def test_one_off_budget_does_not_become_the_default(self):
+        self.w.order_set(self.root, "C-001", {"目的": "費用比較", "上限": "2.5 USD・30分"})
+        self.rt.start_run(self.root, "C-001", 8.0)                                               # ボードで今回だけ 8
+        self.assertEqual(self.limit(), "2.5 USD・30分")                                          # 作業依頼（割り振り役の指定）は変えない
+        self.assertEqual(self.w.task_budget(self.root, "C-001"), 2.5)                            # 次の無人の起動・見込みは 2.5
+
+    def test_review_change_follows_settings_when_no_limit(self):
+        self.w.order_set(self.root, "C-001", {"目的": "費用比較", "レビュー": "none"})
+        rid = self.rt.start_run(self.root, "C-001", 1.0)
+        self.w.run_end(self.root, rid, "完了", 0.6)
+        self.w.order_set(self.root, "C-001", {"レビュー": "qa（部長に出すため）"})
+        self.assertEqual(self.w.task_budget(self.root, "C-001"), 2.5)                            # 3人分の既定に戻る
+
+    def test_how_limits_are_written(self):
+        for v, want in (("$3", 3.0), ("USD 3", 3.0), ("3ドル", 3.0), ("5", 5.0), ("2.5 USD・30分", 2.5),
+                        ("30分", None), ("既定（work/settings.md）", None), ("", None)):
+            self.w.order_set(self.root, "C-001", {"上限": v or "なし"})
+            self.assertEqual((v, self.w.order_budget(self.root, "C-001")), (v, want))
+
+    def test_the_run_is_told_its_budget(self):
+        self.rt.shutil.which = lambda name: "claude"
+        self.assertIn("--budget 8", self.rt.build_command("C-001", "C-001-R1", 8.0, "none")[2])
+
+    def test_env_still_wins_and_board_gets_the_numbers(self):
+        self.w.order_set(self.root, "C-001", {"目的": "費用比較", "上限": "3 USD"})
+        b = next(r for r in self.srv.api_commitments(self.root)["rows"] if r["ID"] == "C-001")["budget"]
+        self.assertEqual(b, {"order": 3.0, "env": None, "none": 1.0, "review": 2.5})
+        os.environ["MAX_BUDGET_USD"] = "2"
+        try:
+            self.assertEqual(self.w.task_budget(self.root, "C-001"), 2.0)
+            self.assertEqual(self.rt.default_budget(self.root, "auto", "C-001"), 2.0)
+        finally:
+            del os.environ["MAX_BUDGET_USD"]
+
+
 if __name__ == "__main__":
     unittest.main()

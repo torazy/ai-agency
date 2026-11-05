@@ -4,7 +4,7 @@ description: 作業役。割り振られたタスク（約束台帳の出した�
 
 # /run-task ── 作業役（独立した作業セッション）
 
-ユーザー入力：`/run-task C-007 --run C-007-R2 --review auto|none|{handle}`（通常は `tools/run_task.py` が無人の新しいセッションで起動する）
+ユーザー入力：`/run-task C-007 --run C-007-R2 --review auto|none|{handle} --budget 2.5`（通常は `tools/run_task.py` が無人の新しいセッションで起動する）
 
 入力（引数）: $ARGUMENTS
 
@@ -26,7 +26,7 @@ description: 作業役。割り振られたタスク（約束台帳の出した�
 
 ## 手順
 
-1. **作業依頼を読む**：`python tools/work.py show C-007`（目的・成果物・完了条件・実行してよい操作・期限・上限・レビュー・
+1. **作業依頼を読む**：`python tools/work.py show C-007`（目的・成果物・完了条件・実行してよい操作・期限・上限（割り振り役の既定。**今回の上限は引数の --budget**）・レビュー・
    報告先・行き詰まったら／参照と評価した版／途中の変更／前回までの実行と引き継ぎ）。前回の報告があれば
    `memory/work/results/` の直前の実行IDを読み、差し戻しの理由や引き継ぎを**続きとして**扱う（一からやり直さない）
 2. **座標を集める**：参照の場所と、目的の固有名詞を `python tools/recall.py decode "…"`／`find`／`who` で引き、

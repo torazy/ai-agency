@@ -520,9 +520,16 @@ function agentBadge(r){const tr=r.task_run||{};return r.agent_state==="running"?
 function reviewOptions(r){const me=String(r.who).replace(/^@/,"");
   return [["auto","秘書が難易度で判断"],["none","レビューなし"],...(S.agents.agents||[]).filter(a=>a.handle!=="chief"&&a.handle!==me).map(a=>[a.handle,`@${a.handle} がレビュー`])];}
 function planLabel(p){const v=(p||{}).review;return !v||v==="auto"?"レビュー：秘書が判断":v==="none"?"レビューなし":`レビュー：@${v}`;}
-async function runTask(r){const o=await dialog({title:`${r.ID} を ${r.who} に着手させる`,icon:"sparkles",submit:"着手させる",
-    fields:[{label:"レビュー（作った本人とは別のエージェントが見る）",name:"review",type:"select",value:(r.plan||{}).review||"auto",options:reviewOptions(r)},
-            {label:"1回の上限（USD）。レビューありは作成・レビュー・直しの3人分で 2.5 が目安。記憶や外部サービスは変えない",name:"budget",type:"number",value:((r.plan||{}).review==="none"?"1":"2.5"),step:"0.1",min:"1",max:"20",required:true}]});
+function budgetFor(r,review){const b=r.budget||{};return b.env!=null?b.env:b.order!=null?b.order:review==="none"?(b.none??1):(b.review??2.5);}
+async function runTask(r){r=((S.commitments||{}).rows||[]).find(x=>x.ID===r.ID)||r;   // 開いた時点の最新の行（古い行の既定を使わない）
+  const rv=(r.plan||{}).review||"auto";const b=r.budget||{};
+  const p=dialog({title:`${r.ID} を ${r.who} に着手させる`,icon:"sparkles",submit:"着手させる",
+    fields:[{label:"レビュー（作った本人とは別のエージェントが見る）",name:"review",type:"select",value:rv,options:reviewOptions(r)},
+            {label:`1回の上限（USD・1〜20）。${b.env!=null?`環境変数 MAX_BUDGET_USD ${b.env} が優先。`:""}${b.order!=null?`作業依頼の上限 ${b.order}。`:""}設定：レビューなし ${b.none??1}・あり ${b.review??2.5}（作成・レビュー・直しの3人分）。今回だけの額にしてよい（作業依頼は変えない）。記憶や外部サービスは変えない`,name:"budget",type:"number",value:String(budgetFor(r,rv)),step:"0.1",min:"1",max:"20",required:true}]});
+  const dl=$("#dlg"),sel=$("select[name=review]",dl),inp=$("input[name=budget]",dl);let touched=false;
+  inp.addEventListener("input",()=>touched=true);
+  sel.addEventListener("change",()=>{if(!touched&&b.order==null&&b.env==null)inp.value=String(budgetFor(r,sel.value));});
+  const o=await p;
   if(!o)return;const body={id:r.ID,budget:String(o.budget),review:o.review};
   const j=await api("/api/task/run",body);
   if(!j.ok&&/着手条件/.test(j.error||"")&&await dialog({title:`${r.ID} の着手条件がそろっていない`,icon:"alert",submit:"それでも着手させる",

@@ -992,12 +992,37 @@ def launch_waiting(root: Path) -> list[dict]:
     return out
 
 
-def task_budget(root: Path, cid: str) -> float:
-    """そのタスクを起動するときの1回の上限（run_task.default_budget と同じ決め方：レビューなしは run_usd、それ以外は run_usd_review）。"""
+# 作業依頼の「上限」欄の USD：「2.5 USD」「2.5ドル」「$2.5」「USD 2.5」、または数だけ（「2.5」）。「30分」「合計10件」などは読まない
+USD_RE = re.compile(r"(?:\$|USD\s*)(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:USD|ドル|\$)", re.I)
+NUM_ONLY_RE = re.compile(r"\s*(\d+(?:\.\d+)?)\s*")
+
+
+def order_budget(root: Path, cid: str) -> float | None:
+    """作業依頼の「上限」欄の USD（範囲 1〜20 に揃える）。書いていない・読めない（「既定（work/settings.md）」など）なら None。
+    この欄は割り振り役・人が書いた値だけ（起動した額は書き戻さない。今回の額は実行の記録と作業セッションへの指示で渡す）。"""
+    if not task_path(root, cid).exists():
+        return None
+    v = read_task(root, cid).get("order", {}).get("上限", "")
+    m = USD_RE.search(v) or NUM_ONLY_RE.fullmatch(v)
+    if not m:
+        return None
+    n = float(next(g for g in m.groups() if g))
+    return clamp_run_budget(n) if math.isfinite(n) else None
+
+
+def task_budget(root: Path, cid: str, review: str | None = None) -> float:
+    """そのタスクを起動するときの1回の上限の既定。起動（run_task.default_budget）と起動待ちの見込み（launch_waiting）は必ずこれで決める。
+    環境変数 MAX_BUDGET_USD → 作業依頼の「上限」→ settings.md（レビューなしは run_usd、それ以外は run_usd_review）。
+    作業依頼の上限を読まないと、割り振り役が書いた上限と実際の上限が別々になる（R-024 の独立レビュー）。
+    起動した額を作業依頼へ書き戻すと「今回だけの額」が次の既定・見込みに残る（R-027 の独立レビュー）ので、書き戻さない。"""
     if env_run_budget() is not None:
         return env_run_budget()
+    ob = order_budget(root, cid)
+    if ob is not None:
+        return ob
     lim = limits(root)
-    review = read_task(root, cid).get("order", {}).get("レビュー", "").strip()
+    if review is None:
+        review = read_task(root, cid).get("order", {}).get("レビュー", "").strip() if task_path(root, cid).exists() else ""
     return lim["run_usd"] if review.startswith("none") else lim["run_usd_review"]
 
 

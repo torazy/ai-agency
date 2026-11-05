@@ -196,7 +196,7 @@ class RunTaskTest(TempRepo):
         self.assertNotIn("Bash", tools)
         self.assertNotIn("PowerShell", tools)
         cmd = self.rt.build_command("C-001", "C-001-R2", 1, "qa")
-        self.assertEqual(cmd[2], "/run-task C-001 --run C-001-R2 --review qa")
+        self.assertEqual(cmd[2], "/run-task C-001 --run C-001-R2 --review qa --budget 1")
 
     def test_capacity_limits(self):
         p = self.root / "memory/work/settings.md"

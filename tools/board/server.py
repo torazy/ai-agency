@@ -362,6 +362,10 @@ def api_commitments(root: Path) -> dict:
         d["task_run"] = task
         d["has_result"] = bool(task.get("has_result"))
         d["plan"] = task.get("plan") or {}
+        if d["assignee"] == "agent":
+            lim = work.limits(root)
+            d["budget"] = {"order": work.order_budget(root, r.get("ID", "")), "env": work.env_run_budget(),
+                           "none": lim["run_usd"], "review": lim["run_usd_review"]}
         d["review"] = review_of(text(run_task.results_dir(root) / f"{task.get('run')}.md")) if d["has_result"] else {}
         d["changes"] = sorted({c["kind"] for c in changes_all if c["task"] == r.get("ID")})
         open_ = r.get("状態") not in mem.CLOSED

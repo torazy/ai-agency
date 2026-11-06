@@ -5,6 +5,7 @@
 
 import json
 import os
+import threading
 import time
 import unittest
 
@@ -1171,6 +1172,119 @@ class NeedsTest(Base):
         mine = next(r["ID"] for r in self.w.mem.commitment_rows(self.root) if r.get("タスク") == "自分の作業")
         with self.assertRaisesRegex(self.w.mem.MemError, "エージェントに任せた仕事ではない"):
             self.need(mine)
+
+
+class CompleteUnderOneLockTest(Base):
+    """承認・状態ボタンで完了にするとき、確かめてから done を書くまでに別の書き込み（不足の追加・起動・判定）が
+    割り込めない（R-020 から残っていたロックの幅）。割り込む側を別スレッド（別の写しのモジュール＝別プロセスと同じく
+    ファイルのロックだけで待つ）で、確かめた直後に走らせる。"""
+
+    def interleave(self, during, target="open_needs", nth=1):
+        """ボード側の検査関数 target が nth 回目に呼ばれた瞬間（承認の検査の途中）に、別スレッドで during() を走らせる。"""
+        box, real, calls = {}, getattr(self.srv.work, target), []
+
+        def run():
+            try:
+                box["result"] = during()
+            except Exception as e:   # 別の写しの MemError も受ける
+                box["error"] = str(e)
+
+        def hooked(*a, **kw):
+            calls.append(1)
+            if len(calls) == nth:
+                box["thread"] = threading.Thread(target=run)
+                box["thread"].start()
+                box["thread"].join(0.5)   # ロックが無ければこの間に書き終わる
+            return real(*a, **kw)
+
+        setattr(self.srv.work, target, hooked)
+        return box
+
+    def approved_ready(self):
+        rid = self.finished_run()
+        self.w.accept(self.root, rid, "accept", "OK")
+        return rid
+
+    def test_need_added_during_approve_waits_and_is_refused(self):
+        self.approved_ready()
+        # 最後の検査（古い条件か：read_status で1回、承認の検査で2回目）を通ったあと、done を書く前に不足が足される並び
+        box = self.interleave(lambda: self.w.need(self.root, "C-001", "自分", "予算の上限", d(3), "比較", "", ""),
+                              target="stale_refs", nth=2)
+        code, res = self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})
+        box["thread"].join(30)
+        state = next(r["状態"] for r in self.w.mem.commitment_rows(self.root) if r["ID"] == "C-001")
+        opened = self.w.open_needs(self.root, "C-001")
+        self.assertEqual((code, state), (200, "done"), res)
+        self.assertEqual(opened, [])                          # 完了したタスクに開いた不足が残らない
+        self.assertIn("既に done", box.get("error", ""))       # 割り込んだ側は、完了を見てから断られる
+
+    def test_launch_during_approve_is_refused_after_done(self):
+        self.approved_ready()
+        self.rt.check_task(self.root, "C-001")               # 起動前の検査（ロックの外）は通った
+        box = self.interleave(lambda: self.w.start_run_within_limits(self.root, "C-001", 1.0))
+        code, res = self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})
+        box["thread"].join(30)
+        self.assertEqual(code, 200, res)
+        self.assertIn("既に done", box.get("error", ""))
+        self.assertEqual([r["結果"] for r in self.w.read_task(self.root, "C-001")["runs"]], ["完了"])   # 完了したタスクに実行が足されない
+
+    def test_check_then_close_then_record_does_not_start(self):
+        self.rt.check_task(self.root, "C-001")               # 起動の検査のあと
+        self.assertEqual(self.srv.do_post(self.root, "/api/commitment/state", {"id": "C-001", "state": "done"})[0], 200)
+        with self.assertRaisesRegex(self.w.mem.MemError, "既に done"):
+            self.w.start_run_within_limits(self.root, "C-001", 1.0)   # 記録の直前に確かめ直す
+
+    def state(self, cid="C-001"):
+        return next(r["状態"] for r in self.w.mem.commitment_rows(self.root) if r["ID"] == cid)
+
+    def test_drop_on_one_screen_then_done_on_another_is_refused(self):
+        # 独立レビュー R-035：取り下げたあと、古い表示の画面で承認・状態ボタン → done に上書きしない
+        self.approved_ready()
+        self.assertEqual(self.srv.do_post(self.root, "/api/commitment/state", {"id": "C-001", "state": "dropped"})[0], 200)
+        for path, body in (("/api/task/approve", {"id": "C-001"}), ("/api/commitment/state", {"id": "C-001", "state": "done"})):
+            code, res = self.srv.do_post(self.root, path, body)
+            self.assertEqual((code, self.state()), (400, "dropped"), res)
+            self.assertIn("取り下げ済み", res["error"])
+
+    def test_second_approve_after_done_changes_nothing(self):
+        # 独立レビュー R-035：done のあとに途中の変更が足されてから承認の再送 → 完了済みの判定を書き換えない
+        rid = self.approved_ready()
+        self.assertEqual(self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})[0], 200)
+        self.w.note(self.root, "C-001", "部長：対象を5社に")
+        code, res = self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})
+        self.assertEqual((code, self.state()), (200, "done"), res)
+        self.assertTrue(self.w.run_row(self.root, rid)["判定"].startswith("受け入れ"))
+
+    def test_run_started_after_status_read_says_running(self):
+        # 独立レビュー R-035：承認の read_status（ロックの外）のあとに起動が入る → 「報告が無い」でなく「実行中」
+        self.approved_ready()
+        real = self.srv.run_task.read_status
+
+        def hooked(root, cid):
+            st = real(root, cid)
+            self.rt.start_run(self.root, "C-001", 1.0)
+            return st
+
+        self.srv.run_task.read_status = hooked
+        code, res = self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})
+        self.assertEqual((code, self.state()), (400, "open"), res)
+        self.assertIn("実行中", res["error"])
+
+    def test_cli_suggests_force_only_for_the_gate(self):
+        # 独立レビュー R-035：見つからない・取り下げ済みには --force を案内しない（外しても直らない）
+        out = self.mem("commitment", "set-state", "C-099", "done", check=False)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertNotIn("--force", out.stdout + out.stderr)
+
+    def test_state_button_and_cli_use_the_same_gate(self):
+        self.approved_ready()
+        self.w.need(self.root, "C-001", "自分", "予算の上限", d(3), "比較", "", "")
+        code, res = self.srv.do_post(self.root, "/api/commitment/state", {"id": "C-001", "state": "done"})
+        self.assertEqual(code, 400)
+        self.assertIn("不足", res["error"])
+        out = self.mem("commitment", "set-state", "C-001", "done", check=False)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("--force", out.stdout + out.stderr)
 
 
 if __name__ == "__main__":

@@ -593,6 +593,56 @@ def done_blocker(root: Path, cid: str) -> str:
     return f"{rid} は古い条件で作られた（{', '.join(stale)}）。新しい条件でやり直す" if stale else ""
 
 
+class DoneBlocked(MemError):
+    """完了の検査（不足・実行中・条件待ち・古い条件）で止めた。人が影響なしと判断したら外せる（CLI の --force）。"""
+
+
+@locked
+def complete_task(root: Path, cid: str, approve: bool = False) -> str:
+    """任せたタスクを完了にする（ボードの承認・状態ボタン・かんばん・CLI の set-state done の共通の入口）。
+    確かめてから done を書くまでを1つのロックの中で行う。間に不足の追加・新しい実行の起動・判定の書き換え・
+    途中の変更が入っても、それを見てから決める（承認の検査がロックの外だった R-020 からの残り）。
+    approve：人の承認。最新の実行の報告が要り、受け入れでなければ受け入れに書き換える（古い条件なら「古い条件」を残して断る）。
+    すでに done なら何も書かずに成功（画面の再送・二重押し）。取り下げ（dropped）は完了に上書きしない（別の画面で取り下げたあと）。
+    検査で止めたときは DoneBlocked（CLI はこのときだけ --force を案内する）。"""
+    state = next((r.get("状態", "") for r in mem.commitment_rows(root) if r.get("ID") == cid), None)
+    if state is None:
+        fail(f"{cid} が見つからない")
+    if state == "done":
+        return f"{cid} はもう done（変更なし）"
+    if state in mem.CLOSED:
+        fail(f"{cid} は {state}（取り下げ済み）。完了にするなら、先に open に戻してから")
+    if not approve:
+        why = done_blocker(root, cid)
+        if why:
+            raise DoneBlocked(why)
+    else:
+        t = read_task(root, cid) if task_path(root, cid).exists() else {}
+        runs = t.get("runs", [])
+        rid = runs[-1].get("実行ID", "") if runs else ""
+        if runs and runs[-1].get("結果") == "実行中":   # 報告の有無より先に（承認の画面には前の報告が見えている）
+            raise DoneBlocked(f"{rid} がまだ実行中（報告は書きかけかもしれない）。終わってから承認する")
+        if not rid or not RUN_RE.fullmatch(rid) or not (results_dir(root) / f"{rid}.md").exists():
+            fail("報告が無い")
+        opened = open_needs(root, cid, t)
+        if opened:   # 不足が残ったまま完了にしない（そろっても再開されなくなる）
+            raise DoneBlocked(f"{cid} は不足がそろっていない（{', '.join(n['id'] for n in opened)}）。そろってからやり直す")
+        verdict = runs[-1].get("判定", "")
+        if verdict.startswith("条件待ち"):
+            raise DoneBlocked(f"{rid} は不足があって途中までの成果（条件待ち）。やり直させる")
+        # 確認役の受け入れは「確認した時点で妥当」。人が承認するまでに条件が変わることがあるので、毎回確かめる（外部レビュー #4）
+        stale = stale_refs(root, rid)
+        if stale:
+            accept(root, rid, "accept", "人が承認しようとした")   # 判定を「古い条件」に書き換えて残す（このあと断る）
+            raise DoneBlocked(f"{rid} は古い条件で作られた（{', '.join(stale)}）。新しい条件でやり直す（やり直させる）")
+        if not verdict.startswith("受け入れ"):
+            label = accept(root, rid, "accept", "人が承認")
+            if label != "受け入れ":
+                raise DoneBlocked(f"{rid} は{label}で作られた。新しい条件でやり直す（やり直させる）")
+    mem.commitment_set_state(root, cid, "done")
+    return f"{cid} を done に" + ("（承認）" if approve else "")
+
+
 def stale_refs(root: Path, rid: str) -> list[str]:
     """その実行が使った版のうち、今は変わっているもの（古い条件で作られた成果）：前提の参照・作業依頼・
     報告を書いたあとに足された途中の変更（［記録］は除く）。版を残していない古い記録は、その項目を比べない。"""
@@ -709,7 +759,13 @@ def committed_today(root: Path) -> float:
 @locked
 def start_run_within_limits(root: Path, cid: str, budget: float, anyway: bool = False) -> str:
     """同時実行の上限・1日の費用上限（予約を含む）・同じタスクの二重起動・着手条件を確かめ、通れば実行を記録して予約する。
-    確かめてから記録するまでを1つのロックの中で行う（同時に2つ起動されても両方は通らない。確かめたあとに不足が足されても通らない）。"""
+    確かめてから記録するまでを1つのロックの中で行う（同時に2つ起動されても両方は通らない。確かめたあとに不足が足されても通らない）。
+    約束の状態もここで確かめ直す（起動前の検査のあと、記録までの間に承認・取り下げで閉じられたら起動しない）。"""
+    state = next((r.get("状態", "") for r in mem.commitment_rows(root) if r.get("ID") == cid), None)
+    if state is None:
+        fail(f"{cid} が約束台帳に無い")
+    if state in mem.CLOSED:
+        fail(f"{cid} は既に {state}（起動しない）")
     if not anyway:
         unmet = unmet_conditions(root, cid)
         if unmet:

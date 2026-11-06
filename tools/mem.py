@@ -482,15 +482,19 @@ def commitment_set_state(root: Path, cid: str, state: str) -> None:
 
 def commitment_set_state_checked(root: Path, cid: str, state: str, force: bool = False) -> None:
     """CLI の set-state。任せたタスクを done にするとき、最新の報告が今の条件で古ければ止める
-    （ボードの承認・状態ボタンと同じ検査。work.py を読み込むのはロックの外。人が影響なしと判断したら --force）。"""
+    （ボードの承認・状態ボタンと同じ検査と書き込み＝work.complete_task。人が影響なしと判断したら --force）。"""
     if state == "done" and not force:
         spec = importlib.util.spec_from_file_location("work_for_mem", Path(__file__).resolve().parent / "work.py")
         w = importlib.util.module_from_spec(spec)
         assert spec.loader
         spec.loader.exec_module(w)
-        why = w.done_blocker(root, cid)
-        if why:
-            fail(why + "。人が影響なしと判断したなら --force")
+        try:
+            w.complete_task(root, cid)   # 確かめてから書くまでを1つのロックで（work 側のロック。ここではロックを持たない）
+        except w.DoneBlocked as e:   # 検査で止めたときだけ --force を案内する（見つからない・ロック中は外しても同じ）
+            fail(str(e) + "。人が影響なしと判断したなら --force")
+        except w.MemError as e:
+            fail(str(e))
+        return
     commitment_set_state(root, cid, state)
 
 

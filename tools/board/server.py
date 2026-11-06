@@ -634,15 +634,17 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
                            follow=g("follow"), rel=g("rel"), state=g("state"))
             res = run_mem(mem.commitment_add, root, ns)
         elif path == "/api/commitment/state":
-            # 状態ボタン・かんばんで done にする経路も、任せたタスクの報告が古くないかを承認と同じく確かめる
             if g("state") == "done":
+                # 状態ボタン・かんばんで done にする経路も、任せたタスクの報告が古くないかを承認と同じく確かめる。
+                # 確かめてから書くまでを1つのロックで（work.complete_task）
                 try:
-                    why = work.done_blocker(root, g("id", ""))
+                    msg = work.complete_task(root, g("id", ""))
                 except work.MemError as e:
-                    return 400, {"ok": False, "error": str(e)}
-                if why:
+                    why = str(e)
                     return 400, {"ok": False, "error": why + ("（やり直させる）" if "古い条件" in why else "")}
-            res = run_mem(mem.commitment_set_state, root, g("id", ""), g("state", ""))
+                res = {"ok": True, "message": msg}
+            else:
+                res = run_mem(mem.commitment_set_state, root, g("id", ""), g("state", ""))
         elif path == "/api/commitment/due":
             res = run_mem(mem.commitment_set_due, root, g("id", ""), g("due", ""))
         elif path == "/api/commitment/follow":
@@ -663,30 +665,14 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
                 return 400, {"ok": False, "error": str(e)}
             res = {"ok": True, "message": f"{rid} を止めた"}
         elif path == "/api/task/approve":
-            # 人の承認：最新の実行を受け入れ（古い条件なら断る）、約束を完了に
-            st = run_task.read_status(root, g("id", ""))
-            if not st.get("has_result"):
-                return 400, {"ok": False, "error": "報告が無い"}
-            if st.get("state") == "running":
-                return 400, {"ok": False, "error": f"{st['run']} がまだ実行中（報告は書きかけかもしれない）。終わってから承認する"}
-            opened = work.open_needs(root, g("id", ""))
-            if opened:   # 不足が残ったまま完了にしない（そろっても再開されなくなる）
-                return 400, {"ok": False, "error": f"{g('id')} は不足がそろっていない（{', '.join(n['id'] for n in opened)}）。そろってからやり直す"}
-            if st.get("verdict", "").startswith("条件待ち"):
-                return 400, {"ok": False, "error": f"{st['run']} は不足があって途中までの成果（条件待ち）。やり直させる"}
+            # 人の承認：最新の実行を受け入れ（古い条件なら断る）、約束を完了に。
+            # read_status は終わったプロセスの後始末（終了不明で閉じる）のため。判定はロックの中で読み直す（work.complete_task）
+            run_task.read_status(root, g("id", ""))
             try:
-                # 確認役の受け入れは「確認した時点で妥当」。人が承認するまでに条件が変わることがあるので、毎回確かめる（外部レビュー #4）
-                stale = work.stale_refs(root, st["run"])
-                if stale:
-                    work.accept(root, st["run"], "accept", "人が承認しようとした")   # 判定を「古い条件」に書き換えて残す
-                    return 400, {"ok": False, "error": f"{st['run']} は古い条件で作られた（{', '.join(stale)}）。新しい条件でやり直す（やり直させる）"}
-                if not st.get("verdict", "").startswith("受け入れ"):
-                    label = work.accept(root, st["run"], "accept", "人が承認")
-                    if label != "受け入れ":
-                        return 400, {"ok": False, "error": f"{st['run']} は{label}で作られた。新しい条件でやり直す（やり直させる）"}
+                msg = work.complete_task(root, g("id", ""), approve=True)
             except work.MemError as e:
                 return 400, {"ok": False, "error": str(e)}
-            res = run_mem(mem.commitment_set_state, root, g("id", ""), "done")
+            res = {"ok": True, "message": msg}
         elif path == "/api/proposal/decide":
             res = run_mem(work.decide, root, g("sid", ""), g("decision", ""), g("task", ""), g("reason", ""))
         elif path == "/api/proposal/adopt":

@@ -1498,8 +1498,9 @@ class HumanNeedsTest(Base):
         nid, _ = self.need()
         self.w.run_end(self.root, rid, "完了", 0.5)
         self.report(rid, minutes_ago=0)
-        self.w.answer(self.root, nid, "月 300万円まで")                     # 報告と同じ秒（か後）
-        os.utime(self.root / f"memory/work/results/{rid}.md", None)
+        self.w.answer(self.root, nid, "月 300万円まで")
+        at = self.w._ts(self.w.last_answer(self.root, nid)["日時"]) + 0.5      # 報告は答えと同じ秒（記録は秒で切り捨て）
+        os.utime(self.root / f"memory/work/results/{rid}.md", (at, at))
         self.assertTrue(any(s.startswith(f"不足 {nid}") for s in self.w.stale_refs(self.root, rid)))
 
     def test_fields_and_body_cannot_forge_sent_or_answers(self):

@@ -1587,6 +1587,22 @@ class HumanNeedsTest(Base):
         self.run_py("tools/work.py", "draft", pid, "--body", "上書き", env=env, check=True)
         self.assertEqual(self.w.read_need_rec(self.root, pid)["drafts"][-1]["body"], "人が直した")
 
+    def test_answer_after_defer_brings_the_task_back(self):
+        nid, _ = self.need()
+        rid = self.w.start_run_within_limits(self.root, "C-001", 1.0, anyway=True)
+        self.w.run_end(self.root, rid, "完了", 0.5)
+        self.report(rid)
+        self.w.accept(self.root, rid, "wait", "予算が無い")
+        self.w.defer(self.root, "C-001", "予算の答え待ち")
+        p = self.root / "memory/work/tasks/C-001.md"            # 見送りを2分前に書いたことにする（分単位の記録）
+        old = time.strftime("%Y-%m-%d %H:%M", time.localtime(time.time() - 120))
+        lines = p.read_text(encoding="utf-8").splitlines()
+        lines = [l.replace(time.strftime("%Y-%m-%d %H:%M"), old) if "見送り" in l else l for l in lines]
+        p.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
+        self.assertNotIn("C-001", self.waiting())
+        self.w.answer(self.root, nid, "月 300万円まで")
+        self.assertIn("C-001", self.waiting())                  # 答えは作業記録に写らないが、見送りのあとの答えで戻る
+
 
 class UnattendedSendGuardTest(TempRepo):
     """無人のとき、コネクタの相手に届く操作を断る（設計 §10 v2・独立レビュー R-037 の M5）。人の会話では断らない。"""

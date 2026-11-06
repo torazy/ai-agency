@@ -1118,6 +1118,21 @@ def unmet_conditions(root: Path, cid: str, t: dict | None = None) -> list[str]:
     return out
 
 
+def _answered_since(root: Path, t: dict, when: str) -> bool:
+    """when（「YYYY-MM-DD HH:MM」）のあとに、この仕事の人・相手の不足に答えた（または無しで進めると決めた）か。"""
+    since = _ts(when)
+    if since is None:
+        return False
+    for x in t.get("refs", []):
+        if x.get("使い方") != "不足" or not _met(version_of(root, x.get("場所", ""), "不足")):
+            continue
+        ans = last_answer(root, x.get("場所", ""))
+        at = _ts((ans or {}).get("日時", ""))
+        if at is not None and at >= since + 60:   # 見送りの記録は分単位：同じ分の答えは見送りの前とみなす
+            return True
+    return False
+
+
 def _needs_met_since(root: Path, t: dict, run: dict) -> list[str]:
     """その実行のときは満たしていなかった不足のうち、今は満たしているもの。"""
     used = _parse_snapshot(run.get("使った版", ""))
@@ -1609,8 +1624,8 @@ def launch_waiting(root: Path) -> list[dict]:
         t = read_task(root, p.stem)
         if unmet_conditions(root, p.stem, t):   # 着手条件がそろうまでは変化の提案で動く
             continue
-        if t["notes"] and t["notes"][-1][17:].startswith(DEFER_MARK):
-            continue
+        if t["notes"] and t["notes"][-1][17:].startswith(DEFER_MARK) and not _answered_since(root, t, t["notes"][-1][:16]):
+            continue   # 見送り：新しい途中の変更か、見送りのあとの不足の答えで戻る（答えは作業記録に写らないので時刻で見る・R-038）
         runs = t["runs"]
         if not runs:
             why = "作業依頼はあるが、まだ起動していない"

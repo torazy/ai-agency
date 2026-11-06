@@ -871,7 +871,7 @@ def main(argv=None) -> None:
             s.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
-    ap = argparse.ArgumentParser(prog="recall.py", description="memory/ を探す・読む・点検する（読み取り専用）")
+    ap = argparse.ArgumentParser(prog="recall.py", description="memory/ を探す・読む・点検する（読み取り専用）", allow_abbrev=False)
     ap.add_argument("--root", type=Path, default=None)
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("find", help="語で探す（人物・案件の別名を展開、節単位、上限付き）")
@@ -894,6 +894,9 @@ def main(argv=None) -> None:
     s.add_argument("--all", action="store_true", help="区分ごとの上限（5件）を外す")
     a = ap.parse_args(argv)
     root = (a.root or Path(__file__).resolve().parent.parent).resolve()
+    if os.environ.get("AI_AGENCY_UNATTENDED") and os.path.normcase(str(root)) != os.path.normcase(str(Path(__file__).resolve().parent.parent)):
+        print(f"❌ 無人実行では別の場所（--root {root}）を扱わない", file=sys.stderr)
+        sys.exit(1)
     if not (root / "memory").is_dir():
         sys.exit(f"{root} に memory/ が無い（--root を確認）")
     code = {"find": do_find, "who": do_who, "map": do_map, "show": do_show, "review": do_review,

@@ -1213,6 +1213,11 @@ def default_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def same_path(a: Path, b: Path) -> bool:
+    """同じ場所か（解決したパスを、Windows の大文字・小文字と区切りを揃えて比べる）。"""
+    return os.path.normcase(str(Path(a).resolve())) == os.path.normcase(str(Path(b).resolve()))
+
+
 def main(argv: list[str] | None = None) -> None:
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -1220,7 +1225,7 @@ def main(argv: list[str] | None = None) -> None:
         except (AttributeError, ValueError):
             pass
 
-    ap = argparse.ArgumentParser(prog="mem.py", description="memory/ への決定的な追記 CLI")
+    ap = argparse.ArgumentParser(prog="mem.py", description="memory/ への決定的な追記 CLI", allow_abbrev=False)
     ap.add_argument("--root", type=Path, default=None, help="リポジトリルート（既定: tools/ の親）")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -1284,6 +1289,10 @@ def main(argv: list[str] | None = None) -> None:
 
     a = ap.parse_args(argv)
     root = (a.root or default_root()).resolve()
+    if os.environ.get("AI_AGENCY_UNATTENDED") and not same_path(root, default_root()):
+        # 無人の実行は自分のインスタンスの記録だけ（--ro などの省略形・フックの見落としでも別の場所を書かない）
+        print(f"❌ 無人実行では別の場所（--root {root}）の記録を扱わない", file=sys.stderr)
+        sys.exit(1)
     try:
         dispatch(root, a)
     except MemError as e:

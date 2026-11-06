@@ -2091,3 +2091,306 @@ class UnattendedWriteGuardTest(TempRepo):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewAfterAnswerTest(Base):
+    """外部レビュー 69fab61 の 1：判定のあと（人へ確認・受け入れ）に人の回答・指示が入ったら、割り振り役を起こす理由にする。"""
+
+    def waiting(self):
+        return {w["task"]: w["why"] for w in self.w.launch_waiting(self.root)}
+
+    def answered_after(self, verdict):
+        rid = self.finished_run()
+        self.w.accept(self.root, rid, verdict)
+        self.assertEqual(self.waiting(), {})                                                      # 判定しただけでは起こさない
+        self.w.note(self.root, "C-001", "上限は100万円。それに合わせて修正して進めて")              # 人の回答（成果物を変える）
+        self.assertIn(rid, self.waiting().get("C-001", ""))
+        pd = self.w.pending(self.root)
+        self.assertEqual((pd["waiting"], pd["work"]), (["C-001"], True))                         # 割り振り役を起こす
+        self.w.defer(self.root, "C-001", "部長の判断待ち")                                          # 割り振り役が今は起動しないと決めた
+        self.assertEqual(self.waiting(), {})
+        self.w.note(self.root, "C-001", "部長：進めてよい")
+        self.assertIn("C-001", self.waiting())
+        self.w.run_start(self.root, "C-001")                                                       # 起動したら外れる
+        self.assertEqual(self.waiting(), {})
+
+    def test_answer_after_ask_wakes_the_dispatcher(self):
+        self.answered_after("ask")
+
+    def test_instruction_after_accept_wakes_the_dispatcher(self):
+        self.answered_after("accept")
+
+    def test_info_answer_and_notes_read_before_the_report_do_not_wake(self):
+        rid = self.w.run_start(self.root, "C-001")
+        self.w.note(self.root, "C-001", "途中で足した指示")                                       # 報告の前：作業役が読んだ
+        self.w.run_end(self.root, rid, "完了", 0.5)
+        self.write(f"memory/work/results/{rid}.md", "# 報告\n")                                    # 報告は変更のあと（次の分）
+        t = time.time() + 120
+        os.utime(self.root / f"memory/work/results/{rid}.md", (t, t))
+        self.w.accept(self.root, rid, "ask")
+        self.assertEqual(self.waiting(), {})
+        self.w.note(self.root, "C-001", "このままで可", info=True)                                 # 成果物を変えない回答
+        self.assertEqual(self.waiting(), {})
+
+
+class WorkerScopeTest(Base):
+    """外部レビュー 69fab61 の 2・3：作業役は担当の記録だけ。無人の実行は --root（省略形を含む）で別の場所を扱わない。"""
+
+    def setUp(self):
+        super().setUp()
+        self.mem("commitment", "add", "--kind", "given", "--who", "@pm", "--content", "別件", "--due", d(10))   # C-002
+        self.w.ensure_task(self.root, "C-001")
+        self.w.ensure_task(self.root, "C-002")
+
+    def test_worker_writes_only_its_own_task(self):
+        worker = {"AI_AGENCY_UNATTENDED": "1", "AI_AGENCY_ROLE": "worker", "AI_AGENCY_TASK": "C-001", "AI_AGENCY_RUN": "C-001-R1"}
+        before = self.read("memory/work/tasks/C-002.md")
+        for args in (("note", "C-002", "別タスクを変更"), ("handoff", "C-002", "上書き"), ("note", "c-001", "x")):
+            r = self.run_py("tools/work.py", *args, env=worker)
+            self.assertNotEqual(r.returncode, 0, args)
+        self.assertEqual(self.read("memory/work/tasks/C-002.md"), before)
+        self.assertEqual(self.run_py("tools/work.py", "note", "C-001", "自分の記録", env=worker).returncode, 0)
+        self.assertEqual(self.run_py("tools/work.py", "handoff", "C-001", "次は表", env=worker).returncode, 0)
+        self.assertEqual(self.run_py("tools/work.py", "show", "C-002", env=worker).returncode, 0)   # 読むのはよい
+        for bad in ({"AI_AGENCY_TASK": ""}, {"AI_AGENCY_TASK": "C-002"}):                         # 担当が分からない・実行と食い違う
+            r = self.run_py("tools/work.py", "note", "C-002", "x", env={**worker, **bad})
+            self.assertNotEqual(r.returncode, 0, bad)
+        self.assertEqual(self.read("memory/work/tasks/C-002.md"), before)
+        self.assertEqual(self.run_py("tools/work.py", "note", "C-002", "人の記録").returncode, 0)   # 人の会話では今までどおり
+
+    def test_root_and_its_abbreviations_are_refused_unattended(self):
+        import shutil
+        other = self.root / "other"
+        shutil.copytree(self.root / "memory", other / "memory")
+        before = (other / "memory/commitments.md").read_text(encoding="utf-8")
+        task_before = (other / "memory/work/tasks/C-001.md").read_text(encoding="utf-8")
+        dispatch = {"AI_AGENCY_UNATTENDED": "1", "AI_AGENCY_ROLE": "dispatch"}
+        guard = lambda c: self.run_py("tools/hooks/guardrail.py", env=dispatch, stdin=json.dumps(
+            {"tool_name": "Bash", "tool_input": {"command": c}, "hook_event_name": "PreToolUse"})).returncode
+        for flag in ("--ro", "--roo", "--root", f"--ro={other}"):
+            c = f"python tools/work.py {flag} {other} note C-001 x" if "=" not in flag else f"python tools/work.py {flag} note C-001 x"
+            self.assertEqual(guard(c), 2, c)
+        self.assertEqual(guard("python tools/work.py accept C-001-R1 return --reason x"), 0)         # --reason は --root ではない
+        for script, args in (("tools/work.py", ("--ro", str(other), "note", "C-001", "x")),
+                             ("tools/work.py", ("--root", str(other), "note", "C-001", "x")),
+                             ("tools/mem.py", ("--ro", str(other), "commitment", "add", "--kind", "task", "--content", "x")),
+                             ("tools/mem.py", ("--root", str(other), "inbox", "add", "x")),
+                             ("tools/recall.py", ("--root", str(other), "review", "--out", "memory/briefs/x.md")),
+                             ("tools/run_task.py", ("--root", str(other), "--status", "C-001"))):
+            r = self.run_py(script, *args, env=dispatch)
+            self.assertNotEqual(r.returncode, 0, (script, args))
+        self.assertEqual((other / "memory/commitments.md").read_text(encoding="utf-8"), before)
+        self.assertEqual((other / "memory/work/tasks/C-001.md").read_text(encoding="utf-8"), task_before)
+        self.assertEqual(self.run_py("tools/work.py", "--root", str(self.root), "show", "C-001", env=dispatch).returncode, 0)  # 自分の場所はよい
+        self.assertEqual(self.run_py("tools/mem.py", "--root", str(other), "inbox", "list").returncode, 0)   # 人の会話では今までどおり
+
+
+class DispatchRecoveryTest(Base):
+    """外部レビュー 69fab61 の 4・5：落ちた実行の後始末を費用の判定より先に。見直しの費用が分からなければ上限で数える。"""
+
+    def setUp(self):
+        super().setUp()
+        self.w.ensure_work(self.root)
+        self.set_daily(10)
+
+    def dispatch(self, run_result=None, budget="1.5"):
+        import sys as _sys
+        import types
+        ds = self.load("tools/schedule/dispatch.py", "dispatch_r046")
+        w, rt = self.w, self.rt
+        ds._load_work = lambda r, name="work": rt if name == "run_task" else w
+        ds.shutil = types.SimpleNamespace(which=lambda n: "claude")
+        w.pending = lambda r, b=0: {"work": True, "observe": False, "undecided": ["S-001"], "unjudged": [], "waiting": []}
+        ran = []
+
+        def run(*a, **k):
+            ran.append(1)
+            return run_result or types.SimpleNamespace(returncode=0, stdout=json.dumps({"total_cost_usd": 0.3, "result": "ok"}))
+        ds.subprocess = types.SimpleNamespace(run=run, PIPE=-1, DEVNULL=-3)
+        _sys.argv = ["dispatch.py", "--root", str(self.root), "--force", "--budget", budget]
+        try:
+            ds.main()
+        except SystemExit:
+            pass
+        return ran
+
+    def set_daily(self, v):
+        import re
+        p = self.root / "memory/work/settings.md"
+        p.write_text(re.sub(r"\| 1日の費用上限（USD） \| [^|]+ \|", f"| 1日の費用上限（USD） | {v} |", p.read_text(encoding="utf-8")),
+                     encoding="utf-8")
+
+    def test_dead_run_from_yesterday_is_reaped_before_the_budget_check(self):
+        self.set_daily(2.5)
+        rid = self.rt.start_run(self.root, "C-001", 2.5)
+        sp = self.rt.state_path(self.root, rid)
+        sp.write_text(json.dumps({**json.loads(sp.read_text(encoding="utf-8")), "start": time.time() - 86400, "pid": _dead_pid()}),
+                      encoding="utf-8")
+        p = self.root / "memory/work/tasks/C-001.md"                                               # 前日に起動した
+        p.write_text(p.read_text(encoding="utf-8").replace(f"| {rid} | {self.w.mem.today()}", f"| {rid} | {d(-1)}"), encoding="utf-8")
+        self.assertEqual(self.w.committed_today(self.root), 2.5)                                    # 予約で上限に当たっている
+        self.assertEqual(self.dispatch(), [1])                                                      # 後始末してから判定：起動できる
+        self.assertEqual(self.w.run_row(self.root, rid)["結果"], "終了不明")
+
+    def test_unknown_dispatch_cost_counts_as_its_budget(self):
+        import types
+        self.set_daily(2)
+        self.assertEqual(self.dispatch(types.SimpleNamespace(returncode=1, stdout="")), [1])        # 空の出力で失敗
+        self.assertEqual(self.w.spent_today(self.root), 1.5)                                        # 0 にしない
+        self.assertEqual(self.dispatch(types.SimpleNamespace(returncode=1, stdout="")), [])         # 1.5＋1.5 > 2：起動しない
+        self.set_daily(10)
+        self.dispatch()
+        self.assertEqual(self.w.spent_today(self.root), 1.8)                                        # 分かった費用はそのまま
+
+    def test_crashed_dispatch_lock_is_counted_then_settled_once(self):
+        sd = self.w.state_dir(self.root)
+        sd.mkdir(parents=True, exist_ok=True)
+        lock = sd / "dispatch.lock"
+        for at, today in ((time.time() - 3 * 3600, True), (time.time() - 30 * 3600, False)):
+            lock.write_text(json.dumps({"at": at, "budget": 1.2}), encoding="utf-8")
+            os.utime(lock, (at, at))
+            if time.strftime("%Y-%m-%d", time.localtime(at)) != self.w.mem.today():
+                today = False
+            self.assertEqual(self.w.reserved(self.root), 1.2 if today else 0)                      # 落ちた見直し：今日のものは数え続ける
+            spent = self.w.spent_today(self.root)
+            self.dispatch()
+            self.assertFalse(lock.exists())
+            self.assertEqual(self.w.reserved(self.root), 0)
+            self.assertEqual(round(self.w.spent_today(self.root) - spent, 2), round((1.2 if today else 0) + 0.3, 2))   # 1回だけ記録
+
+
+class ReviewAfterAnswerOrderTest(Base):
+    """R-046 の独立レビューの反例：無人の記録・見送りのあとの［記録］・前提の影響なし・表示。"""
+
+    def auto(self, text):
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"AI_AGENCY_UNATTENDED": "1"}):   # 割り振り役（無人）が書く
+            self.w.note(self.root, "C-001", text)
+
+    def waiting(self):
+        return {w["task"]: w["why"] for w in self.w.launch_waiting(self.root)}
+
+    def test_A_max_returns_escalation_is_relaunched(self):
+        """差し戻しが上限（2回）に達して「人へ確認」になった実行に、割り振り役が差し戻しの手順どおり不足を note すると、
+        人の回答が無いのに起動待ちに出る（割り振り役は 4b で起動する）。差し戻しの上限が効かなくなる。"""
+        r1 = self.finished_run()
+        self.w.accept(self.root, r1, "return", "表が無い")
+        self.auto("差し戻し：表を付ける")                       # dispatch.md の差し戻し：note → 再起動
+        r2 = self.finished_run()
+        self.w.accept(self.root, r2, "return", "表が足りない")
+        self.auto("差し戻し：3行目")
+        r3 = self.finished_run()
+        label = self.w.accept(self.root, r3, "return", "まだ足りない")
+        self.assertEqual(label, "人へ確認")                                              # 上限に達して人へ
+        self.auto("差し戻し：4行目が欠けている")                   # 同じ手順で不足を書く（accept の前でも後でも同じ）
+        self.assertEqual(self.waiting(), {}, "人へ確認なのに、割り振り役自身の note で起動待ちに出た")
+
+    def test_B_dispatcher_own_note_after_ask_wakes_itself(self):
+        """人へ確認にした割り振り役が、自分の問い・経緯を note に書くと（人の回答ではない）、次の回から起動待ちになり毎回起こされる。"""
+        r1 = self.finished_run()
+        self.w.accept(self.root, r1, "ask", "部長に出すかは人の判断")
+        self.auto("人に確認中：部長に出してよいか")
+        self.assertEqual(self.waiting(), {}, "人の回答が無いのに起動待ち")
+        self.assertFalse(self.w.pending(self.root)["work"])
+
+    def test_C_info_note_after_defer_resurrects(self):
+        """回答のあと割り振り役が見送り（defer）→ 人がボードで期限を延ばす（［記録］の note）→ 成果物を変えない記録なのに起動待ちに戻る。"""
+        r1 = self.finished_run()
+        self.w.accept(self.root, r1, "ask")
+        self.w.note(self.root, "C-001", "上限は100万円")
+        self.assertIn("C-001", self.waiting())
+        self.w.defer(self.root, "C-001", "部長の判断待ち")
+        self.assertEqual(self.waiting(), {})
+        code, res = self.srv.do_post(self.root, "/api/commitment/due", {"id": "C-001", "due": d(30)})   # 延長
+        self.assertEqual(code, 200, res)
+        self.assertTrue(self.notes()[-1][17:].startswith("［記録］"), self.notes()[-1])
+        self.assertEqual(self.waiting(), {}, "期限の延長（［記録］）で見送りが外れた")
+
+    def test_D_premise_no_impact_keeps_waking(self):
+        """受け入れのあと前提が変わり、割り振り役が手順4どおり「影響なし → ref touch して却下」しても、起動待ちに残り続ける
+        （使った版で比べるので、評価した版を進めても消えない）。defer するまで毎回起こされる。"""
+        self.w.ref_add(self.root, "C-001", "memory/projects/x/status.md#見積", "前提", "見積")
+        r1 = self.finished_run()
+        self.assertEqual(self.w.accept(self.root, r1, "accept"), "受け入れ")
+        self.write("memory/projects/x/status.md", STATUS_V2)
+        sids = self.w.propose_from_changes(self.root)
+        self.assertTrue(sids)
+        self.w.ref_touch(self.root, "C-001")
+        self.w.decide(self.root, sids[0], "reject", "", "影響なし：結論は同じ")
+        self.assertEqual(self.waiting(), {}, "影響なしと判断して却下したのに起動待ち")
+
+    def test_E_why_label_cut(self):
+        """理由つきの判定で why のラベルが「受け入れ（」のように括弧の途中で切れる（表示）。"""
+        r1 = self.finished_run()
+        self.w.accept(self.root, r1, "accept", "OK")
+        self.w.note(self.root, "C-001", "追加の指示")
+        why = self.waiting()["C-001"]
+        self.assertNotIn("受け入れ（）", why, why)
+
+
+class StaleDispatchLockTest(Base):
+    """R-046 の独立レビューの反例：落ちた見直しのロックの取り合い・外せないロック。"""
+    def setUp(self):
+        super().setUp()
+        self.w.ensure_work(self.root)
+        self.ds = self.load("tools/schedule/dispatch.py", "dispatch_repro")
+        self.sd = self.w.state_dir(self.root)
+        self.sd.mkdir(parents=True, exist_ok=True)
+        self.lock = self.sd / "dispatch.lock"
+
+    def estimated(self):
+        p = self.sd / "costs.jsonl"
+        if not p.exists():
+            return []
+        return [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if '"estimated"' in x]
+
+    def test_F_settle_race_takes_a_live_lock_and_records_twice(self):
+        """2つの dispatch.py が同時に古いロックを見る：P2 が先に外して新しいロック（生きている見直し）を作ったあと、
+        P1 の os.replace がその新しいロックを奪い、古いロックの上限をもう一度記録する。"""
+        at = time.time() - 3 * 3600
+        self.lock.write_text(json.dumps({"at": at, "budget": 1.2}), encoding="utf-8")
+        os.utime(self.lock, (at, at))
+        orig = self.w.dispatch_lock_info
+        ds = self.ds
+
+        def racing(root):
+            info = orig(root)                                         # P1 が古いと読んだ
+            self.w.dispatch_lock_info = orig
+            ds._settle_stale_lock(self.w, root)                       # P2 が先に外して記録
+            self.lock.write_text(json.dumps({"at": time.time(), "budget": 1.5}), encoding="utf-8")   # P2 の見直しが始まる
+            return info
+        self.w.dispatch_lock_info = racing
+        ds._settle_stale_lock(self.w, self.root)                      # P1 が続ける
+        live = self.lock.exists()
+        self.assertEqual((live, len(self.estimated())), (True, 1), "(生きているロックが残るか, 古いロックの上限の記録の回数)")
+
+    def test_G_unrenamable_stale_lock_with_force_recurses(self):
+        """古いロックを名前変更できない（権限・他のプロセスが開いている）とき、--force では main() を際限なく呼び直す。"""
+        import sys as _sys
+        import types
+        at = time.time() - 3 * 3600
+        self.lock.write_text(json.dumps({"at": at, "budget": 1.2}), encoding="utf-8")
+        os.utime(self.lock, (at, at))
+        ds, w, rt = self.ds, self.w, self.rt
+        ds._load_work = lambda r, name="work": rt if name == "run_task" else w
+        ds.shutil = types.SimpleNamespace(which=lambda n: "claude")
+        w.pending = lambda r, b=0: {"work": True, "observe": False, "undecided": ["S-001"], "unjudged": [], "waiting": []}
+        calls = []
+        ds.subprocess = types.SimpleNamespace(run=lambda *a, **k: calls.append(1) or types.SimpleNamespace(
+            returncode=0, stdout=json.dumps({"total_cost_usd": 0.1})), PIPE=-1, DEVNULL=-3)
+
+        def deny(*a, **k):
+            raise PermissionError("locked")
+        ds.os = types.SimpleNamespace(**{k: getattr(os, k) for k in dir(os) if not k.startswith("__")})
+        ds.os.replace = deny
+        _sys.argv = ["dispatch.py", "--root", str(self.root), "--force"]
+        old = _sys.getrecursionlimit()
+        _sys.setrecursionlimit(300)
+        try:
+            ds.main()
+        except RecursionError:
+            self.fail("main() が再帰し続けた（RecursionError）")
+        except SystemExit:
+            pass
+        finally:
+            _sys.setrecursionlimit(old)

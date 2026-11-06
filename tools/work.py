@@ -463,6 +463,20 @@ def ref_touch(root: Path, cid: str, place: str | None = None) -> list[str]:
 
 
 INFO_MARK = "［記録］"   # 成果物を変えない記録（停止の理由・打ち切り・期限の延長・人の回答で「そのままで可」等）。鮮度の判定に数えない
+AUTO_MARK = "〔無人〕"   # 無人の実行（割り振り役・確認役・作業役）が書いた記録の末尾。人の回答・指示と見分ける（起動待ちの理由にしない）
+
+
+def by_person(n: str) -> bool:
+    """人が書いた途中の変更か（無人の実行が書いたものは末尾に AUTO_MARK）。"""
+    return not n.rstrip().endswith(AUTO_MARK)
+
+
+def last_decisive_note(notes: list[str]) -> str:
+    """最後の「見送り」か、成果物を変える途中の変更（［記録］は飛ばす。期限の延長などで見送りが外れないように）。"""
+    for n in reversed(notes):
+        if n[17:].startswith(DEFER_MARK) or INFO_MARK not in n[:24]:
+            return n
+    return ""
 
 
 @locked
@@ -471,6 +485,8 @@ def note(root: Path, cid: str, text: str, info: bool = False) -> None:
     lines = read(p)
     if info and not text.startswith(INFO_MARK):
         text = INFO_MARK + text
+    if os.environ.get("AI_AGENCY_UNATTENDED") and not text.rstrip().endswith(AUTO_MARK):
+        text = text.rstrip() + AUTO_MARK   # 人の回答・指示と見分ける（外部レビュー 69fab61 の 1 の独立レビュー A・B）
     i = mem.find_heading(lines, "## 途中の変更")
     j = i + 1
     while j < len(lines) and not lines[j].startswith("## "):
@@ -844,14 +860,39 @@ def mark_applied(root: Path, rid: str) -> None:
     ok(f"{rid} の報告を記憶に反映済みにした")
 
 
-def record_cost(root: Path, kind: str, cost: float | None) -> None:
-    """作業セッション以外（定期の見直しなど）の費用を残す。1日の上限に数える。"""
-    if not isinstance(cost, (int, float)):
+def record_cost(root: Path, kind: str, cost: float | None, budget: float | None = None, date: str | None = None) -> None:
+    """作業セッション以外（定期の見直しなど）の費用を残す。1日の上限に数える。
+    費用が分からない（出力が空・壊れた・途中で落ちた）ときは、上限（budget）まで使ったかもしれないので上限で数える
+    （0 にすると、失敗を繰り返すたびに1日の上限をすり抜ける。作業セッションの R-022 と同じ扱い。外部レビュー 69fab61 の 5）。"""
+    rec = {"date": date or mem.today(), "at": mem.now_hm(), "kind": kind}
+    if isinstance(cost, (int, float)) and not isinstance(cost, bool) and math.isfinite(cost) and cost >= 0:
+        rec["cost"] = round(float(cost), 2)
+    elif isinstance(budget, (int, float)) and math.isfinite(budget) and budget > 0:
+        rec.update({"cost": round(float(budget), 2), "estimated": True})   # 実費が分からないので上限で見込んだ
+    else:
         return
     p = state_dir(root) / "costs.jsonl"
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "a", encoding="utf-8") as f:
-        f.write(json.dumps({"date": mem.today(), "at": mem.now_hm(), "kind": kind, "cost": round(float(cost), 2)}, ensure_ascii=False) + "\n")
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def dispatch_lock_info(root: Path) -> dict | None:
+    """定期の見直しのロック（dispatch.lock）：{"at", "budget", "stale"}。無ければ None。
+    stale：DISPATCH_LOCK_STALE_SEC より古い＝見直しが終わりを書けずに落ちた（費用は分からない）。"""
+    lock = state_dir(root) / "dispatch.lock"
+    try:
+        st = lock.stat()
+    except OSError:
+        return None
+    try:
+        d = json.loads(lock.read_text(encoding="utf-8"))
+        budget = float(d.get("budget", 1.5))
+        at = float(d.get("at", st.st_mtime))
+    except (OSError, ValueError, TypeError, AttributeError):
+        budget, at = 1.5, st.st_mtime   # 以前の形のロック（時刻だけ）・書きかけ：既定の見直しの上限で見込む
+    return {"at": at, "budget": budget if math.isfinite(budget) and budget > 0 else 1.5,
+            "stale": time.time() - st.st_mtime >= DISPATCH_LOCK_STALE_SEC}
 
 
 DISPATCH_LOCK_STALE_SEC = 2 * 3600   # tools/schedule/dispatch.py のロックがこれより古ければ止まったものとみなす
@@ -859,20 +900,14 @@ DISPATCH_LOCK_STALE_SEC = 2 * 3600   # tools/schedule/dispatch.py のロック�
 
 def reserved(root: Path) -> float:
     """これから使うかもしれない額（外部レビュー #7）：実行中の作業セッションの上限（.state の budget）と、
-    動いている定期の見直しの上限（dispatch.lock）。終われば実際の費用に置き換わり、予約は外れる。"""
+    定期の見直しの上限（dispatch.lock）。終われば実際の費用に置き換わり、予約は外れる。
+    落ちた見直しのロック（古い）も、今日始めたものなら数える（費用が分からない。次の見直しが上限で費用に記録して消す）。"""
     total = 0.0
-    lim = limits(root)
     for r in running_runs(root):
         total += _run_budget(root, r.get("実行ID", ""), r.get("task", ""))
-    lock = state_dir(root) / "dispatch.lock"
-    try:
-        if time.time() - lock.stat().st_mtime < DISPATCH_LOCK_STALE_SEC:
-            try:
-                total += float(json.loads(lock.read_text(encoding="utf-8")).get("budget", 0))
-            except (ValueError, TypeError, AttributeError):
-                total += 1.5   # 以前の形のロック（時刻だけ）：既定の見直しの上限で見込む
-    except OSError:
-        pass
+    info = dispatch_lock_info(root)
+    if info and (not info["stale"] or time.strftime("%Y-%m-%d", time.localtime(info["at"])) == mem.today()):
+        total += info["budget"]
     return round(total, 2)
 
 
@@ -1707,7 +1742,9 @@ RERUN_VERDICTS = ("差し戻し", "古い条件", "条件待ち")
 def launch_waiting(root: Path) -> list[dict]:
     """任せたタスクのうち、次に起動するはずなのに動いていないもの（外部レビュー #5）：
     作業依頼まで書いたが一度も起動していない（同時実行・費用の上限で断られた、採用と起動を分けた等）／
-    最後の実行が差し戻し・古い条件で、次の実行が無い。
+    最後の実行が差し戻し・古い条件で、次の実行が無い／
+    最後の実行を判定したあと（受け入れ・人へ確認）に、人が回答・指示（途中の変更）を書いた（外部レビュー 69fab61 の 1）。
+    回答を保存しても、成果が古くなったと分かっても、割り振り役を起こす理由に入れないと止まったままになる。起動するかは割り振り役が決める。
     除くもの：閉じた・相手待ち（waiting）の約束、待ち・後工程の参照があるもの（変化の提案で再開する）、
     最後の記録が「見送り」のもの（`work.py defer`。新しい途中の変更が入れば戻る）。"""
     rows = {r.get("ID"): r for r in mem.commitment_rows(root)}
@@ -1723,7 +1760,8 @@ def launch_waiting(root: Path) -> list[dict]:
         t = read_task(root, p.stem)
         if unmet_conditions(root, p.stem, t):   # 着手条件がそろうまでは変化の提案で動く
             continue
-        if t["notes"] and t["notes"][-1][17:].startswith(DEFER_MARK) and not _answered_since(root, t, t["notes"][-1][:16]):
+        last = last_decisive_note(t["notes"])
+        if last[17:].startswith(DEFER_MARK) and not _answered_since(root, t, last[:16]):
             continue   # 見送り：新しい途中の変更か、見送りのあとの不足の答えで戻る（答えは作業記録に写らないので時刻で見る・R-038）
         runs = t["runs"]
         if not runs:
@@ -1735,6 +1773,12 @@ def launch_waiting(root: Path) -> list[dict]:
         elif _needs_met_since(root, t, runs[-1]):
             # 最後の実行は不足がそろわないまま作った。今はそろった（再開の提案を処理・touch したあとでも拾う。独立レビュー R-032 の 2）
             why = f"{runs[-1].get('実行ID')} のあとに不足がそろった（{', '.join(_needs_met_since(root, t, runs[-1]))}）"
+        elif runs[-1].get("判定") and [n for n in unread_notes(root, runs[-1].get("実行ID", "")) if by_person(n)]:
+            # 判定（受け入れ・人へ確認）のあとの人の回答・指示。無人の実行が書いた記録（問い・経緯・差し戻しの不足）では起こさない
+            # （差し戻しの上限が効かなくなる・毎回起こされる）。前提の変化は変化の提案で扱う（影響なしと判断したら起こし続けない）
+            rid = runs[-1].get("実行ID", "")
+            n = len([x for x in unread_notes(root, rid) if by_person(x)])
+            why = f"{rid}（{runs[-1].get('判定', '').split('（')[0]}）のあとに人の回答・指示が {n} 件"
         else:
             continue
         handle = (r.get("相手") or "")[1:]
@@ -1862,13 +1906,20 @@ UNATTENDED_OK = {"order", "ref", "changes", "scan", "propose", "decide", "note",
 WORKER_OK = {"show", "note", "handoff", "status"}   # 作業セッション（AI_AGENCY_RUN）が使う命令（run_task.allowed_tools と同じ）
 
 
+def worker_owns(cid: str) -> bool:
+    """作業セッション（AI_AGENCY_RUN）の担当の仕事か。担当（AI_AGENCY_TASK）と実行 ID の両方が合うときだけ。分からなければ False。"""
+    task, run = os.environ.get("AI_AGENCY_TASK", ""), os.environ.get("AI_AGENCY_RUN", "")
+    m = RUN_RE.fullmatch(run)
+    return bool(CID_RE.fullmatch(task or "") and m and m.group(1) == task and cid == task)
+
+
 def main(argv: list[str] | None = None) -> None:
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
-    ap = argparse.ArgumentParser(description="チームの仕事の記録と変化の検知")
+    ap = argparse.ArgumentParser(description="チームの仕事の記録と変化の検知", allow_abbrev=False)   # --ro で --root にならない
     ap.add_argument("--root", type=Path, default=ROOT)
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("order")
@@ -1916,6 +1967,10 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("pending"); s.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     root = a.root.resolve()
+    if os.environ.get("AI_AGENCY_UNATTENDED") and not mem.same_path(root, ROOT):
+        # 無人の実行は自分のインスタンスの記録だけ（フックの文字列の検査に頼らない。外部レビュー 69fab61 の 3）
+        print(f"❌ 無人実行では別の場所（--root {root}）の記録を扱わない", file=sys.stderr)
+        sys.exit(1)
     if getattr(a, "json", False):   # JSON だけを出す（記録のメッセージを混ぜない）
         globals()["ok"] = lambda m: mem.LAST_OK.append(m)
     if os.environ.get("AI_AGENCY_UNATTENDED") and a.cmd not in UNATTENDED_OK:
@@ -1924,6 +1979,11 @@ def main(argv: list[str] | None = None) -> None:
     if os.environ.get("AI_AGENCY_RUN") and a.cmd not in WORKER_OK:
         # 作業セッションは自分の仕事の記録だけ（自分の実行を受け入れる・上限を書き換える・別の仕事を起こすことはしない。R-042 の D）
         print(f"❌ 作業セッションでは `{a.cmd}` はしない（show・note・handoff・status だけ）", file=sys.stderr)
+        sys.exit(1)
+    if os.environ.get("AI_AGENCY_RUN") and a.cmd in ("note", "handoff") and not worker_owns(a.id):
+        # 作業セッションが書くのは自分の担当の記録だけ（別の仕事に条件・引き継ぎを書き込まない。外部レビュー 69fab61 の 2）
+        print(f"❌ 作業セッションが記録を書けるのは担当の {os.environ.get('AI_AGENCY_TASK') or '（担当が分からない）'} だけ（{a.id} は書かない）",
+              file=sys.stderr)
         sys.exit(1)
     try:
         if a.cmd == "order":

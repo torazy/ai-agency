@@ -156,7 +156,8 @@ def unattended_command_allowed(cmd: str, shell: str = "Bash") -> bool:
         return False
     script, rest = m.group(1), m.group(2)
     words = rest.split()
-    if any(w == "--root" or w.startswith("--root=") for w in words):
+    # --root とその省略形（--ro・--roo。argparse は一意な省略を受け付ける。外部レビュー 69fab61 の 3）。道具の側でも別の場所を断る
+    if any(len(w.split("=")[0]) >= 3 and "--root".startswith(w.split("=")[0]) for w in words):
         return False
     allowed = ROLE_COMMANDS[unattended_role()].get(script)
     if allowed is None:

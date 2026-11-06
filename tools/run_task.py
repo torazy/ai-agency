@@ -455,7 +455,7 @@ def main() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
-    ap = argparse.ArgumentParser(description="任せたタスクを独立した作業セッションで進める")
+    ap = argparse.ArgumentParser(description="任せたタスクを独立した作業セッションで進める", allow_abbrev=False)
     ap.add_argument("id", nargs="?")
     ap.add_argument("--wait", action="store_true", help="終わるまで待つ")
     ap.add_argument("--dry-run", action="store_true", help="コマンドを表示するだけ")
@@ -471,6 +471,8 @@ def main() -> None:
     ap.add_argument("--anyway", action="store_true", help="着手条件（前工程・待ち）がそろっていなくても始める（人が判断したとき）")
     a = ap.parse_args()
     root = a.root.resolve()
+    if os.environ.get("AI_AGENCY_UNATTENDED") and os.path.normcase(str(root)) != os.path.normcase(str(ROOT.resolve())):
+        sys.exit(f"✗ 無人実行では別の場所（--root {root}）の仕事を扱わない")
     if os.environ.get("AI_AGENCY_RUN") and not a.child and not a.status:
         # 作業セッションの中から、別の作業セッションを起こす・止める・進め方を変えることはしない（費用・R-042 の D）
         sys.exit("✗ 作業セッションの中では run_task.py は --status だけ")

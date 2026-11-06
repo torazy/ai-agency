@@ -1452,10 +1452,14 @@ def answer(root: Path, nid: str, text: str, without: bool = False, by: str = "�
     return f"{nid} に{kind}"
 
 
+UNATTENDED_WRITER = "見直し（無人）"
+
+
 @locked
 def draft(root: Path, nid: str, via: str, subject: str, body: str, address: str = "", by: str = "") -> str:
     """相手に頼む不足の連絡の下書き（新しい版）。宛先は約束の「相手」。送るのは人。
-    無人：まだ送っていない版があれば書かない（人が直した本文を消さない）。人：送っていない最新の版を書き換える。
+    無人：人が書いた・直した未送信の版があれば書かない（人の本文を消さない）。無人が書いた未送信の版は書き換える。
+    人：送っていない最新の版を書き換える。
     送ったあとの版は書き換えず、次の版（催促）を足す。"""
     rows = {r.get("ID"): r for r in mem.commitment_rows(root)}
     h = human_need(root, nid, rows)
@@ -1467,12 +1471,13 @@ def draft(root: Path, nid: str, via: str, subject: str, body: str, address: str 
     if not body:
         fail("本文が空")
     unattended = bool(os.environ.get("AI_AGENCY_UNATTENDED"))
-    by = by or ("見直し（無人）" if unattended else "人")
+    by = UNATTENDED_WRITER if unattended else (by or "人")   # 無人は書き手を名乗れない（人の版に見せない）
     rec = read_need_rec(root, nid)
     last = rec["drafts"][-1] if rec["drafts"] else None
     unsent = last is not None and not last.get("送った")
-    if unsent and unattended:
-        return f"{nid} には送っていない下書き（版{last['版']}）がある。無人では書き換えない"
+    if unsent and unattended and last.get("書き手") != UNATTENDED_WRITER:
+        # 人が書いた・直した版は無人では書き換えない。無人が自分で書いた未送信の版は直せる（書き損じに気づいたとき・R-038）
+        return f"{nid} には人が書いた送っていない下書き（版{last['版']}）がある。無人では書き換えない"
     entry = {"作成": _now_sec(), "書き手": _clean_need(by), "宛先": _clean_need(h["who"]), "手段": _clean_need(via) or "未定",
              "連絡先": _clean_need(address), "件名": _clean_need(subject), "送った": "", "body": body}
     if unsent:

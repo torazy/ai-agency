@@ -1418,7 +1418,7 @@ class HumanNeedsTest(Base):
         r = self.run_py("tools/work.py", "draft", pid, "--body", "上書き", env={"AI_AGENCY_UNATTENDED": "1"})
         rec = self.w.read_need_rec(self.root, pid)
         self.assertEqual((len(rec["drafts"]), rec["drafts"][0]["body"]), (1, "佐藤様\n至急で再送をお願いします"))   # 無人は人の版を消さない
-        self.assertIn("無人", r.stdout)
+        self.assertIn("無人では書き換えない", r.stdout)
         r = self.run_py("tools/work.py", "sent", pid, env={"AI_AGENCY_UNATTENDED": "1"})
         self.assertNotEqual(r.returncode, 0)                               # 送ったことにできるのは人だけ
         code, res = self.post("/api/need/sent", {"id": pid, "version": "1", "follow": d(0)})
@@ -1575,6 +1575,17 @@ class HumanNeedsTest(Base):
         self.assertTrue([s for s in self.w.scan(self.root) if s.get("task") == pid])
         self.w.mem.commitment_set_state(self.root, "C-001", "dropped")
         self.assertEqual([s for s in self.w.scan(self.root) if s.get("task") == pid], [])
+
+    def test_unattended_can_fix_its_own_unsent_draft_but_not_a_persons(self):
+        pid, _ = self.need(who="佐藤", content="見積の再送")
+        env = {"AI_AGENCY_UNATTENDED": "1"}
+        self.run_py("tools/work.py", "draft", pid, "--body", "書き損じ", env=env, check=True)
+        self.run_py("tools/work.py", "draft", pid, "--body", "直した", "--by", "人", env=env, check=True)
+        d1 = self.w.read_need_rec(self.root, pid)["drafts"]
+        self.assertEqual([(x["版"], x["body"], x["書き手"]) for x in d1], [(1, "直した", "見直し（無人）")])   # 自分の版は直せる・人を名乗れない
+        self.w.draft(self.root, pid, "メール", "", "人が直した")
+        self.run_py("tools/work.py", "draft", pid, "--body", "上書き", env=env, check=True)
+        self.assertEqual(self.w.read_need_rec(self.root, pid)["drafts"][-1]["body"], "人が直した")
 
 
 class UnattendedSendGuardTest(TempRepo):

@@ -706,7 +706,8 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
                 if path == "/api/need/answer":
                     msg = work.answer(root, g("id", ""), g("answer", ""), g("without") == "1", "人（ボード）")
                 elif path == "/api/need/draft":
-                    msg = work.draft(root, g("id", ""), g("via") or "未定", g("subject") or "", g("body", ""), g("address") or "", "人（ボード）")
+                    msg = work.draft(root, g("id", ""), g("via") or "未定", g("subject") or "", g("body", ""), g("address") or "", "人（ボード）",
+                                     int(g("version")) if g("version") else None)
                 else:
                     msg = work.sent(root, g("id", ""), g("follow") or None, int(g("version")) if g("version") else None)
             except work.MemError as e:

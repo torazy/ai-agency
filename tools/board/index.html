@@ -532,7 +532,7 @@ async function draftNeed(r){const n=r.need,d=n.draft||{},sentBefore=d["送った
     text:`送るのは人。本文を選んでコピーし、自分のメール・チャットから送ったら「送った」を押す。`+(sentBefore?`\n前の版は ${sentBefore} に送った（送った版は書き換えない。保存すると次の版になる）。`:""),
     fields:[{label:"手段",name:"via",value:d["手段"]&&d["手段"]!=="未定"?d["手段"]:"",placeholder:"メール / Slack / 電話"},{label:"連絡先",name:"address",value:d["連絡先"]||""},
       {label:"件名",name:"subject",value:sentBefore?"":d["件名"]||""},{label:"本文",name:"body",type:"textarea",required:true,value:sentBefore?"":d.body||""}]});
-  if(o&&o.body)api("/api/need/draft",{id:r.ID,via:o.via||"",address:o.address||"",subject:o.subject||"",body:o.body});}
+  if(o&&o.body)api("/api/need/draft",{id:r.ID,via:o.via||"",address:o.address||"",subject:o.subject||"",body:o.body,...(d["版"]&&!sentBefore?{version:String(d["版"])}:{})});}
 async function sentNeed(r){const d=r.need.draft||{};
   const o=await dialog({title:`${r.ID} の下書き 版${d["版"]} を送った`,icon:"check",submit:"送った",
     text:`${r.need.who} 宛・${d["手段"]||""}\n件名：${d["件名"]||"（なし）"}\n\n${d.body||""}`,

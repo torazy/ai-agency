@@ -999,6 +999,9 @@ def adopt(root: Path, sid: str, who: str, content: str = "", due: str | None = N
     return cid, True
 
 
+NEED_SUFFIX_RE = re.compile(r"（C-\d{3,} の不足）$")
+
+
 def scan(root: Path) -> list[dict]:
     """台帳から機械的に見つかる仕事。観察による提案（会議の準備・不足作業・繰り返す問題）は /scout が足す。"""
     today_d = date.today()
@@ -1013,7 +1016,9 @@ def scan(root: Path) -> list[dict]:
         who = r.get("相手") or r.get("依頼者") or ""
         h = human_need(root, cid, rows, nmap) if cid in nmap else None
         if h and not h["blocks"]:
-            continue   # 止めていた仕事がすべて閉じた不足：催促・着手の提案で人を起こさない（集める仕事の起動待ちと同じ）
+            if NEED_SUFFIX_RE.search(content):
+                continue   # 不足として作った約束で、止めていた仕事がすべて閉じた：催促・着手の提案で人を起こさない
+            h = None       # link した普通の約束（前から追っている依頼）：普通のフォロー・期限の提案に戻す（R-038 の B）
         if h and h["kind"] == "person" and h["blocks"]:
             # 仕事を止めている相手の不足：下書きが無い → 作る／送っていない → ボードと朝のブリーフに出す（提案はしない）／
             # 送ったあとフォロー日 → 催促の下書き（送る前に「催促」を出さない。独立レビュー R-037 の M4）
@@ -1128,7 +1133,7 @@ def _answered_since(root: Path, t: dict, when: str) -> bool:
             continue
         ans = last_answer(root, x.get("場所", ""))
         at = _ts((ans or {}).get("日時", ""))
-        if at is not None and at >= since + 60:   # 見送りの記録は分単位：同じ分の答えは見送りの前とみなす
+        if at is not None and at >= since:   # 見送りの記録は分単位：同じ分の答えは後に倒す（取りこぼすと止まったままになる・R-038 の C）
             return True
     return False
 
@@ -1471,7 +1476,8 @@ UNATTENDED_WRITER = "見直し（無人）"
 
 
 @locked
-def draft(root: Path, nid: str, via: str, subject: str, body: str, address: str = "", by: str = "") -> str:
+def draft(root: Path, nid: str, via: str, subject: str, body: str, address: str = "", by: str = "",
+          version: int | None = None) -> str:
     """相手に頼む不足の連絡の下書き（新しい版）。宛先は約束の「相手」。送るのは人。
     無人：人が書いた・直した未送信の版があれば書かない（人の本文を消さない）。無人が書いた未送信の版は書き換える。
     人：送っていない最新の版を書き換える。
@@ -1490,16 +1496,25 @@ def draft(root: Path, nid: str, via: str, subject: str, body: str, address: str 
     rec = read_need_rec(root, nid)
     last = rec["drafts"][-1] if rec["drafts"] else None
     unsent = last is not None and not last.get("送った")
-    if unsent and unattended and last.get("書き手") != UNATTENDED_WRITER:
-        # 人が書いた・直した版は無人では書き換えない。無人が自分で書いた未送信の版は直せる（書き損じに気づいたとき・R-038）
-        return f"{nid} には人が書いた送っていない下書き（版{last['版']}）がある。無人では書き換えない"
+    if version is not None and (last is None or last["版"] != version or not unsent):
+        # 直す版を指定したのに、それが最新の未送信の版でない（もう送った・別の版になった）：書き換えも催促の追加もしない（R-038 の H）
+        fail(f"{nid} の版{version} は直せない（最新は版{last['版'] if last else 'なし'}・{'送った' if last and last.get('送った') else '未送信'}）。"
+             "送ったあとの連絡は --version なしで新しい版（催促）にする")
+    if unsent and unattended and (version is None or last.get("書き手") != UNATTENDED_WRITER):
+        # 人が書いた・直した版は無人では書き換えない。無人が自分で書いた未送信の版は --version を付けて直せる（R-038）
+        return f"{nid} には送っていない下書き（版{last['版']}・{last.get('書き手', '')}）がある。無人では書き換えない（自分の版を直すなら --version {last['版']}）"
+    follow = rows[nid].get("フォロー日", "")
+    if unattended and last is not None and last.get("送った") and re.fullmatch(r"\d{4}-\d{2}-\d{2}", follow or "") \
+            and date.fromisoformat(follow) > date.today():
+        # 送ったあと、フォロー日の前に無人が新しい版を足すと、送った直後の「催促」になる（古い状態で書き損じを直そうとした等・R-038 の H）
+        return f"{nid} は版{last['版']} を送ってフォロー日（{follow}）の前。無人では催促の版を作らない"
     entry = {"作成": _now_sec(), "書き手": _clean_need(by), "宛先": _clean_need(h["who"]), "手段": _clean_need(via) or "未定",
-             "連絡先": _clean_need(address), "件名": _clean_need(subject), "送った": "", "body": body}
+             "連絡先": _clean_need(address), "件名": _clean_need(subject), "送った": "", "body": body,
+             "版": max([x["版"] for x in rec["drafts"]] or [0]) + 1}
     if unsent:
-        entry["版"] = last["版"]
+        # 書き換えても版の番号は進める：画面が見ていた古い版に「送った」を押しても、新しい本文には付かない（R-038 の A）
         rec["drafts"][-1] = entry
     else:
-        entry["版"] = len(rec["drafts"]) + 1
         rec["drafts"].append(entry)
     _write_need_rec(root, nid, rec)
     kind = "催促の下書き" if any(d.get("送った") for d in rec["drafts"]) else "下書き"
@@ -1799,6 +1814,7 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("draft", help="相手に頼む不足の連絡の下書き（送るのは人）")
     s.add_argument("id"); s.add_argument("--via", default="未定"); s.add_argument("--address", default="")
     s.add_argument("--subject", default=""); s.add_argument("--body", required=True); s.add_argument("--by", default="")
+    s.add_argument("--version", type=int, default=None, help="直す版（最新の未送信の版。無人は自分が書いた版だけ）。付けなければ新しい版")
     s = sub.add_parser("needs", help="仕事を止めている人・相手の不足の一覧（答える・下書き・送る・返事待ち）")
     s.add_argument("--json", action="store_true")
     s = sub.add_parser("sent", help="人が下書きを送った（人だけ）。フォロー日を決める")
@@ -1852,7 +1868,7 @@ def main(argv: list[str] | None = None) -> None:
         elif a.cmd == "answer":
             print(answer(root, a.id, a.text, a.without, a.by))
         elif a.cmd == "draft":
-            print(draft(root, a.id, a.via, a.subject, a.body, a.address, a.by))
+            print(draft(root, a.id, a.via, a.subject, a.body, a.address, a.by, a.version))
         elif a.cmd == "needs":
             items = needs_overview(root)
             if a.json:

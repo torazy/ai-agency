@@ -1414,16 +1414,17 @@ class HumanNeedsTest(Base):
                         "--body", "佐藤様\\n見積を再送いただけますか", env={"AI_AGENCY_UNATTENDED": "1"})
         self.assertEqual(r.returncode, 0, r.stderr)                        # 無人は下書きまで
         self.assertEqual(kinds(), [])                                      # 未送信：提案はしない（ボードと朝のブリーフに出る）
-        self.w.draft(self.root, pid, "メール", "見積の再送のお願い", "佐藤様\n至急で再送をお願いします")   # 人が直す（同じ版）
+        self.w.draft(self.root, pid, "メール", "見積の再送のお願い", "佐藤様\n至急で再送をお願いします")   # 人が直す（版2 に進む）
         r = self.run_py("tools/work.py", "draft", pid, "--body", "上書き", env={"AI_AGENCY_UNATTENDED": "1"})
         rec = self.w.read_need_rec(self.root, pid)
         self.assertEqual((len(rec["drafts"]), rec["drafts"][0]["body"]), (1, "佐藤様\n至急で再送をお願いします"))   # 無人は人の版を消さない
         self.assertIn("無人では書き換えない", r.stdout)
         r = self.run_py("tools/work.py", "sent", pid, env={"AI_AGENCY_UNATTENDED": "1"})
         self.assertNotEqual(r.returncode, 0)                               # 送ったことにできるのは人だけ
-        code, res = self.post("/api/need/sent", {"id": pid, "version": "1", "follow": d(0)})
+        self.assertEqual(self.post("/api/need/sent", {"id": pid, "version": "1", "follow": d(0)})[0], 400)   # 直す前の版を見ていた画面
+        code, res = self.post("/api/need/sent", {"id": pid, "version": "2", "follow": d(0)})
         self.assertEqual(code, 200, res)
-        code, res = self.post("/api/need/sent", {"id": pid, "version": "1"})   # 二度押し
+        code, res = self.post("/api/need/sent", {"id": pid, "version": "2"})   # 二度押し
         self.assertEqual(code, 200)
         self.assertIn("変更なし", res["message"])
         rec = self.w.read_need_rec(self.root, pid)
@@ -1581,12 +1582,53 @@ class HumanNeedsTest(Base):
         pid, _ = self.need(who="佐藤", content="見積の再送")
         env = {"AI_AGENCY_UNATTENDED": "1"}
         self.run_py("tools/work.py", "draft", pid, "--body", "書き損じ", env=env, check=True)
-        self.run_py("tools/work.py", "draft", pid, "--body", "直した", "--by", "人", env=env, check=True)
+        self.run_py("tools/work.py", "draft", pid, "--body", "再処理", env=env, check=True)              # 版を指定しない再処理は書き換えない
+        self.run_py("tools/work.py", "draft", pid, "--body", "直した", "--version", "1", "--by", "人", env=env, check=True)
         d1 = self.w.read_need_rec(self.root, pid)["drafts"]
-        self.assertEqual([(x["版"], x["body"], x["書き手"]) for x in d1], [(1, "直した", "見直し（無人）")])   # 自分の版は直せる・人を名乗れない
+        self.assertEqual([(x["版"], x["body"], x["書き手"]) for x in d1], [(2, "直した", "見直し（無人）")])   # 直すと版が進む・人を名乗れない
         self.w.draft(self.root, pid, "メール", "", "人が直した")
-        self.run_py("tools/work.py", "draft", pid, "--body", "上書き", env=env, check=True)
+        self.run_py("tools/work.py", "draft", pid, "--body", "上書き", "--version", "3", env=env, check=True)
         self.assertEqual(self.w.read_need_rec(self.root, pid)["drafts"][-1]["body"], "人が直した")
+
+    def test_rewrite_after_the_person_copied_does_not_get_the_sent_mark(self):
+        # 独立レビュー R-038 の A：人が版1をコピーして送ったあと、見直しが版1を直した → 古い画面の「送った」（版1）は断る
+        pid, _ = self.need(who="佐藤", content="見積の再送")
+        env = {"AI_AGENCY_UNATTENDED": "1"}
+        self.run_py("tools/work.py", "draft", pid, "--body", "版1の本文", env=env, check=True)
+        self.run_py("tools/work.py", "draft", pid, "--body", "直した本文", "--version", "1", env=env, check=True)
+        self.assertEqual(self.post("/api/need/sent", {"id": pid, "version": "1"})[0], 400)
+        self.assertEqual(self.w.read_need_rec(self.root, pid)["drafts"][-1]["送った"], "")
+
+    def test_fix_after_sent_is_refused_not_a_reminder(self):
+        # 独立レビュー R-038 の H：人が送ったあと、見直しが古い状態のまま「書き損じの直し」→ 催促の版にしない
+        pid, _ = self.need(who="佐藤", content="見積の再送")
+        env = {"AI_AGENCY_UNATTENDED": "1"}
+        self.run_py("tools/work.py", "draft", pid, "--body", "版1", env=env, check=True)
+        self.w.sent(self.root, pid, version=1)
+        r = self.run_py("tools/work.py", "draft", pid, "--body", "直し", "--version", "1", env=env)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(len(self.w.read_need_rec(self.root, pid)["drafts"]), 1)
+        self.assertIn("返事を待つ", self.w.needs_overview(self.root)[0]["next"])
+        self.run_py("tools/work.py", "draft", pid, "--body", "直し", env=env, check=True)   # 版を付け忘れても、フォロー日の前は催促にしない
+        self.assertEqual(len(self.w.read_need_rec(self.root, pid)["drafts"]), 1)
+
+    def test_answer_in_the_same_minute_as_defer_brings_it_back(self):
+        # 独立レビュー R-038 の C：見送りと同じ分の答え
+        nid, _ = self.need()
+        rid = self.w.start_run_within_limits(self.root, "C-001", 1.0, anyway=True)
+        self.w.run_end(self.root, rid, "完了", 0.5)
+        self.report(rid)
+        self.w.accept(self.root, rid, "wait", "予算が無い")
+        self.w.defer(self.root, "C-001", "予算の答え待ち")
+        self.w.answer(self.root, nid, "月 300万円まで")
+        self.assertIn("C-001", self.waiting())
+
+    def test_linked_ordinary_commitment_keeps_its_follow_up(self):
+        # 独立レビュー R-038 の B：前から追っている依頼を不足として link → 止めていた仕事を閉じても普通のフォローは出る
+        self.mem("commitment", "add", "--kind", "given", "--who", "佐藤", "--content", "見積の再送", "--due", d(3), "--follow", d(0))
+        self.need("C-001", link="C-002")
+        self.w.mem.commitment_set_state(self.root, "C-001", "dropped")
+        self.assertTrue([x for x in self.w.scan(self.root) if x.get("task") == "C-002" and "進み具合" in x["what"]])
 
     def test_answer_after_defer_brings_the_task_back(self):
         nid, _ = self.need()

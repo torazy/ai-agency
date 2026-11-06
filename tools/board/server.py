@@ -402,6 +402,7 @@ def api_commitments(root: Path) -> dict:
     except Exception:  # noqa: BLE001
         nmap = {}
     states = {r.get("ID"): r.get("状態") for r in rows}
+    by_id = {r.get("ID"): r for r in rows}
     out = []
     for r in rows:
         d = dict(r)
@@ -431,6 +432,24 @@ def api_commitments(root: Path) -> dict:
         # 仕事を止めている不足（そろっていないもの）と、この約束が不足として止めている仕事（外部レビュー #12）
         d["needs"] = work.open_needs(root, r.get("ID", "")) if open_ and work.task_path(root, r.get("ID", "")).exists() else []
         d["blocks"] = [c for c in nmap.get(r.get("ID", ""), []) if states.get(c) not in mem.CLOSED] if open_ else []
+        try:
+            h = work.human_need(root, r.get("ID", ""), by_id, nmap) if r.get("ID") in nmap else None
+            if h:   # 人・相手の不足：答える・無しで進める・下書き・送った（段階3）
+                rec = work.read_need_rec(root, r.get("ID", ""))
+                d["need"] = {"kind": h["kind"], "who": h["who"], "blocks": h["blocks"],
+                             "answer": rec["answers"][-1] if rec["answers"] else None,
+                             "unanswered": not open_ and not rec["answers"],   # 答えの記録が無いまま閉じた（答えを残せる）
+                             "draft": rec["drafts"][-1] if rec["drafts"] else None, "drafts": len(rec["drafts"])}
+            for n in d["needs"]:
+                rec = work.read_need_rec(root, n["id"])
+                sent_ = [x for x in rec["drafts"] if x.get("送った")]
+                n["sent"] = sent_[-1]["送った"][:10] if sent_ else ""   # 催促の版（未送信）ができても、送ってある日は消さない
+                n["drafted"] = bool(rec["drafts"])
+            if d["assignee"] == "agent" and open_ and work.task_path(root, r.get("ID", "")).exists():
+                d["answered"] = [{"id": x["id"], "kind": x["answer"].get("kind"), "at": (x["answer"].get("at") or "")[:10]}
+                                 for x in work.needs_view(root, r.get("ID", "")) if x.get("answer") and x["answer"].get("at")]
+        except work.MemError:
+            pass
         if task.get("run"):
             # 作業セッション（run_task）の実行があるタスクは、その状態が正本。中で動いたサブエージェント（無人の記録）は
             # 止めた・落ちたあとも「稼働中」「終わった」で残り、停止・終了不明を隠していた（R-024 の独立レビュー）。
@@ -569,6 +588,9 @@ FIELD_RULES = {
     "content": (r".{1,300}", "1〜300字"), "who": (r".{1,80}", "1〜80字"), "rel": (r".{1,120}", "1〜120字"),
     "situation": (r".{1,300}", "1〜300字"), "judgment": (r".{1,300}", "1〜300字"), "reason": (r".{1,300}", "1〜300字"),
     "insight": (r".{1,300}", "1〜300字"),
+    "answer": (r"(?s).{1,1000}", "1〜1000字"), "without": (r"0|1", "0 / 1"), "via": (r".{1,40}", "1〜40字"),
+    "address": (r".{1,200}", "1〜200字"), "subject": (r".{1,200}", "1〜200字"), "body": (r"(?s).{1,4000}", "1〜4000字"),
+    "version": (r"\d{1,4}", "下書きの版（数）"),
     "id": (r"(C|I|D)-\d{3,}", "C-001 / I-001 / D-001 の形"),
     "kind": (r"task|received|given", "task / received / given"),
     "state": (r"open|in-progress|waiting|done|dropped", "open / in-progress / waiting / done / dropped"),
@@ -595,6 +617,7 @@ REQUIRED = {
     "/api/term/add": ["term", "meaning"], "/api/rule/add": ["content", "source"], "/api/rule/confirm": ["rid"],
     "/api/task/run": ["id"], "/api/task/plan": ["id", "review"], "/api/task/stop": ["id"], "/api/task/approve": ["id"],
     "/api/proposal/decide": ["sid", "decision", "reason"], "/api/proposal/adopt": ["sid", "who"],
+    "/api/need/answer": ["id", "answer"], "/api/need/draft": ["id", "body"], "/api/need/sent": ["id", "version"],
 }
 
 
@@ -644,7 +667,11 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
                     return 400, {"ok": False, "error": why + ("（やり直させる）" if "古い条件" in why else "")}
                 res = {"ok": True, "message": msg}
             else:
-                res = run_mem(mem.commitment_set_state, root, g("id", ""), g("state", ""))
+                try:
+                    msg = work.set_task_state(root, g("id", ""), g("state", ""))
+                except work.MemError as e:
+                    return 400, {"ok": False, "error": str(e)}
+                res = {"ok": True, "message": msg}
         elif path == "/api/commitment/due":
             res = run_mem(mem.commitment_set_due, root, g("id", ""), g("due", ""))
         elif path == "/api/commitment/follow":
@@ -670,6 +697,18 @@ def do_post(root: Path, path: str, body: dict) -> tuple[int, dict]:
             run_task.read_status(root, g("id", ""))
             try:
                 msg = work.complete_task(root, g("id", ""), approve=True)
+            except work.MemError as e:
+                return 400, {"ok": False, "error": str(e)}
+            res = {"ok": True, "message": msg}
+        elif path in ("/api/need/answer", "/api/need/draft", "/api/need/sent"):
+            # 人・相手の不足（段階3）：答える・無しで進める・連絡の下書き・送った。答えの正本は不足の記録（memory/work/needs/）
+            try:
+                if path == "/api/need/answer":
+                    msg = work.answer(root, g("id", ""), g("answer", ""), g("without") == "1", "人（ボード）")
+                elif path == "/api/need/draft":
+                    msg = work.draft(root, g("id", ""), g("via") or "未定", g("subject") or "", g("body", ""), g("address") or "", "人（ボード）")
+                else:
+                    msg = work.sent(root, g("id", ""), g("follow") or None, int(g("version")) if g("version") else None)
             except work.MemError as e:
                 return 400, {"ok": False, "error": str(e)}
             res = {"ok": True, "message": msg}

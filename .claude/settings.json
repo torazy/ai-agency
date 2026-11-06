@@ -51,6 +51,16 @@
         ]
       },
       {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh tools/py.sh tools/hooks/guardrail.py",
+            "timeout": 15
+          }
+        ]
+      },
+      {
         "matcher": "Agent|Task",
         "hooks": [
           {

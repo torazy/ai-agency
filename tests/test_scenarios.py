@@ -8,6 +8,7 @@ import os
 import threading
 import time
 import unittest
+from pathlib import Path
 
 from helpers import TempRepo, d
 
@@ -1285,6 +1286,301 @@ class CompleteUnderOneLockTest(Base):
         out = self.mem("commitment", "set-state", "C-001", "done", check=False)
         self.assertNotEqual(out.returncode, 0)
         self.assertIn("--force", out.stdout + out.stderr)
+
+
+class HumanNeedsTest(Base):
+    """#12 段階3（設計 §10 v2）：人・相手の不足の答え・下書き・送った。独立レビュー R-037 の前提（docs/reviews/R-037_test_premises.py）を
+    逆の結果で確かめ、順序を入れ替える。"""
+
+    def setUp(self):
+        super().setUp()
+        self.write(".claude/agents/researcher.md", "---\nname: researcher\n---\n")
+        self.w.order_set(self.root, "C-001", {"目的": "費用比較"})
+
+    def need(self, cid="C-001", content="予算の上限", who="自分", **kw):
+        return self.w.need(self.root, cid, who, content, kw.get("due", d(3)), kw.get("why", "比較の基準"),
+                           kw.get("check", ""), kw.get("link", ""))
+
+    def state(self, cid):
+        return next(r["状態"] for r in self.w.mem.commitment_rows(self.root) if r["ID"] == cid)
+
+    def waiting(self):
+        return [x["task"] for x in self.w.launch_waiting(self.root)]
+
+    def answers(self, cid="C-001"):
+        return [x.get("answer") for x in self.w.needs_view(self.root, cid)]
+
+    def post(self, path, body):
+        return self.srv.do_post(self.root, path, body)
+
+    def test_state_button_and_cli_cannot_close_a_need_without_an_answer(self):
+        nid, _ = self.need()
+        for st in ("done", "dropped"):
+            code, res = self.post("/api/commitment/state", {"id": nid, "state": st})
+            self.assertEqual(code, 400, res)
+            self.assertIn("答える", res["error"])
+        out = self.mem("commitment", "set-state", nid, "done", check=False)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("answer", out.stdout + out.stderr)                 # 答えへ回す（--force は案内しない）
+        self.assertNotIn("--force", out.stdout + out.stderr)
+        self.assertEqual(self.state(nid), "open")
+        self.assertNotIn("C-001", self.waiting())
+
+    def test_answer_closes_and_the_blocked_task_reads_it_from_one_place(self):
+        nid, _ = self.need()
+        code, res = self.post("/api/need/answer", {"id": nid, "answer": "月 300万円まで"})
+        self.assertEqual((code, self.state(nid)), (200, "done"), res)
+        self.assertEqual(self.answers()[0]["text"], "月 300万円まで")
+        self.assertEqual([n for n in self.w.read_task(self.root, "C-001")["notes"] if nid in n], [])   # 作業記録には写さない
+        self.assertIn("C-001", self.waiting())
+        shown = json.loads(self.run_py("tools/work.py", "show", "C-001", check=True).stdout)
+        self.assertEqual(shown["needs"][0]["answer"]["text"], "月 300万円まで")
+
+    def test_link_after_answer_and_reopen_after_close_still_read_the_answer(self):
+        self.mem("commitment", "add", "--kind", "given", "--who", "@pm", "--content", "別件", "--due", d(10))   # C-002
+        nid, _ = self.need()
+        self.w.answer(self.root, nid, "月 300万円まで")
+        self.assertEqual(self.need("C-002", link=nid), (nid, False))      # あとから同じ不足を待つ仕事
+        self.assertEqual(self.answers("C-002")[0]["text"], "月 300万円まで")
+        self.w.mem.commitment_set_state(self.root, "C-001", "dropped")    # 止めていた仕事を閉じて、開き直す
+        self.w.mem.commitment_set_state(self.root, "C-001", "open")
+        self.assertEqual(self.answers()[0]["text"], "月 300万円まで")
+
+    def test_answer_when_no_open_task_is_blocked_is_kept_for_reopen(self):
+        nid, _ = self.need()
+        self.w.mem.commitment_set_state(self.root, "C-001", "dropped")
+        self.assertEqual(self.post("/api/commitment/state", {"id": nid, "state": "dropped"})[0], 200)   # 止めている仕事が無い：普通に閉じてよい
+        self.w.mem.commitment_set_state(self.root, nid, "open")
+        self.w.answer(self.root, nid, "月 300万円まで")                     # 止めている仕事が閉じていても答えは不足の記録に残る
+        self.w.mem.commitment_set_state(self.root, "C-001", "open")
+        self.assertEqual(self.answers()[0]["text"], "月 300万円まで")
+
+    def test_second_answer_same_is_noop_different_is_refused_with_the_first(self):
+        nid, _ = self.need()
+        self.assertEqual(self.post("/api/need/answer", {"id": nid, "answer": "月 300万円まで"})[0], 200)
+        code, res = self.post("/api/need/answer", {"id": nid, "answer": "月 300万円まで"})
+        self.assertEqual(code, 200, res)                                   # 二度押し：変更なし
+        code, res = self.post("/api/need/answer", {"id": nid, "answer": "月 500万円まで"})   # 別の画面の別の答え
+        self.assertEqual(code, 400)
+        self.assertIn("月 300万円まで", res["error"])                      # 黙って捨てず、先の答えを見せる
+        self.assertEqual(len(self.w.read_need_rec(self.root, nid)["answers"]), 1)
+        self.w.mem.commitment_set_state(self.root, nid, "open")           # 開き直したら新しい版
+        self.w.answer(self.root, nid, "月 500万円まで")
+        self.assertEqual(self.answers()[0]["text"], "月 500万円まで")
+
+    def test_crash_between_record_and_state_does_not_duplicate(self):
+        nid, _ = self.need()
+        rec = {"answers": [{"版": 1, "日時": "2026-11-06 10:00:00", "誰が": "人", "種類": "回答", "body": "月 300万円まで"}], "drafts": []}
+        self.w._write_need_rec(self.root, nid, rec)                       # 記録を書いたあと、状態の前で落ちた
+        self.w.answer(self.root, nid, "月 300万円まで")                     # やり直し
+        self.assertEqual((len(self.w.read_need_rec(self.root, nid)["answers"]), self.state(nid)), (1, "done"))
+
+    def test_without_does_not_make_the_result_stale(self):
+        rid = self.finished_run()
+        self.w.accept(self.root, rid, "ask", "人へ")
+        nid, _ = self.need()
+        self.w.answer(self.root, nid, "今期は上限なし", without=True)
+        self.assertEqual((self.state(nid), self.w.stale_refs(self.root, rid)), ("dropped", []))
+        self.assertEqual(self.w.done_blocker(self.root, "C-001"), "")
+        self.assertEqual(self.answers()[0]["kind"], "無しで進める")
+
+    def test_answer_before_report_is_not_stale_after_report_is(self):
+        rid = self.w.start_run_within_limits(self.root, "C-001", 1.0)
+        nid, _ = self.need()
+        self.w.answer(self.root, nid, "月 300万円まで")                     # 実行中に答えた（報告の前に読む）
+        self.w.run_end(self.root, rid, "完了", 0.5)
+        self.report(rid, minutes_ago=-2)                                   # 報告は答えのあと
+        self.assertFalse(any(s.startswith(f"不足 {nid}") for s in self.w.stale_refs(self.root, rid)))
+        self.assertNotIn("C-001", self.waiting())                          # そろってから作った成果：再実行しない
+        rid2 = self.w.start_run_within_limits(self.root, "C-001", 1.0)    # 逆の順：報告のあとに答えた
+        nid2, _ = self.need(content="比べ方")
+        self.w.run_end(self.root, rid2, "完了", 0.5)
+        self.report(rid2, minutes_ago=2)
+        self.w.answer(self.root, nid2, "総額で比べる")
+        self.assertTrue(any(s.startswith(f"不足 {nid2}") for s in self.w.stale_refs(self.root, rid2)))
+
+    def test_gathering_need_is_closed_by_approval_not_answer(self):
+        nid, _ = self.need(who="@researcher", content="B社の月額")
+        self.w.start_run_within_limits(self.root, nid, 1.0)
+        with self.assertRaisesRegex(self.w.MemError, "承認"):
+            self.w.answer(self.root, nid, "B社は月 5万円")
+        self.assertEqual(self.state(nid), "open")
+
+    def test_person_need_draft_sent_and_follow_in_order(self):
+        pid, _ = self.need(who="佐藤", content="見積の再送", due=d(0))
+        kinds = lambda: [s["what"] for s in self.w.scan(self.root) if s.get("task") == pid]
+        self.assertTrue(kinds() and "下書きを作る" in kinds()[0])           # 送る前に「催促」を出さない
+        r = self.run_py("tools/work.py", "draft", pid, "--via", "メール", "--subject", "見積の再送のお願い",
+                        "--body", "佐藤様\\n見積を再送いただけますか", env={"AI_AGENCY_UNATTENDED": "1"})
+        self.assertEqual(r.returncode, 0, r.stderr)                        # 無人は下書きまで
+        self.assertEqual(kinds(), [])                                      # 未送信：提案はしない（ボードと朝のブリーフに出る）
+        self.w.draft(self.root, pid, "メール", "見積の再送のお願い", "佐藤様\n至急で再送をお願いします")   # 人が直す（同じ版）
+        r = self.run_py("tools/work.py", "draft", pid, "--body", "上書き", env={"AI_AGENCY_UNATTENDED": "1"})
+        rec = self.w.read_need_rec(self.root, pid)
+        self.assertEqual((len(rec["drafts"]), rec["drafts"][0]["body"]), (1, "佐藤様\n至急で再送をお願いします"))   # 無人は人の版を消さない
+        self.assertIn("無人", r.stdout)
+        r = self.run_py("tools/work.py", "sent", pid, env={"AI_AGENCY_UNATTENDED": "1"})
+        self.assertNotEqual(r.returncode, 0)                               # 送ったことにできるのは人だけ
+        code, res = self.post("/api/need/sent", {"id": pid, "version": "1", "follow": d(0)})
+        self.assertEqual(code, 200, res)
+        code, res = self.post("/api/need/sent", {"id": pid, "version": "1"})   # 二度押し
+        self.assertEqual(code, 200)
+        self.assertIn("変更なし", res["message"])
+        rec = self.w.read_need_rec(self.root, pid)
+        self.assertEqual([bool(x["送った"]) for x in rec["drafts"]], [True])   # 送っていない催促を記録しない
+        self.assertEqual(self.state(pid), "open")                          # 送ったの正本は記録（状態は変えない）
+        self.assertTrue(any("催促" in k for k in kinds()))                 # 送ったあとフォロー日：催促の下書き
+        r = self.run_py("tools/work.py", "draft", pid, "--body", "再度のお願い", env={"AI_AGENCY_UNATTENDED": "1"})
+        self.assertEqual(len(self.w.read_need_rec(self.root, pid)["drafts"]), 2)   # 送った版は書き換えず次の版
+        self.assertEqual(self.post("/api/need/answer", {"id": pid, "answer": "再送された（11/6 受領）"})[0], 200)
+        self.assertEqual(kinds(), [])                                      # 閉じたら催促しない
+
+    def test_unattended_cannot_answer(self):
+        nid, _ = self.need()
+        r = self.run_py("tools/work.py", "answer", nid, "上限なし", env={"AI_AGENCY_UNATTENDED": "1"})
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.state(nid), "open")
+
+    def test_default_follow(self):
+        from datetime import date as _d
+        t = _d(2026, 11, 6)
+        self.assertEqual(self.w.default_follow("2026-11-20", t), "2026-11-08")
+        self.assertEqual(self.w.default_follow("2026-11-07", t), "2026-11-07")
+        self.assertEqual(self.w.default_follow("2026-11-01", t), "2026-11-07")   # 期限を過ぎていれば翌日
+        self.assertEqual(self.w.default_follow("なし", t), "2026-11-08")
+
+    def test_board_shows_need_card_and_waiting_on_me(self):
+        nid, _ = self.need()
+        pid, _ = self.need(who="佐藤", content="見積の再送")
+        rows = {r["ID"]: r for r in self.srv.api_commitments(self.root)["rows"]}
+        self.assertEqual((rows[nid]["need"]["kind"], rows[nid]["need"]["blocks"]), ("self", ["C-001"]))
+        self.assertEqual((rows[pid]["need"]["kind"], rows[pid]["need"]["draft"]), ("person", None))
+        self.w.answer(self.root, nid, "月 300万円まで")
+        rows = {r["ID"]: r for r in self.srv.api_commitments(self.root)["rows"]}
+        self.assertEqual([x["id"] for x in rows["C-001"]["answered"]], [nid])
+        self.assertEqual([x["id"] for x in rows["C-001"]["needs"]], [pid])
+
+    # ---- 独立レビュー R-037（実装）の反例
+    def backdate_answer(self, nid, seconds):
+        rec = self.w.read_need_rec(self.root, nid)
+        rec["answers"][-1]["日時"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - seconds))
+        self.w._write_need_rec(self.root, nid, rec)
+
+    def test_link_of_an_answered_need_after_the_report_makes_it_stale(self):
+        self.mem("commitment", "add", "--kind", "given", "--who", "@pm", "--content", "別件", "--due", d(10))   # C-002
+        self.w.order_set(self.root, "C-002", {"目的": "別件"})
+        nid, _ = self.need("C-002")
+        self.w.answer(self.root, nid, "月 300万円まで")
+        self.backdate_answer(nid, 600)                                     # ずっと前に答えた
+        rid = self.finished_run("C-001", report=False)
+        self.report(rid, minutes_ago=2)                                    # 報告は答えのあと
+        self.need("C-001", link=nid)                                       # 報告のあとに、答え済みの不足を足した
+        self.assertTrue(any(s.startswith(f"不足 {nid}") for s in self.w.stale_refs(self.root, rid)))
+        self.assertIn("C-001", self.waiting())
+
+    def test_reopen_and_a_different_answer_makes_the_result_stale(self):
+        nid, _ = self.need()
+        self.w.answer(self.root, nid, "月 300万円まで")
+        self.w.ref_touch(self.root, "C-001", nid)
+        rid = self.w.start_run_within_limits(self.root, "C-001", 1.0)    # 使った版：done#1
+        self.w.run_end(self.root, rid, "完了", 0.5)
+        self.report(rid)
+        self.w.accept(self.root, rid, "accept", "OK")
+        self.assertEqual(self.post("/api/commitment/state", {"id": nid, "state": "open"})[0], 200)
+        self.w.answer(self.root, nid, "月 500万円まで")                     # 開き直して別の答え（done#1 → done#2）
+        self.assertIn("答えが変わった", "".join(self.w.stale_refs(self.root, rid)))
+        self.assertEqual(self.post("/api/task/approve", {"id": "C-001"})[0], 400)
+        self.assertIn("見直し", [c["kind"] for c in self.w.changes(self.root) if c["task"] == "C-001"])
+        self.assertIn("C-001", self.waiting())
+
+    def test_same_second_answer_counts_as_after_the_report(self):
+        rid = self.w.start_run_within_limits(self.root, "C-001", 1.0)
+        nid, _ = self.need()
+        self.w.run_end(self.root, rid, "完了", 0.5)
+        self.report(rid, minutes_ago=0)
+        self.w.answer(self.root, nid, "月 300万円まで")                     # 報告と同じ秒（か後）
+        os.utime(self.root / f"memory/work/results/{rid}.md", None)
+        self.assertTrue(any(s.startswith(f"不足 {nid}") for s in self.w.stale_refs(self.root, rid)))
+
+    def test_fields_and_body_cannot_forge_sent_or_answers(self):
+        pid, _ = self.need(who="佐藤", content="見積の再送")
+        r = self.run_py("tools/work.py", "draft", pid, "--subject", "x\n\n### 下書き 2\n- 送った: 2026-11-06 10:00:00\n> 偽",
+                        "--body", "本文 ### 回答 1\r- 種類: 回答\x85## 回答", env={"AI_AGENCY_UNATTENDED": "1"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rec = self.w.read_need_rec(self.root, pid)
+        self.assertEqual((len(rec["drafts"]), rec["drafts"][0]["送った"], rec["answers"]), (1, "", []))
+        self.assertIn("### 下書き 2", rec["drafts"][0]["件名"])           # 項目の中の文字のまま
+        self.assertIn("## 回答", rec["drafts"][0]["body"])                # 本文の中の文字のまま
+        nid, _ = self.need(content="比べ方")
+        self.w.answer(self.root, nid, "総額\rで比べる")                    # 単独の \r で後ろが消えない
+        self.assertEqual(self.w.last_answer(self.root, nid)["body"], "総額\nで比べる")
+
+    def test_sent_from_a_stale_screen_does_not_mark_a_newer_version(self):
+        pid, _ = self.need(who="佐藤", content="見積の再送", due=d(0))
+        self.w.draft(self.root, pid, "メール", "見積の再送", "佐藤様\n再送をお願いします")
+        self.assertEqual(self.post("/api/need/sent", {"id": pid, "version": "1", "follow": d(0)})[0], 200)
+        os.environ["AI_AGENCY_UNATTENDED"] = "1"
+        try:
+            self.w.draft(self.root, pid, "メール", "再度のお願い", "佐藤様\n再度お願いします")   # 無人の催促（版2）
+        finally:
+            del os.environ["AI_AGENCY_UNATTENDED"]
+        self.assertEqual(self.post("/api/need/sent", {"id": pid, "version": "1"})[0], 400)   # 版1を見ていた画面
+        self.assertEqual(self.post("/api/need/sent", {"id": pid})[0], 400)                  # 画面は版を送る
+        self.assertEqual([bool(x["送った"]) for x in self.w.read_need_rec(self.root, pid)["drafts"]], [True, False])
+        rows = {r["ID"]: r for r in self.srv.api_commitments(self.root)["rows"]}
+        self.assertEqual(rows["C-001"]["needs"][0]["sent"], d(0))        # 催促の版ができても送った日は消えない
+
+    def test_bad_follow_date_fails_before_marking_sent(self):
+        pid, _ = self.need(who="佐藤", content="見積の再送", due=d(5))
+        self.w.draft(self.root, pid, "メール", "見積の再送", "本文")
+        self.assertEqual(self.post("/api/need/sent", {"id": pid, "version": "1", "follow": "2026-02-30"})[0], 400)
+        self.assertEqual(self.w.read_need_rec(self.root, pid)["drafts"][0]["送った"], "")
+
+    def test_need_closed_without_an_answer_blocks_until_answered(self):
+        nid, _ = self.need()
+        self.assertEqual(self.post("/api/commitment/state", {"id": "C-001", "state": "dropped"})[0], 200)
+        self.assertEqual(self.post("/api/commitment/state", {"id": nid, "state": "done"})[0], 200)   # 止めている仕事が無いので閉じられた
+        self.assertEqual(self.post("/api/commitment/state", {"id": "C-001", "state": "open"})[0], 200)
+        self.assertIn("答えの記録が無い", "".join(self.w.unmet_conditions(self.root, "C-001")))
+        self.assertNotIn("C-001", self.waiting())
+        rows = {r["ID"]: r for r in self.srv.api_commitments(self.root)["rows"]}
+        self.assertTrue(rows[nid]["need"]["unanswered"])
+        self.assertEqual(self.post("/api/need/answer", {"id": nid, "answer": "月 300万円まで"})[0], 200)   # 閉じたままでも答えを残せる
+        self.assertEqual(self.w.unmet_conditions(self.root, "C-001"), [])
+        self.assertEqual(self.answers()[0]["text"], "月 300万円まで")
+
+    def test_link_to_a_person_commitment_closed_without_answer_blocks(self):
+        self.mem("commitment", "add", "--kind", "given", "--who", "佐藤", "--content", "見積の再送", "--due", d(3), "--follow", d(2))
+        self.mem("commitment", "set-state", "C-002", "done")
+        self.need("C-001", link="C-002")
+        self.assertIn("答えの記録が無い", "".join(self.w.unmet_conditions(self.root, "C-001")))
+
+
+class UnattendedSendGuardTest(TempRepo):
+    """無人のとき、コネクタの相手に届く操作を断る（設計 §10 v2・独立レビュー R-037 の M5）。人の会話では断らない。"""
+
+    def guard(self, tool, unattended):
+        ev = json.dumps({"tool_name": tool, "tool_input": {"to": "x@example.com", "body": "DELETE FROM t"},
+                         "hook_event_name": "PreToolUse", "session_id": "abcdef1234"})
+        return self.run_py("tools/hooks/guardrail.py", stdin=ev, env={"AI_AGENCY_UNATTENDED": "1"} if unattended else None)
+
+    def test_blocks_send_like_tools_only_when_unattended(self):
+        for tool in ("mcp__gmail__send_message", "mcp__slack__chat_postMessage", "mcp__gmail__reply",
+                     "mcp__calendar__create_event", "mcp__drive__share_file", "mcp__gmail__forward",
+                     "mcp__notion__notion-calendar-create-events", "mcp__x__sendMessage", "mcp__x__replyToThread",
+                     "mcp__mail__messages.send", "mcp__box__create_file_comment", "mcp__teams__create_message",
+                     "mcp__claude-in-chrome__computer", "mcp__claude-in-chrome__form_input", "mcp__gmail__delete_draft"):
+            self.assertEqual(self.guard(tool, True).returncode, 2, tool)
+            self.assertEqual(self.guard(tool, False).returncode, 0, tool)
+        for tool in ("mcp__gmail__create_draft", "mcp__gmail__search_threads", "mcp__calendar__list_events",
+                     "mcp__drive__read_file_content", "mcp__gmail__get_message", "mcp__notion__notion-search",
+                     "mcp__claude-in-chrome__read_page"):
+            self.assertEqual(self.guard(tool, True).returncode, 0, tool)   # 読み取り・下書きは無人でもよい
+
+    def test_settings_route_mcp_tools_to_the_guard(self):
+        d_ = json.loads((Path(__file__).resolve().parent.parent / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        self.assertTrue(any(h.get("matcher") == "mcp__.*" and "guardrail.py" in h["hooks"][0]["command"]
+                            for h in d_["hooks"]["PreToolUse"]))
 
 
 if __name__ == "__main__":

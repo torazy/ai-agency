@@ -442,6 +442,7 @@ function renderToday(){
   ${S.brief&&S.brief.markdown?`<details class="card" style="margin-bottom:14px" ${S.brief.age<=1?"open":""}><summary>${ic("chevron")}${ic("sun")}朝のブリーフ <span class="muted" style="font-weight:500">${esc(S.brief.date)}${S.brief.age===0?"（今日）":S.brief.age===1?"（昨日）":`（${S.brief.age}日前）`} ・ 無人実行</span></summary>${md(S.brief.markdown)}</details>`:""}
   <div class="grid-2">
     <div class="card"><div class="card-h">${ic("lightbulb")}チームからの提案<span class="n">${(S.work.proposals_open||[]).length}</span><span class="right">${act("すべて","chevron",()=>show("team"),"ghost")}</span></div>${proposalList(S.work.proposals_open||[],5)}</div>
+    ${waitingOnMe().length?`<div class="card"><div class="card-h">${ic("message")}あなたの回答を待っている仕事<span class="n">${waitingOnMe().length}</span></div>${waitingOnMe().map(waitingItem).join("")}</div>`:""}
     <div class="card"><div class="card-h">${ic("alert")}いま動くべき約束<span class="n">${urgent.length}</span></div>${urgent.length?urgent.map(comItem).join(""):empty("期限間近・フォロー到来の約束はありません","check")}</div>
     <div class="card"><div class="card-h">${ic("lightbulb")}未承認の提案<span class="n">${proposed.length}</span></div>${proposed.length?proposed.map(decItem).join(""):empty("承認待ちの提案はありません","badge-check")}</div>
     <div class="card"><div class="card-h">${ic("inbox")}inbox 未分類<span class="n">${inbox.length}</span></div>${inbox.length?inbox.map(inboxItem).join(""):empty("未分類の記憶はありません","inbox")}</div>
@@ -512,9 +513,34 @@ function assigneeAvatar(r,size="sm"){if(r.assignee==="agent"){const a=agentOf(r.
   if(r.assignee==="person")return avatar("",r.who,size,r.who);return avatar("user","自分",size,"me");}
 function assigneeLabel(r){return r.assignee==="agent"?`${esc(r.who)}（エージェント）`:r.assignee==="person"?`${esc(r.who)} に依頼`:r.kind==="received"?`自分（${esc(r.who)}から）`:"自分";}
 const CHG={"再開":["t-info","待ちが解消"],"着手":["t-info","着手条件を満たした"],"見直し":["t-warn","根拠が変わった"],"実行中に変化":["t-warn","実行中に前提が変化"],"完了済みの見直し":["t-warn","完了後に根拠が変化"]};
-function needBadges(r){const n=r.needs||[],b=r.blocks||[];
-  return (n.length?`<span class="badge t-warn" title="${esc(n.map(x=>`${x.id}「${x.content}」${x.who} ${x.due||""}（${x.state}）`).join(" ／ "))}">${ic("clock")}条件待ち：${esc(n.map(x=>`${x.id}（${x.who}${x.due&&x.due!=="なし"?"・"+x.due.slice(5).replace("-","/"):""}）`).join("・"))}</span>`:"")
+const md5=s=>s?s.slice(5,10).replace("-","/"):"";
+function needBadges(r){const n=r.needs||[],b=r.blocks||[],a=r.answered||[];
+  return (n.length?`<span class="badge t-warn" title="${esc(n.map(x=>`${x.id}「${x.content}」${x.who} ${x.due||""}（${x.state}${x.sent?"・送った "+x.sent:x.drafted?"・下書きあり（未送信）":""}）`).join(" ／ "))}">${ic("clock")}条件待ち：${esc(n.map(x=>`${x.id}（${x.who}${x.sent?"・送った "+md5(x.sent):x.due&&x.due!=="なし"?"・"+md5(x.due):""}）`).join("・"))}</span>`:"")
+   +(a.length?`<span class="badge t-ok" title="人・相手の不足の答え（作業役は work.py show で読む）">${ic("check")}${esc(a.map(x=>`${x.id} ${x.kind==="無しで進める"?"無しで進める":"回答済み"}`).join("・"))}</span>`:"")
    +(b.length?`<span class="badge t-info" title="この約束がそろうまで止まっている仕事">${ic("tag")}${esc(b.join("・"))} を止めている</span>`:"");}
+// 人・相手の不足（段階3）：答える・無しで進める・連絡の下書き・送った。答えの正本は不足の記録（止めている仕事には写さない）
+const needOpen=r=>r.need&&(r.need.blocks||[]).length&&(!isClosed(r)||r.need.unanswered);
+function needActs(r){if(!needOpen(r))return"";const n=r.need,d=n.draft;
+  return `<div class="acts">${act(n.kind==="person"?"回答を記録":"答える","message",()=>answerNeed(r,false),"primary")}${n.kind==="person"?act(d?(d["送った"]?"催促の下書き":"下書き"):"下書きを書く","file",()=>draftNeed(r),"ghost")+(d&&!d["送った"]?act("送った","check",()=>sentNeed(r),"ghost"):""):""}${act("無しで進める","x",()=>answerNeed(r,true),"ghost")}</div>`;}
+async function answerNeed(r,without){const n=r.need;
+  const o=await dialog({title:without?`${r.ID} を無しで進める`:`${r.ID} に答える`,icon:without?"x":"message",submit:without?"無しで進める":"答える",
+    text:`${r.content}\n止めている仕事：${(n.blocks||[]).join("・")}（作業役は次の実行の始めと報告の前にこの答えを読む）`+(without?"\n無しで進めると、止めている仕事はこれが無いまま進む。理由を残す。":"\n記憶（status.md など）にも残すなら、あとで /update で。"),
+    fields:[{label:without?"理由":(n.kind==="person"?`${n.who} の回答`:"答え"),name:"a",type:"textarea",required:true}]});
+  if(o&&o.a)api("/api/need/answer",{id:r.ID,answer:o.a,without:without?"1":"0"});}
+async function draftNeed(r){const n=r.need,d=n.draft||{},sentBefore=d["送った"];
+  const o=await dialog({title:`${r.ID} の${sentBefore?"催促の":""}下書き（${n.who} 宛）`,icon:"file",submit:"下書きを保存",
+    text:`送るのは人。本文を選んでコピーし、自分のメール・チャットから送ったら「送った」を押す。`+(sentBefore?`\n前の版は ${sentBefore} に送った（送った版は書き換えない。保存すると次の版になる）。`:""),
+    fields:[{label:"手段",name:"via",value:d["手段"]&&d["手段"]!=="未定"?d["手段"]:"",placeholder:"メール / Slack / 電話"},{label:"連絡先",name:"address",value:d["連絡先"]||""},
+      {label:"件名",name:"subject",value:sentBefore?"":d["件名"]||""},{label:"本文",name:"body",type:"textarea",required:true,value:sentBefore?"":d.body||""}]});
+  if(o&&o.body)api("/api/need/draft",{id:r.ID,via:o.via||"",address:o.address||"",subject:o.subject||"",body:o.body});}
+async function sentNeed(r){const d=r.need.draft||{};
+  const o=await dialog({title:`${r.ID} の下書き 版${d["版"]} を送った`,icon:"check",submit:"送った",
+    text:`${r.need.who} 宛・${d["手段"]||""}\n件名：${d["件名"]||"（なし）"}\n\n${d.body||""}`,
+    fields:[{label:"フォロー日（空なら2日後・期限がそれより前なら期限の日）",name:"follow",type:"date"}]});
+  if(o)api("/api/need/sent",{id:r.ID,version:String(d["版"]),...(o.follow?{follow:o.follow}:{})});}
+function waitingOnMe(){return (S.commitments.rows||[]).filter(r=>needOpen(r)&&(r.need.kind==="self"||!r.need.draft||!r.need.draft["送った"]));}
+function waitingItem(r){const n=r.need,d=n.draft;return `<div class="item"><div class="body"><div class="ttl"><span class="mono">${esc(r.ID)}</span> ${esc(r.content)}</div>
+  <div class="small muted">${esc((n.blocks||[]).join("・"))} を止めている・${n.kind==="self"?"あなたが答える":d?`${esc(n.who)} への下書き（未送信）`:`${esc(n.who)} への下書きはまだ`}</div>${needActs(r)}</div></div>`;}
 function changeBadges(r){return (r.changes||[]).map(k=>`<span class="badge ${(CHG[k]||["t-muted"])[0]}" title="関連情報の変化（${esc(k)}）。割り振り役が影響を判断する">${ic("bolt")}${esc((CHG[k]||[0,k])[1])}</span>`).join("");}
 async function stopTask(r){const o=await dialog({title:`${r.ID} の作業を止める`,icon:"x",submit:"止める",fields:[{label:"理由（作業記録の途中の変更に残る）",name:"reason",placeholder:"例：会議が前倒しになり条件が変わった"}]});if(o)api("/api/task/stop",{id:r.ID,reason:o.reason||"ボードで停止"});}
 function agentBadge(r){const tr=r.task_run||{};return r.agent_state==="running"?(tr.unverifiable?`<span class="badge t-warn" title="${esc(tr.unverifiable)}">${ic("alert")}稼働中？（確かめられない）</span>`:`<span class="badge t-ok live">稼働中</span>`):
@@ -567,6 +593,7 @@ function taskCard(r){return `<div class="tcard ${r.assignee==="agent"?"agent":""
   ${r.assignee==="agent"&&(r.has_result||/^(failed|unknown|stopped)$/.test(r.agent_state))?`<div class="acts">${act(r.has_result?"報告を見る":"ログを見る",r.has_result?"file":"alert",()=>showReport(r),r.has_result&&!isClosed(r)?"primary":"")}</div>`:""}
   ${r.assignee==="agent"&&!isClosed(r)&&r.agent_state!=="running"&&!S.summary.is_template?`<div class="acts">${act(r.has_result||(r.task_run||{}).run?"やり直させる":"着手させる","sparkles",()=>runTask(r),"ghost")}</div>`:""}
   ${r.assignee==="agent"&&(r.task_run||{}).state==="running"?`<div class="acts">${act("止める","x",()=>stopTask(r),"ghost")}</div>`:""}
+  ${needActs(r)}
   <div class="acts">${stateSeg(r)}${act("","pen",()=>editContent(r),"icon")}${act("","calendar",()=>editDue(r),"icon")}</div></div>`;}
 function renderCommitments(){
   const all=S.commitments.rows||[];

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-guardrail.py ── PreToolUse フック（Bash / PowerShell）で起動する物理ガードレール。
+guardrail.py ── PreToolUse フック（Bash / PowerShell・コネクタ mcp__）で起動する物理ガードレール。
+
+コネクタの道具は、無人実行のときに読み取りと下書き以外（送信・返信・予定の作成・ブラウザ操作など）を断る。
 
 memory/guardrails.json の deny パターンに一致するツール呼び出しを、モデルの判断に関係なく
 ブロックする。delegation.md の「禁止」を機械的に強制する最後の砦。
@@ -17,9 +19,35 @@ stdin から PreToolUse イベントの JSON を受け取る（tool_name / tool_
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
+
+# 無人のときに許すコネクタ（MCP）の操作：読み取りと、自分の下書き（送らない）だけ。ほかは断る（許可する方を数える。
+# 送信系の名前は send_message・chat_postMessage・messages.send・create-events・replyToThread など形が多く、断る方を数えると漏れる。
+# 独立レビュー R-037 実装の J）。ブラウザ操作（computer・form_input・navigate）も送れるので断る
+READ_VERBS = {"list", "get", "search", "read", "fetch", "query", "download", "find", "describe", "view", "lookup", "whoami"}
+WRITE_VERBS = {"send", "reply", "forward", "post", "publish", "share", "invite", "respond", "notify", "create", "update", "delete",
+               "cancel", "move", "add", "remove", "trash", "set", "write", "upload", "edit", "insert", "apply", "run", "execute",
+               "comment", "label", "unlabel", "mark", "archive", "restore", "copy", "duplicate", "resolve", "spawn", "stop", "convert",
+               "computer", "navigate", "form", "click", "type", "submit", "schedule", "book", "accept", "decline", "approve", "pay",
+               "transfer", "javascript", "upsert", "patch", "put", "rename", "close", "open"}
+DRAFT_WORDS = {"draft", "drafts"}
+
+
+def tool_words(tool: str) -> set:
+    """道具名の最後の部分を語に分ける（snake・kebab・ドット・camelCase）。mcp__gmail__send_message → {send, message}。"""
+    last = tool.split("__")[-1]
+    last = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", last)
+    return {w for w in re.split(r"[^A-Za-z0-9]+", last.lower()) if w}
+
+
+def unattended_allowed(tool: str) -> bool:
+    words = tool_words(tool)
+    if words & DRAFT_WORDS:   # 下書き（送らない）：作る・直す・読むだけ
+        return not (words & WRITE_VERBS - {"create", "update"})
+    return bool(words & READ_VERBS) and not (words & WRITE_VERBS)
 
 
 def workspace_root() -> Path:
@@ -90,6 +118,19 @@ def main() -> None:
         except (AttributeError, ValueError):
             pass
     event = read_event()
+    tool = extract_tool_name(event)
+    if tool.startswith("mcp__"):
+        # コネクタ（MCP）の道具：無人のとき（定期の見直し・作業セッション）は、読み取りと下書きだけを許す（送信・返信・投稿・
+        # 予定の作成・共有・ブラウザ操作などを断る）。送るのは人（設計 #12 段階3・独立レビュー R-037 の M5・J）。
+        # allowedTools だけでは、利用者の「常に許可」が無人にも効いて送れてしまう。人の会話では何もしない
+        if os.environ.get("AI_AGENCY_UNATTENDED") and not unattended_allowed(tool):
+            reason = (f"無人実行では、読み取りと下書き以外のコネクタの操作（{tool}）をしない。相手に届く操作は人が行う"
+                      "（下書きまで作り、送ったらボードの「送った」で記録する）")
+            print(json.dumps({"decision": "deny", "reason": reason}, ensure_ascii=False))
+            print(reason, file=sys.stderr)
+            sys.exit(2)
+        print(json.dumps({"suppressOutput": True}))
+        sys.exit(0)
     guardrails = load_guardrails()
     payload = extract_payload(event)
 

@@ -1123,6 +1123,7 @@ def migrate(root: Path) -> None:
     _work = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_work)
     changed += [f"{n} を作成" for n in _work.ensure_work(root)]
+    changed += _work.upgrade_premise_versions(root)   # 約束を前提にした参照の版に内容・期限（R-040）
     for name in ("glossary.md", "rules.md"):
         if not (root / "memory" / "knowledge" / name).exists():
             knowledge_path(root, name)

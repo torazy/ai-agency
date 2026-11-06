@@ -1647,6 +1647,206 @@ class HumanNeedsTest(Base):
         self.assertIn("C-001", self.waiting())                  # 答えは作業記録に写らないが、見送りのあとの答えで戻る
 
 
+class PremiseCommitmentTest(Base):
+    """他の約束を前提にした仕事：その約束の内容・期限の変更を拾う（R-020 の残り・R-040）。期限を延ばしただけは拾わない。"""
+
+    def setUp(self):
+        super().setUp()
+        self.mem("commitment", "add", "--kind", "received", "--who", "部長", "--content", "報告は A4 一枚", "--due", d(10))   # C-002
+        self.w.order_set(self.root, "C-001", {"目的": "費用比較"})
+        self.w.ref_add(self.root, "C-001", "C-002", "前提", "部長の指示")
+
+    def kinds(self, cid="C-001"):
+        return [c["kind"] for c in self.w.changes(self.root) if c["task"] == cid]
+
+    def accepted_run(self):
+        rid = self.finished_run()
+        self.assertEqual(self.w.accept(self.root, rid, "accept", "OK"), "受け入れ")
+        return rid
+
+    def test_content_change_of_a_premise_makes_the_result_stale(self):
+        rid = self.accepted_run()
+        self.w.mem.commitment_set_content(self.root, "C-002", "報告は A4 二枚・図を入れる")
+        self.assertIn("C-002", self.w.stale_refs(self.root, rid))
+        self.assertEqual(self.kinds(), ["見直し"])
+        self.assertEqual(self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})[0], 400)
+
+    def test_due_extension_is_not_a_change_but_earlier_due_is(self):
+        rid = self.accepted_run()
+        self.w.mem.commitment_set_due(self.root, "C-002", d(20))           # 延ばしただけ
+        self.assertEqual((self.w.stale_refs(self.root, rid), self.kinds()), ([], []))
+        self.w.mem.commitment_set_due(self.root, "C-002", d(5))            # 最初より早まった
+        self.assertIn("C-002", self.w.stale_refs(self.root, rid))
+        self.assertEqual(self.kinds(), ["見直し"])
+
+    def test_done_task_gets_a_review_candidate(self):
+        self.accepted_run()
+        self.w.complete_task(self.root, "C-001", approve=True)
+        self.w.mem.commitment_set_content(self.root, "C-002", "報告は口頭でよい")
+        self.assertEqual(self.kinds(), ["完了済みの見直し"])
+
+    def test_touch_then_same_value_again_is_not_a_change(self):
+        self.w.mem.commitment_set_content(self.root, "C-002", "報告は A4 二枚")
+        self.assertEqual(self.kinds(), ["見直し"])
+        self.w.ref_touch(self.root, "C-001", "C-002")
+        self.assertEqual(self.kinds(), [])
+
+    def test_wait_and_successor_refs_still_follow_the_state_only(self):
+        self.mem("commitment", "add", "--kind", "task", "--content", "見積を受け取る", "--due", d(5))      # C-003
+        self.w.ref_add(self.root, "C-001", "C-003", "待ち", "見積")
+        self.w.mem.commitment_set_content(self.root, "C-003", "見積を受け取る（B社）")
+        self.assertEqual([c["place"] for c in self.w.changes(self.root) if c["task"] == "C-001"], [])
+
+    def test_legacy_versions_do_not_propose_and_migrate_upgrades_them(self):
+        rid = self.accepted_run()
+        p = self.root / "memory/work/tasks/C-001.md"                       # 以前の形の版（状態だけ）に戻す
+        text = p.read_text(encoding="utf-8")
+        new = self.w.version_of(self.root, "C-002", "前提")
+        p.write_text(text.replace(new, "open"), encoding="utf-8")
+        self.assertNotIn(new, p.read_text(encoding="utf-8"))
+        self.assertEqual((self.kinds(), self.w.stale_refs(self.root, rid)), ([], []))   # 書き換わっただけで提案・古い扱いにしない
+        self.mem("migrate")
+        self.assertIn(new, p.read_text(encoding="utf-8"))                   # 状態が同じものは新しい形に
+        self.mem("migrate")                                                 # 冪等
+        self.w.mem.commitment_set_content(self.root, "C-002", "報告は A4 二枚")
+        self.assertEqual(self.kinds(), ["見直し"])                          # 以後は内容の変更を拾う
+
+    def test_migrate_keeps_an_unprocessed_state_change(self):
+        p = self.root / "memory/work/tasks/C-001.md"
+        new = self.w.version_of(self.root, "C-002", "前提")
+        p.write_text(p.read_text(encoding="utf-8").replace(new, "open"), encoding="utf-8")
+        self.w.mem.commitment_set_state(self.root, "C-002", "done")         # まだ処理していない状態の変化
+        self.mem("migrate")
+        self.assertIn("| open |", p.read_text(encoding="utf-8"))            # 書き換えない
+        self.assertEqual(self.kinds(), ["見直し"])
+
+
+class PremiseReviewTest(Base):
+    """R-040 の独立レビューの反例（前提の約束の版：移行・基準のずれ・識別・冪等・内容の hash・状態の同値）。"""
+
+    def setUp(self):
+        super().setUp()
+        self.mem("commitment", "add", "--kind", "received", "--who", "部長", "--content", "報告は A4 一枚", "--due", d(10))   # C-002
+        self.w.order_set(self.root, "C-001", {"目的": "費用比較"})
+        self.w.ref_add(self.root, "C-001", "C-002", "前提", "部長の指示")
+        self.p = self.root / "memory/work/tasks/C-001.md"
+
+    def kinds(self, cid="C-001"):
+        return [c["kind"] for c in self.w.changes(self.root) if c["task"] == cid]
+
+    def accepted_run(self):
+        rid = self.finished_run()
+        self.assertEqual(self.w.accept(self.root, rid, "accept", "OK"), "受け入れ")
+        return rid
+
+    def to_legacy(self):
+        """以前の形（状態だけ）に戻す：評価した版も、実行履歴の使った版も（R-040 以前に作られた記録）。"""
+        new = self.w.version_of(self.root, "C-002", "前提")
+        self.p.write_text(self.p.read_text(encoding="utf-8").replace(new, "open"), encoding="utf-8")
+        return new
+
+    # ---- 以前の記録：migrate は評価した版だけを書き換え、使った版（実行履歴）は以前の形のまま
+    def test_A_migrate_leaves_legacy_snapshot_so_stale_result_is_approved(self):
+        rid = self.accepted_run()          # 以前の版の本体で受け入れまで済んだ（人の承認待ち）
+        self.to_legacy()
+        self.mem("migrate")                # 本体を取り込んで移行
+        self.w.mem.commitment_set_content(self.root, "C-002", "報告は口頭でよい")   # そのあと前提の内容が変わった
+        self.assertEqual(self.kinds(), ["見直し"])                                # 提案は出る
+        self.assertIn("C-002", self.w.stale_refs(self.root, rid),
+                      "移行前に始めた実行の使った版が状態だけのままで、内容の変更が古い条件にならない")
+        code = self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})[0]
+        self.assertEqual(code, 400, "内容の変わった前提で作った成果を、ボードの承認で完了にできた")
+
+    # ---- 同じ値：評価した版と使った版で比較の基準が違う
+    def test_B_extend_then_run_then_shorten_blocks_approval_without_any_proposal(self):
+        self.w.mem.commitment_set_due(self.root, "C-002", d(20))   # 延ばした（提案なし・評価した版は d(10) のまま）
+        self.assertEqual(self.kinds(), [])
+        rid = self.accepted_run()                                  # 使った版は d(20)
+        self.w.mem.commitment_set_due(self.root, "C-002", d(15))   # 少し縮めた（評価した d(10) よりは遅い）
+        stale = self.w.stale_refs(self.root, rid)
+        self.assertEqual(bool(stale), bool(self.kinds()),
+                         f"関門の基準が食い違う：stale_refs={stale} changes={self.kinds()}")
+
+    def test_C_touch_after_extension_moves_the_baseline(self):
+        rid = self.accepted_run()                                  # 使った版は d(10)
+        self.w.mem.commitment_set_due(self.root, "C-002", d(20))   # 延ばしただけ（提案なし）
+        self.w.ref_touch(self.root, "C-001")                       # 別の変化の処理のついでに全参照を評価済みに
+        self.w.mem.commitment_set_due(self.root, "C-002", d(15))   # 最初の d(10) よりは遅い
+        stale = self.w.stale_refs(self.root, rid)
+        self.assertEqual(bool(stale), bool(self.kinds()),
+                         f"関門の基準が食い違う：stale_refs={stale} changes={self.kinds()}")
+
+    # ---- 以前の記録：未処理（提案済み・保留）の状態の変化が、識別が変わって二度提案される
+    def test_D_pending_legacy_state_change_is_proposed_again(self):
+        self.to_legacy()
+        new = self.w.version_of(self.root, "C-002", "前提")
+        # 以前の本体：状態だけの版で提案して保留した（ref touch はしていない）
+        self.w.mem.commitment_set_state(self.root, "C-002", "done")
+        when = self.w.read_task(self.root, "C-001")["refs"][0].get("評価日", "")
+        old_key = f"C-001|C-002|open@{when}→done"
+        sid = self.w.propose(self.root, "C-001 の見直し", "前提が変わった", "C-002 open→done", "x", "@chief", old_key)
+        self.w.decide(self.root, sid, "hold", reason="優先度：あとで")
+        self.mem("migrate")                                        # 状態が違うので書き換えない（正しい）
+        made = self.w.propose_from_changes(self.root)
+        self.assertEqual(made, [], f"同じ状態の変化（open→done）を新しい版の形で二度提案した：{made}")
+
+    # ---- 以前の記録：前提の約束が台帳から消えている参照（版「なし」）で migrate が毎回書き換えを報告
+    def test_E_migrate_reports_change_every_time_for_missing_commitment(self):
+        self.w.ref_add(self.root, "C-001", "C-099", "前提", "消えた約束")   # 版「なし」
+        r1 = self.mem("migrate").stdout
+        r2 = self.mem("migrate").stdout
+        self.assertNotIn("前提の版を新しい形に", r2, f"冪等でない（2回目も書き換えを報告）：\n{r1}\n---\n{r2}")
+
+    # ---- 見逃し：内容の hash は _norm を通るので、「更新日」「最終更新」で始まる内容は変えても版が変わらない
+    def test_F_content_starting_with_koushinbi_is_invisible(self):
+        self.w.mem.commitment_set_content(self.root, "C-002", "更新日を 11/20 にする")
+        self.w.ref_touch(self.root, "C-001", "C-002")
+        rid = self.accepted_run()
+        self.w.mem.commitment_set_content(self.root, "C-002", "更新日を 11/10 に前倒しする")
+        self.assertIn("C-002", self.w.stale_refs(self.root, rid), "内容の変更を見逃した（_norm が行ごと捨てる）")
+
+    # ---- 誤検知：状態 open→in-progress（以前からある。状態を版に入れているため）
+    def test_G_premise_in_progress_makes_result_stale(self):
+        rid = self.accepted_run()
+        self.w.mem.commitment_set_state(self.root, "C-002", "in-progress")
+        self.assertEqual((self.w.stale_refs(self.root, rid), self.kinds()), ([], []),
+                         "前提の約束に着手しただけで古い条件・見直しになる")
+
+    # ---- 誤検知：表記ゆれ（全角空白）
+    def test_H_whitespace_variant_is_a_change(self):
+        rid = self.accepted_run()
+        self.w.mem.commitment_set_content(self.root, "C-002", "報告は A4　一枚")
+        self.assertEqual(self.w.stale_refs(self.root, rid), [], "全角空白だけの違いで古い条件になる")
+
+    # ---- 抜け道：ボードの内容・期限・状態ボタンの経路（拾えていることの確認）
+    def test_I_board_paths_are_caught(self):
+        rid = self.accepted_run()
+        self.assertEqual(self.srv.do_post(self.root, "/api/commitment/due", {"id": "C-002", "due": d(30)})[0], 200)
+        self.assertEqual(self.w.stale_refs(self.root, rid), [])
+        self.assertEqual(self.srv.do_post(self.root, "/api/commitment/due", {"id": "C-002", "due": d(3)})[0], 200)
+        self.assertIn("C-002", self.w.stale_refs(self.root, rid))
+        self.assertEqual(self.srv.do_post(self.root, "/api/commitment/due", {"id": "C-002", "due": d(10)})[0], 200)
+        self.assertEqual(self.w.stale_refs(self.root, rid), [])    # 元に戻せば古くない
+        self.assertEqual(self.srv.do_post(self.root, "/api/commitment/content", {"id": "C-002", "content": "報告は | 二枚"})[0], 200)
+        self.assertIn("C-002", self.w.stale_refs(self.root, rid))
+        self.assertEqual(self.srv.do_post(self.root, "/api/task/approve", {"id": "C-001"})[0], 400)
+        self.assertEqual(self.srv.do_post(self.root, "/api/commitment/state", {"id": "C-001", "state": "done"})[0], 400)
+        # CLI 経路
+        self.mem("commitment", "set-content", "C-002", "報告は A4 一枚", check=False)
+
+    # ---- 正本と写し：版の文字列が使った版・起因に入っても壊れない
+    def test_J_snapshot_and_key_roundtrip(self):
+        rid = self.accepted_run()
+        used = self.w._parse_snapshot(self.w.run_row(self.root, rid)["使った版"])
+        self.assertEqual(used["C-002"], self.w.version_of(self.root, "C-002", "前提"))
+        self.w.mem.commitment_set_content(self.root, "C-002", "a=b; c|d ~ e")
+        made = self.w.propose_from_changes(self.root)
+        self.assertEqual(len(made), 1)
+        self.assertEqual(self.w.propose_from_changes(self.root), [])   # 二度は提案しない
+        used = self.w._parse_snapshot(self.w.run_row(self.root, rid)["使った版"])
+        self.assertIn("C-002", used)
+
+
 class UnattendedSendGuardTest(TempRepo):
     """無人のとき、コネクタの相手に届く操作を断る（設計 §10 v2・独立レビュー R-037 の M5）。人の会話では断らない。"""
 

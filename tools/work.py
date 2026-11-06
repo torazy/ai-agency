@@ -291,6 +291,11 @@ def version_of(root: Path, place: str, use: str = "") -> str | None:
         st = row.get("状態", "")
         if use == "不足" and st in NEED_MET and _human_kind(row):
             return f"{st}#{len(read_need_rec(root, place)['answers'])}"
+        if use == "前提":
+            # 前提にした約束は、状態に加えて内容と期限も版に入れる（内容・期限を変えても見直しにならなかった。R-020 の残り）。
+            # 比べるときは _premise_changed（期限を延ばしただけは変化にしない）
+            text = hashlib.sha1(" ".join(_content(row).split()).encode("utf-8")).hexdigest()[:8]
+            return f"{st}~{text}~{row.get('期限', '') or 'なし'}"
         return st
     if place.startswith("memory/"):
         path, _, heading = place.partition("#")
@@ -445,6 +450,8 @@ def ref_touch(root: Path, cid: str, place: str | None = None) -> list[str]:
         if not place and r.get("使い方") == "不足":
             continue   # 不足は場所を指定して進める（別の変化の処理のついでに解消を消費しない）
         v = version_of(root, r.get("場所", ""), r.get("使い方", ""))
+        if r.get("使い方") == "前提" and CID_RE.fullmatch(r.get("場所", "")):
+            v = premise_baseline(r.get("評価した版"), v)
         if v is not None and v != r.get("評価した版"):
             _set_row(lines, "参照", "場所", r["場所"], {"評価した版": v, "評価日": _next_eval(r.get("評価日", ""))})
             done.append(r["場所"])
@@ -511,10 +518,83 @@ def snapshot(root: Path, cid: str) -> str:
     parts = []
     for r in read_task(root, cid).get("refs", []):
         v = version_of(root, r.get("場所", ""), r.get("使い方", ""))
+        if r.get("使い方") == "前提" and CID_RE.fullmatch(r.get("場所", "")):
+            v = premise_baseline(r.get("評価した版"), v)
         parts.append(f"{r.get('場所')}={v if v is not None else '手動'}")
     parts.append(f"{ORDER_V}={order_version(root, cid)}")
     parts.append(f"{NOTES_V}={len(read_task(root, cid).get('notes', []))}")
     return "; ".join(parts)
+
+
+PREMISE_SEP = "~"   # 前提の約束の版「状態~内容の hash~期限」（表のセルに入るので「|」は使えない）
+
+
+def _pclass(state: str) -> str:
+    """前提の約束の状態の比べ方：open・in-progress・waiting は同じ（進み具合が変わっただけで前提は同じ）。done・dropped は別。"""
+    return state if state in mem.CLOSED or state == "なし" else "進行中"
+
+
+def premise_baseline(old: str | None, new: str | None) -> str | None:
+    """前提の約束の版の基準：変化でなければ（期限を延ばしただけ・進み具合だけ）前の版を基準に残す（いちばん厳しい評価。
+    評価した版・使った版・比べる関門で基準をそろえる。R-040 の独立レビュー）。"""
+    if old and new and PREMISE_SEP in old and not _premise_changed(old, new):
+        return old
+    return new
+
+
+def _premise_changed(then: str | None, now: str | None) -> bool:
+    """前提の版の変化のうち、結論に効き得るもの：状態・内容が変わった、期限が早まった（または期限が付いた）。
+    期限を延ばしただけは変化にしない（R-020 の誤検知と同じ考え）。以前の形の版（状態だけ）とは状態だけで比べる。"""
+    if then is None or now is None or then == now:
+        return False
+    if PREMISE_SEP not in then or PREMISE_SEP not in now:
+        return _pclass(then.split(PREMISE_SEP)[0]) != _pclass(now.split(PREMISE_SEP)[0])
+    st0, h0, d0 = (then.split(PREMISE_SEP) + ["", "", ""])[:3]
+    st1, h1, d1 = (now.split(PREMISE_SEP) + ["", "", ""])[:3]
+    if _pclass(st0) != _pclass(st1) or h0 != h1:
+        return True
+    dated = lambda s: bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", s or ""))
+    if dated(d1) and (not dated(d0) or d1 < d0):
+        return True
+    return False
+
+
+def upgrade_premise_versions(root: Path) -> list[str]:
+    """mem.py migrate のロックの中で呼ぶ（ここではロックを取らない：mem の写しのロックを持ったまま work の写しのロックを取ると、
+    自分のファイルのロックを待って止まる。R-035 の独立レビュー）。移行：約束を前提にした参照の「評価した版」が以前の形（状態だけ）なら、状態が今と同じものだけ新しい形（状態~内容~期限）に
+    書き換える（以後の内容・期限の変更を拾う）。状態が違うものは書き換えない（まだ処理していない変化を消さない）。冪等。"""
+    out = []
+    tasks = work_dir(root) / "tasks"
+    for p in sorted(tasks.glob("C-*.md")) if tasks.exists() else []:
+        lines = read(p)
+        changed = False
+        for r in table_rows(lines, "参照"):
+            place, old = r.get("場所", ""), r.get("評価した版", "")
+            if r.get("使い方") != "前提" or not CID_RE.fullmatch(place) or PREMISE_SEP in old:
+                continue
+            new = version_of(root, place, "前提")
+            if new and PREMISE_SEP in new and new != old and new.split(PREMISE_SEP)[0] == old:
+                _set_row(lines, "参照", "場所", place, {"評価した版": new})
+                changed = True
+        # 実行履歴の使った版（「場所=版; …」）も同じ条件で（移行の前に始めた実行が、移行のあとの内容の変化を見逃さない）
+        premises = {r.get("場所", "") for r in table_rows(lines, "参照") if r.get("使い方") == "前提" and CID_RE.fullmatch(r.get("場所", ""))}
+        for run in table_rows(lines, "実行履歴"):
+            used = run.get("使った版", "")
+            parts, hit = [], False
+            for part in used.split(";"):
+                k, eq, v = part.strip().rpartition("=")
+                if eq and k.strip() in premises and PREMISE_SEP not in v:
+                    new = version_of(root, k.strip(), "前提")
+                    if new and PREMISE_SEP in new and new.split(PREMISE_SEP)[0] == v.strip():
+                        part, hit = f"{k.strip()}={new}", True
+                parts.append(part.strip())
+            if hit:
+                _set_row(lines, "実行履歴", "実行ID", run.get("実行ID", ""), {"使った版": "; ".join(p for p in parts if p)})
+                changed = True
+        if changed:
+            write(p, lines)
+            out.append(f"{p.stem} の前提の版を新しい形に")
+    return out
 
 
 def _vstate(v: str | None) -> str:
@@ -712,8 +792,8 @@ def stale_refs(root: Path, rid: str) -> list[str]:
             continue   # 取り下げ（dropped）は「無しで進める」と決めたので、無しで作った成果を古くしない
         if r.get("使い方") != "前提":
             continue
-        now = version_of(root, place)
-        if now is not None and place in used and used[place] != now:
+        now = version_of(root, place, "前提")
+        if now is not None and place in used and (_premise_changed(used[place], now) if CID_RE.fullmatch(place) else used[place] != now):
             out.append(place)
     return out
 
@@ -897,19 +977,23 @@ def changes(root: Path) -> list[dict]:
                 kind = "再開"
             elif use == "後工程" and not closed and _vstate(new) == "done":
                 kind = "着手"
+            elif use == "前提" and CID_RE.fullmatch(place) and not _premise_changed(old, new):
+                continue   # 前提の約束の期限を延ばしただけ・以前の形の版から書き換わっただけ
             elif use == "前提" and not closed:
                 kind = "実行中に変化" if running else "見直し"
             elif use == "前提" and closed:
                 kind = "完了済みの見直し"
             else:
                 continue
+            # 以前の形の版（状態だけ）からの変化は、識別の新しい版も状態だけにする（更新の前に提案・保留した出来事と同じ識別）
+            knew = new.split(PREMISE_SEP)[0] if use == "前提" and PREMISE_SEP in new and PREMISE_SEP not in old else new
             out.append({"task": cid, "label": r.get("情報", ""), "place": place, "use": use, "old": old, "new": new,
                         "kind": kind, "running": running, "task_state": st,
                         # 変化の出来事の識別：どの評価（版と、ref touch のたびに増える世代）からどの版へ。値だけで識別すると
                         # 100→200→100→200 の最後が最初の 200 と同じ扱いになる（外部レビュー #6）。判定しても版を進めていない
                         # （touch していない）間は同じ識別なので二度は提案しない。時刻だけでは同じ分の往復を分けられない
-                        "key": f"{cid}|{place}|{old}@{r.get('評価日', '')}→{new}",
-                        "legacy_key": f"{cid}|{place}|{new}",
+                        "key": f"{cid}|{place}|{old}@{r.get('評価日', '')}→{knew}",
+                        "legacy_key": f"{cid}|{place}|{knew}",
                         "content": t["order"].get("目的", "")})
     return out
 

@@ -17,11 +17,14 @@ cd "$ROOT" || exit 1
 
 mkdir -p memory/briefs
 export AI_AGENCY_UNATTENDED=1   # operation-logger が「承認済」ではなく「自動実行[unattended]」と記録する
+export AI_AGENCY_ROLE=brief      # guardrail が朝のブリーフに許す範囲（定期の見直しとは別）
+unset AI_AGENCY_RUN AI_AGENCY_TASK
 LOG=memory/briefs/_last-run.log
 echo "[$(date '+%Y-%m-%d %H:%M')] start" > "$LOG"
 # 追記系と読み取りの mem.py だけを許す（mem.py 自身も AI_AGENCY_UNATTENDED の間は書き換えを拒否する）
 ALLOWED=("Read" "Glob" "Grep" "Edit(memory/briefs/**)"
-         "Bash(python tools/recall.py *)" "Bash(python3 tools/recall.py *)")
+         "Bash(python tools/recall.py *)" "Bash(python3 tools/recall.py *)"
+         "Bash(python tools/work.py needs*)" "Bash(python3 tools/work.py needs*)")
 for op in "inbox add" "inbox list" "commitment add" "commitment list" "person observe" "person note" \
           "sync mark" "sync show" "check"; do
   ALLOWED+=("Bash(python tools/mem.py ${op}*)" "Bash(python3 tools/mem.py ${op}*)")

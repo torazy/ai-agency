@@ -1859,6 +1859,7 @@ def pending(root: Path, dispatch_budget: float = 0.0) -> dict:
 UNATTENDED_OK = {"order", "ref", "changes", "scan", "propose", "decide", "note", "handoff", "accept", "status", "tick", "show", "pending",
                  "defer", "adopt", "need", "draft", "needs"}   # need・draft は割り振り役（確認役）が使う。作業役の allowed_tools には入れない
 # answer・sent は人だけ（無人が不足を閉じる・送ったことにする道を作らない。独立レビュー R-037 の H3）
+WORKER_OK = {"show", "note", "handoff", "status"}   # 作業セッション（AI_AGENCY_RUN）が使う命令（run_task.allowed_tools と同じ）
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -1919,6 +1920,10 @@ def main(argv: list[str] | None = None) -> None:
         globals()["ok"] = lambda m: mem.LAST_OK.append(m)
     if os.environ.get("AI_AGENCY_UNATTENDED") and a.cmd not in UNATTENDED_OK:
         print(f"❌ 無人実行では `{a.cmd}` はしない", file=sys.stderr)
+        sys.exit(1)
+    if os.environ.get("AI_AGENCY_RUN") and a.cmd not in WORKER_OK:
+        # 作業セッションは自分の仕事の記録だけ（自分の実行を受け入れる・上限を書き換える・別の仕事を起こすことはしない。R-042 の D）
+        print(f"❌ 作業セッションでは `{a.cmd}` はしない（show・note・handoff・status だけ）", file=sys.stderr)
         sys.exit(1)
     try:
         if a.cmd == "order":

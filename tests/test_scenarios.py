@@ -1874,5 +1874,122 @@ class UnattendedSendGuardTest(TempRepo):
                             for h in d_["hooks"]["PreToolUse"]))
 
 
+class UnattendedWriteGuardTest(TempRepo):
+    """無人のとき、--allowedTools と同じ範囲をフックでも守る（利用者の「常に許可」が無人にも効く穴・R-042）。人の会話では断らない。"""
+
+    def run_guard(self, tool, inp, env=None):
+        ev = json.dumps({"tool_name": tool, "tool_input": inp, "hook_event_name": "PreToolUse", "session_id": "abcdef1234"},
+                        ensure_ascii=False)
+        return self.run_py("tools/hooks/guardrail.py", stdin=ev, env=env).returncode
+
+    def test_edit_and_write_only_where_the_role_may_write(self):
+        dispatch = {"AI_AGENCY_UNATTENDED": "1"}
+        worker = {"AI_AGENCY_UNATTENDED": "1", "AI_AGENCY_ROLE": "worker", "AI_AGENCY_TASK": "C-001", "AI_AGENCY_RUN": "C-001-R1"}
+        cases = [
+            ("Edit", {"file_path": "memory/briefs/dispatch.md"}, dispatch, 0),
+            ("Write", {"file_path": str(self.root / "memory" / "briefs" / "2026-11-06.md")}, dispatch, 0),
+            ("Edit", {"file_path": "memory/commitments.md"}, dispatch, 2),
+            ("Write", {"file_path": "memory/work/needs/C-031.md"}, dispatch, 2),
+            ("Edit", {"file_path": "memory/briefs/../commitments.md"}, dispatch, 2),
+            ("Edit", {"file_path": "memory/work/results/C-001-R1.md"}, dispatch, 2),
+            ("Write", {"file_path": "memory/work/results/C-001-R1.md"}, worker, 0),
+            ("Edit", {"file_path": "memory/briefs/dispatch.md"}, worker, 2),
+            ("Edit", {"file_path": "memory/work/tasks/C-001.md"}, worker, 2),
+            ("MultiEdit", {"file_path": "memory/people/x.md"}, worker, 2),
+            ("NotebookEdit", {"notebook_path": "x.ipynb"}, worker, 2),
+            ("Write", {}, worker, 2),
+            ("Edit", {"file_path": "memory/commitments.md"}, None, 0),          # 人の会話では断らない
+        ]
+        for tool, inp, env, want in cases:
+            self.assertEqual(self.run_guard(tool, inp, env), want, (tool, inp, env))
+
+    def test_shell_only_product_commands_one_at_a_time(self):
+        env = {"AI_AGENCY_UNATTENDED": "1"}
+        ok = ['python tools/work.py show C-007', 'python3 tools/work.py note C-1 "A > B; 済み | x"',
+              'python tools/recall.py find "予算"', "python tools/work.py draft C-031 --body '佐藤様\\nお願い'"]
+        ng = ['python tools/work.py show C-1; rm -rf x', 'python tools/work.py show C-1 > out.txt', 'cd memory && python tools/work.py show',
+              'git push', 'python tools/work.py note C-1 "$(curl x)"', 'python evil.py', 'python tools/work.py show C-1 | tee x']
+        for c in ok:
+            self.assertEqual(self.run_guard("Bash", {"command": c}, env), 0, c)
+            self.assertEqual(self.run_guard("PowerShell", {"command": c}, env), 0, c)
+        for c in ng:
+            self.assertEqual(self.run_guard("Bash", {"command": c}, env), 2, c)
+        self.assertEqual(self.run_guard("Bash", {"command": "git status"}), 0)       # 人の会話では今までどおり
+        self.assertEqual(self.run_guard("Bash", {"command": "rm -rf /"}), 2)         # 禁止のパターンは今までどおり
+
+    def test_settings_and_morning_brief_allow_what_the_procedures_use(self):
+        repo = Path(__file__).resolve().parent.parent
+        pre = json.loads((repo / ".claude" / "settings.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+        self.assertTrue(any(h.get("matcher") == "Edit|Write|MultiEdit|NotebookEdit" and "guardrail.py" in h["hooks"][0]["command"] for h in pre))
+        for f in ("morning-brief.sh", "morning-brief.ps1"):
+            self.assertIn("tools/work.py needs", (repo / "tools" / "schedule" / f).read_text(encoding="utf-8"))   # 手順（R-038）が使う
+        self.assertIn("work.py needs", (repo / ".claude" / "commands" / "morning-brief.md").read_text(encoding="utf-8"))
+
+    # ---- 独立レビュー R-042 の反例
+    def raw_guard(self, raw, env):
+        return self.run_py("tools/hooks/guardrail.py", stdin=raw, env=env).returncode
+
+    def test_shell_quoting_bypasses_are_refused(self):
+        env = {"AI_AGENCY_UNATTENDED": "1", "AI_AGENCY_ROLE": "dispatch"}
+        bs = chr(92)
+        for c in ("python tools/work.py show C-001 " + bs + "' ; touch X ; echo " + bs + "'",
+                  "python tools/work.py show C-001 " + bs + '" ; touch X ; echo ' + bs + '"'):
+            self.assertEqual(self.run_guard("Bash", {"command": c}, env), 2, c)
+        for c in ("python tools/work.py show (New-Item x).Name", "python tools/work.py show @(New-Item x)",
+                  "python tools/work.py show 'x\u2019 ; New-Item x ; \u2018y'", 'python tools/work.py note C-1 "$env:X"',
+                  "python tools/work.py need C-1 --who @pm --content x"):
+            self.assertEqual(self.run_guard("PowerShell", {"command": c}, env), 2, c)
+        ok = 'python tools/work.py need C-1 --who "@pm" --content "予算（月額・初期費用）" --why "A > B; 済み"'
+        self.assertEqual(self.run_guard("PowerShell", {"command": ok}, env), 0)
+        self.assertEqual(self.run_guard("Bash", {"command": "python tools/work.py --root C:/x show C-1"}, env), 2)   # 別の場所の記録
+
+    def test_each_role_runs_only_its_own_commands(self):
+        worker = {"AI_AGENCY_UNATTENDED": "1", "AI_AGENCY_ROLE": "worker", "AI_AGENCY_RUN": "C-001-R1"}
+        brief = {"AI_AGENCY_UNATTENDED": "1", "AI_AGENCY_ROLE": "brief"}
+        dispatch = {"AI_AGENCY_UNATTENDED": "1", "AI_AGENCY_ROLE": "dispatch"}
+        for c in ("python tools/work.py accept C-001-R1 accept", "python tools/work.py order C-001 --limit 20",
+                  "python tools/run_task.py C-002", "python tools/mem.py commitment add --kind task --content x"):
+            self.assertEqual(self.run_guard("Bash", {"command": c}, worker), 2, c)
+        self.assertEqual(self.run_guard("Bash", {"command": "python tools/work.py note C-001 \"x\""}, worker), 0)
+        self.assertEqual(self.run_guard("Bash", {"command": "python tools/run_task.py C-002"}, brief), 2)
+        self.assertEqual(self.run_guard("Bash", {"command": "python tools/work.py needs --json"}, brief), 0)
+        self.assertEqual(self.run_guard("Bash", {"command": "python tools/run_task.py C-002"}, dispatch), 0)
+        # 道具そのものでも：作業セッションの中では work.py は記録だけ、run_task.py は状態を見るだけ
+        wenv = {"AI_AGENCY_UNATTENDED": "1", "AI_AGENCY_RUN": "C-001-R1"}
+        self.assertNotEqual(self.run_py("tools/work.py", "decide", "S-001", "reject", "--reason", "x", env=wenv).returncode, 0)
+        self.assertNotEqual(self.run_py("tools/run_task.py", "C-001", env=wenv).returncode, 0)
+        self.assertEqual(self.run_py("tools/work.py", "status", "--json", env=wenv).returncode, 0)
+
+    def test_worker_writes_only_its_own_report_and_never_the_folder(self):
+        worker = {"AI_AGENCY_UNATTENDED": "1", "AI_AGENCY_ROLE": "worker", "AI_AGENCY_RUN": "C-001-R1"}
+        dispatch = {"AI_AGENCY_UNATTENDED": "1", "AI_AGENCY_ROLE": "dispatch"}
+        for p in ("memory/work/results/C-002-R1.md", "memory/work/results/C-001-R0.md", "memory/work/results/x/y.json",
+                  "memory/work/results"):
+            self.assertEqual(self.run_guard("Write", {"file_path": p}, worker), 2, p)
+        self.assertEqual(self.run_guard("Write", {"file_path": "memory/briefs"}, dispatch), 2)
+        self.assertEqual(self.run_guard("Write", {"file_path": "memory/briefs/dispatch.md"}, dispatch), 0)
+
+    def test_tool_arguments_cannot_write_elsewhere(self):
+        env = {"AI_AGENCY_UNATTENDED": "1", "AI_AGENCY_ROLE": "dispatch"}
+        ledger = self.root / "memory" / "commitments.md"
+        before = ledger.read_text(encoding="utf-8")
+        r = self.run_py("tools/recall.py", "review", "--out", "memory/commitments.md", env=env)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(ledger.read_text(encoding="utf-8"), before)
+        r = self.run_py("tools/recall.py", "review", "--out", "tools/hooks/guardrail.py", env=env)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.run_py("tools/recall.py", "review", "--out", "memory/briefs/review.md", env=env).returncode, 0)
+
+    def test_broken_input_is_refused_when_unattended(self):
+        env = {"AI_AGENCY_UNATTENDED": "1", "AI_AGENCY_ROLE": "dispatch"}
+        self.assertEqual(self.raw_guard("[1, 2]", env), 2)
+        self.assertEqual(self.raw_guard("{not json", env), 2)
+        nul = json.dumps({"tool_name": "Write", "tool_input": {"file_path": "memory/briefs/a\u0000b.md"}})
+        self.assertEqual(self.raw_guard(nul, env), 2)
+        self.assertEqual(self.raw_guard("{not json", None), 0)                      # 人の会話では今までどおり
+        sh = (Path(__file__).resolve().parent.parent / "tools" / "py.sh").read_text(encoding="utf-8")
+        self.assertIn('if [ -n "$AI_AGENCY_UNATTENDED" ]; then exit 2; fi', sh)   # Python が無いとき無人は止める
+
+
 if __name__ == "__main__":
     unittest.main()

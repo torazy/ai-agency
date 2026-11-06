@@ -359,7 +359,7 @@ def run_foreground(root: Path, cid: str, rid: str, budget: float) -> int:
     cmd = build_command(cid, rid, budget, plan_of(root, cid).get("review", "auto"))
     results_dir(root).mkdir(parents=True, exist_ok=True)
     _state_update(root, rid, start=round(time.time(), 1), pid=os.getpid(), budget=budget)
-    env = dict(os.environ, AI_AGENCY_UNATTENDED="1", AI_AGENCY_TASK=cid, AI_AGENCY_RUN=rid, PYTHONUTF8="1")
+    env = dict(os.environ, AI_AGENCY_UNATTENDED="1", AI_AGENCY_ROLE="worker", AI_AGENCY_TASK=cid, AI_AGENCY_RUN=rid, PYTHONUTF8="1")
     cost, subtype = None, ""
     with open(state_path(root, rid, "log"), "w", encoding="utf-8") as log:
         log.write(f"[{time.strftime('%Y-%m-%d %H:%M')}] start {rid}\n")
@@ -471,6 +471,9 @@ def main() -> None:
     ap.add_argument("--anyway", action="store_true", help="着手条件（前工程・待ち）がそろっていなくても始める（人が判断したとき）")
     a = ap.parse_args()
     root = a.root.resolve()
+    if os.environ.get("AI_AGENCY_RUN") and not a.child and not a.status:
+        # 作業セッションの中から、別の作業セッションを起こす・止める・進め方を変えることはしない（費用・R-042 の D）
+        sys.exit("✗ 作業セッションの中では run_task.py は --status だけ")
     try:
         if a.status:
             print(json.dumps(read_status(root, a.status), ensure_ascii=False))

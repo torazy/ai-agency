@@ -849,7 +849,13 @@ def do_review(root: Path, a) -> int:
         out.append("")
     text = "\n".join(out)
     if a.out:
-        op = root / a.out
+        op = (root / a.out).resolve()
+        if os.environ.get("AI_AGENCY_UNATTENDED"):
+            base = (root / "memory" / "briefs").resolve()
+            rel = os.path.relpath(os.path.normcase(str(op)), os.path.normcase(str(base))) if op.drive == base.drive else ".."
+            if rel in (".", "..") or rel.startswith(".." + os.sep) or os.path.isabs(rel):
+                print(f"✗ 無人実行では --out は memory/briefs/ の中だけ（{a.out}）", file=sys.stderr)
+                return 1
         op.parent.mkdir(parents=True, exist_ok=True)
         op.write_text(text + "\n", encoding="utf-8")
         print(f"点検結果を {a.out} に保存（要対応 {len(F)} 件）")

@@ -129,7 +129,9 @@ def main() -> None:
     try:
         observe = pd["observe"] or a.force
         cmd = build_command(a.budget, observe)
-        env = dict(os.environ, AI_AGENCY_UNATTENDED="1", PYTHONUTF8="1")
+        env = dict(os.environ, AI_AGENCY_UNATTENDED="1", AI_AGENCY_ROLE="dispatch", PYTHONUTF8="1")
+        env.pop("AI_AGENCY_RUN", None)
+        env.pop("AI_AGENCY_TASK", None)
         (root / "memory" / "briefs").mkdir(parents=True, exist_ok=True)
         with open(sd / "dispatch.log", "w", encoding="utf-8") as log:
             log.write(f"[{time.strftime('%Y-%m-%d %H:%M')}] start（未判定の提案 {len(pd['undecided'])}・"

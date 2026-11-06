@@ -16,6 +16,7 @@ description: 予定・Backlog・GitHub・Slack・未解決課題を横断スキ�
 
 - `.ai-agency-template` がある（本体）か `memory/dashboard.md` が無ければ、何もせず1行で終える
 - **質問しない・確認を待たない**。「▶ 実行してよいですか？」で止めない
+- `tools/` の命令は `python tools/recall.py find "…"` の形のまま1つずつ実行する（`cd`・`&&`・`;`・パイプ・リダイレクト・`$( )`・バッククォートは断られる）。書けるのは `memory/briefs/` の中だけ。許されるのは recall.py・mem.py の追記と読み取り・`work.py needs`
 - 最初に `/update --capture` の手順で前回以降を取り込む（使える手段があるときだけ）。確度の高いものは**追記として記録**し、
   要確認だけ inbox に残す
 - 外部への送信・作成・更新はしない。`memory/delegation.md` で自律実行が許可された操作でも、無人ではしない（下書きをブリーフに書く）

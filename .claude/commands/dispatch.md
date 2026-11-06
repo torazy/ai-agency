@@ -61,7 +61,7 @@ python tools/work.py needs                # 仕事を止めている人・相手
 python tools/work.py need C-021 --who @generalist --content "B社・C社の300人分の月額（税込）" --due 2026-11-08 --why "比較の2・3行目が書けない" --check "memory/projects/kintai-saas/status.md#価格 に3社の行"
 ```
 
-（無人では1行で。`\` での行の継続・`&&`・パイプは許可されず止まる）
+（無人では1行で。`\` での行の継続・`&&`・`;`・パイプ・リダイレクト（`2>&1`）・`$( )`・バッククォート・`--root` は断られて止まる。PowerShell では `@generalist` や `( )` を含む引数を `"…"` で囲む）
 
 | 誰がそろえるか（`--who`） | とき | 次 |
 |---|---|---|

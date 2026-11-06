@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-guardrail.py ── PreToolUse フック（Bash / PowerShell・コネクタ mcp__）で起動する物理ガードレール。
+guardrail.py ── PreToolUse フック（Bash / PowerShell・コネクタ mcp__・Edit / Write）で起動する物理ガードレール。
+
+無人実行（AI_AGENCY_UNATTENDED）のときは、--allowedTools と同じ範囲をフックでも守る（利用者の「常に許可」は無人にも効くため）：
+ファイルの編集は報告・ブリーフの場所だけ、シェルは tools/ の命令を1つずつだけ。
 
 コネクタの道具は、無人実行のときに読み取りと下書き以外（送信・返信・予定の作成・ブラウザ操作など）を断る。
 
@@ -34,6 +37,148 @@ WRITE_VERBS = {"send", "reply", "forward", "post", "publish", "share", "invite",
                "computer", "navigate", "form", "click", "type", "submit", "schedule", "book", "accept", "decline", "approve", "pay",
                "transfer", "javascript", "upsert", "patch", "put", "rename", "close", "open"}
 DRAFT_WORDS = {"draft", "drafts"}
+
+
+# 無人のときの範囲（--allowedTools と同じ。利用者の「常に許可」は無人にも効くので、フックでも守る。R-042）。
+# 役は起動側が AI_AGENCY_ROLE で渡す（worker＝作業セッション・dispatch＝定期の見直し・brief＝朝のブリーフ）。
+# 渡されないときは、AI_AGENCY_RUN があれば worker、無ければ dispatch（以前の起動スクリプト）。
+WRITE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+ALL = "*"
+ROLE_COMMANDS = {   # 命令ごとに許す副命令（mem は2語まで見る）。正本は run_task.allowed_tools・dispatch.allowed_tools・morning-brief.*
+    "worker": {"work": {"show", "note", "handoff", "status"}, "recall": ALL,
+               "mem": {"commitment list", "inbox list", "check", "sync show"}},
+    "dispatch": {"work": ALL, "run_task": ALL, "recall": ALL,
+                 "mem": {"commitment add", "commitment list", "inbox add", "inbox list", "check", "sync show"}},
+    "brief": {"work": {"needs"}, "recall": ALL,
+              "mem": {"inbox add", "inbox list", "commitment add", "commitment list", "person observe", "person note",
+                      "sync mark", "sync show", "check"}},
+}
+CMD_RE = re.compile(r"^\s*(?:python3?|py)\s+(?:\./)?tools/(work|run_task|recall|mem)\.py(?=\s|$)(.*)$", re.S)
+SMART_QUOTES = "‘’‚‛“”„‟"
+
+
+def unattended_role() -> str:
+    role = os.environ.get("AI_AGENCY_ROLE", "")
+    if role in ROLE_COMMANDS:
+        return role
+    return "worker" if os.environ.get("AI_AGENCY_RUN") else "dispatch"
+
+
+def unattended_write_allowed(path: str) -> bool:
+    """作業セッションは自分の報告 memory/work/results/{AI_AGENCY_RUN}.md だけ（他の実行の報告を書かない）。
+    定期の見直し・朝のブリーフは memory/briefs/ の中のファイルだけ（場所そのものは書かない）。"""
+    if not path or "\x00" in path:
+        return False
+    root = workspace_root()
+    try:
+        p = Path(path)
+        if not p.is_absolute():
+            p = root / p
+        p = p.resolve()
+        if unattended_role() == "worker":
+            run = os.environ.get("AI_AGENCY_RUN", "")
+            if not re.fullmatch(r"C-\d{3,}-R\d+", run):
+                return False
+            target = (root / "memory" / "work" / "results" / f"{run}.md").resolve()
+            return os.path.normcase(str(p)) == os.path.normcase(str(target))
+        base = (root / "memory" / "briefs").resolve()
+        rel = os.path.relpath(os.path.normcase(str(p)), os.path.normcase(str(base)))
+    except (OSError, ValueError):   # 別のドライブ・NUL など
+        return False
+    return rel not in (".", "") and rel != ".." and not rel.startswith(".." + os.sep) and not os.path.isabs(rel)
+
+
+def bash_operator(cmd: str) -> bool:
+    """bash として、引用符の外に区切り・リダイレクト・置換があるか（\\ の次の1文字は飛ばす。'…' は何もしない。
+    "…" の中は \\ の次を飛ばし、` と $( を見る）。引用符が閉じていなければ断る。"""
+    q, i = None, 0
+    while i < len(cmd):
+        c = cmd[i]
+        if q == "'":
+            if c == "'":
+                q = None
+        elif q == '"':
+            if c == "\\":
+                i += 1
+            elif c == '"':
+                q = None
+            elif c == "`" or cmd.startswith("$(", i):
+                return True
+        else:
+            if c == "\\":
+                i += 1
+            elif c in "'\"":
+                q = c
+            elif c in ";&|<>()`\n\r" or cmd.startswith("$(", i):
+                return True
+        i += 1
+    return q is not None
+
+
+def powershell_operator(cmd: str) -> bool:
+    """PowerShell として、引用符の外に区切り・式・変数・呼び出しがあるか。'…' は '' で引用符そのもの。"…" の中は ` と $ を断る。
+    全角の引用符（‘ ’ “ ” など）は PowerShell が引用符として扱うので、どこにあっても断る。"""
+    if any(ch in cmd for ch in SMART_QUOTES):
+        return True
+    q, i = None, 0
+    while i < len(cmd):
+        c = cmd[i]
+        if q == "'":
+            if c == "'":
+                if cmd.startswith("''", i):
+                    i += 1
+                else:
+                    q = None
+        elif q == '"':
+            if c in "`$":
+                return True
+            if c == '"':
+                if cmd.startswith('""', i):
+                    i += 1
+                else:
+                    q = None
+        else:
+            if c in "'\"":
+                q = c
+            elif c in ";&|<>(){}@$`\n\r":
+                return True
+        i += 1
+    return q is not None
+
+
+def unattended_command_allowed(cmd: str, shell: str = "Bash") -> bool:
+    """無人のシェル：tools/ の製品の命令1つだけ。役ごとに許す副命令だけ。--root（別の場所の記録を書く）は使わない。"""
+    cmd = cmd or ""
+    if (powershell_operator if shell == "PowerShell" else bash_operator)(cmd):
+        return False
+    m = CMD_RE.match(cmd.replace("\\", "/") if shell == "PowerShell" else cmd)
+    if not m:
+        return False
+    script, rest = m.group(1), m.group(2)
+    words = rest.split()
+    if any(w == "--root" or w.startswith("--root=") for w in words):
+        return False
+    allowed = ROLE_COMMANDS[unattended_role()].get(script)
+    if allowed is None:
+        return False
+    if allowed == ALL:
+        return True
+    head = [w for w in words[:2]]
+    return bool(head) and (head[0] in allowed or " ".join(head[:2]) in allowed)
+
+
+def tool_input_of(event: dict) -> dict:
+    for key in ("tool_input", "toolInput", "input", "arguments"):
+        v = event.get(key)
+        if isinstance(v, dict):
+            return v
+    return {}
+
+
+def deny(reason: str) -> None:
+    print(json.dumps({"decision": "deny", "reason": reason}, ensure_ascii=False))
+    print(reason, file=sys.stderr)
+    sys.exit(2)
 
 
 def tool_words(tool: str) -> set:
@@ -71,7 +216,8 @@ def read_event() -> dict:
     try:
         # フックは UTF-8 バイト列を渡す。Windows の cp932 デコードを避けるため bytes で読む。
         raw = sys.stdin.buffer.read().decode("utf-8", errors="replace").strip()
-        return json.loads(raw) if raw else {}
+        ev = json.loads(raw) if raw else {}
+        return ev if isinstance(ev, dict) else {}   # 配列などは「入力なし」（無人なら下で断る）
     except (json.JSONDecodeError, ValueError):
         return {}
 
@@ -112,6 +258,19 @@ def find_violation(payload: str, guardrails: dict):
 
 
 def main() -> None:
+    """無人のときは、フックの中の例外でも断る（exit 2 以外は許可と扱われる。壊れた入力・壊れたフックで通さない）。"""
+    try:
+        _main()
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001
+        if os.environ.get("AI_AGENCY_UNATTENDED"):
+            deny(f"無人実行でガードレールが判定できなかったので断る（{type(e).__name__}: {e}）")
+        print(f"[guardrail] 判定できなかった（{type(e).__name__}: {e}）", file=sys.stderr)
+        sys.exit(0)
+
+
+def _main() -> None:
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
@@ -119,16 +278,32 @@ def main() -> None:
             pass
     event = read_event()
     tool = extract_tool_name(event)
+    unattended = bool(os.environ.get("AI_AGENCY_UNATTENDED"))
+    if unattended and not tool:
+        deny("無人実行で、道具の分からない呼び出しは断る")
+    if tool in WRITE_TOOLS:
+        # ファイルの編集：無人のときは許した場所だけ（約束台帳・作業記録・不足の記録などを直接書き換えさせない）。人の会話では何もしない
+        inp = tool_input_of(event)
+        path = str(inp.get("file_path") or inp.get("notebook_path") or inp.get("path") or "")
+        if unattended and not unattended_write_allowed(path):
+            where = (f"自分の報告 memory/work/results/{os.environ.get('AI_AGENCY_RUN', '')}.md" if unattended_role() == "worker"
+                     else "memory/briefs/ の中")
+            deny(f"無人実行では {where} しか書かない（{path or '場所なし'}）。記録は tools/ の命令で残す")
+        print(json.dumps({"suppressOutput": True}))
+        sys.exit(0)
+    if unattended and tool in ("Bash", "PowerShell"):
+        cmd = str(tool_input_of(event).get("command") or event.get("command") or "")
+        if not unattended_command_allowed(cmd, tool):
+            deny(f"無人実行（{unattended_role()}）では、この役に許した tools/ の命令を1つずつだけ実行する"
+                 "（cd・&&・パイプ・リダイレクト・$( )・バッククォート・--root や他の命令はしない。"
+                 f"PowerShell では @handle や ( ) を引用符で囲む）：{cmd[:120]}")
     if tool.startswith("mcp__"):
         # コネクタ（MCP）の道具：無人のとき（定期の見直し・作業セッション）は、読み取りと下書きだけを許す（送信・返信・投稿・
         # 予定の作成・共有・ブラウザ操作などを断る）。送るのは人（設計 #12 段階3・独立レビュー R-037 の M5・J）。
         # allowedTools だけでは、利用者の「常に許可」が無人にも効いて送れてしまう。人の会話では何もしない
-        if os.environ.get("AI_AGENCY_UNATTENDED") and not unattended_allowed(tool):
-            reason = (f"無人実行では、読み取りと下書き以外のコネクタの操作（{tool}）をしない。相手に届く操作は人が行う"
-                      "（下書きまで作り、送ったらボードの「送った」で記録する）")
-            print(json.dumps({"decision": "deny", "reason": reason}, ensure_ascii=False))
-            print(reason, file=sys.stderr)
-            sys.exit(2)
+        if unattended and not unattended_allowed(tool):
+            deny(f"無人実行では、読み取りと下書き以外のコネクタの操作（{tool}）をしない。相手に届く操作は人が行う"
+                 "（下書きまで作り、送ったらボードの「送った」で記録する）")
         print(json.dumps({"suppressOutput": True}))
         sys.exit(0)
     guardrails = load_guardrails()

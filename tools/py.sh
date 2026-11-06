@@ -10,4 +10,6 @@ for exe in python3 python; do
   fi
 done
 echo "py.sh: Python 3.9+ not found (install Python 3 and make python3 or python available on PATH)" >&2
+# Unattended runs (scheduled dispatch, work sessions, morning brief) must not run tools unchecked when the guard cannot start.
+if [ -n "$AI_AGENCY_UNATTENDED" ]; then exit 2; fi
 exit 0

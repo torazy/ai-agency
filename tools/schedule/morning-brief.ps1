@@ -24,6 +24,10 @@ if (-not (Test-Path "memory/dashboard.md")) { Write-Output "memory/ not found: $
 New-Item -ItemType Directory -Force "memory/briefs" | Out-Null
 # operation-logger records these runs as automatic (unattended), not as user-approved.
 $env:AI_AGENCY_UNATTENDED = "1"
+# guardrail allows the morning brief only its own range (not the dispatcher's). Cleared at the end so a terminal
+# that ran this script by hand does not keep restricting later interactive sessions.
+$env:AI_AGENCY_ROLE = "brief"
+Remove-Item Env:AI_AGENCY_RUN, Env:AI_AGENCY_TASK -ErrorAction SilentlyContinue
 
 # Only append-type and read-only memory commands. mem.py itself also refuses rewrites while AI_AGENCY_UNATTENDED is set.
 $memOps = @("inbox add", "inbox list", "commitment add", "commitment list", "person observe", "person note",
@@ -36,11 +40,16 @@ foreach ($op in $memOps) {
     $allowed += "PowerShell(python tools/mem.py $op*)"
 }
 $allowed += @("Bash(python tools/recall.py *)", "Bash(python3 tools/recall.py *)", "PowerShell(python tools/recall.py *)")
+$allowed += @("Bash(python tools/work.py needs*)", "Bash(python3 tools/work.py needs*)", "PowerShell(python tools/work.py needs*)")
 $log = "memory/briefs/_last-run.log"
 $stamp = { Get-Date -Format "yyyy-MM-dd HH:mm" }
 "[$(& $stamp)] start" | Out-File -Encoding utf8 $log
-claude -p "/morning-brief --unattended" --allowedTools @allowed --max-budget-usd $MaxBudgetUsd --no-session-persistence 2>&1 |
-    Out-File -Encoding utf8 -Append $log
-$code = $LASTEXITCODE
+try {
+    claude -p "/morning-brief --unattended" --allowedTools @allowed --max-budget-usd $MaxBudgetUsd --no-session-persistence 2>&1 |
+        Out-File -Encoding utf8 -Append $log
+    $code = $LASTEXITCODE
+} finally {
+    Remove-Item Env:AI_AGENCY_UNATTENDED, Env:AI_AGENCY_ROLE -ErrorAction SilentlyContinue
+}
 "[$(& $stamp)] exit $code" | Out-File -Encoding utf8 -Append $log
 exit $code

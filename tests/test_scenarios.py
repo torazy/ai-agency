@@ -1570,6 +1570,12 @@ class HumanNeedsTest(Base):
         r = self.run_py("tools/work.py", "needs", "--json", env={"AI_AGENCY_UNATTENDED": "1"})
         self.assertEqual((r.returncode, json.loads(r.stdout)["items"]), (0, []))   # 無人の朝のブリーフ・見直しも読める
 
+    def test_scan_skips_needs_whose_blocked_tasks_are_closed(self):
+        pid, _ = self.need(who="佐藤", content="見積の再送", due=d(1))
+        self.assertTrue([s for s in self.w.scan(self.root) if s.get("task") == pid])
+        self.w.mem.commitment_set_state(self.root, "C-001", "dropped")
+        self.assertEqual([s for s in self.w.scan(self.root) if s.get("task") == pid], [])
+
 
 class UnattendedSendGuardTest(TempRepo):
     """無人のとき、コネクタの相手に届く操作を断る（設計 §10 v2・独立レビュー R-037 の M5）。人の会話では断らない。"""

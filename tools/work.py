@@ -1012,6 +1012,8 @@ def scan(root: Path) -> list[dict]:
         follow = r.get("フォロー日", "")
         who = r.get("相手") or r.get("依頼者") or ""
         h = human_need(root, cid, rows, nmap) if cid in nmap else None
+        if h and not h["blocks"]:
+            continue   # 止めていた仕事がすべて閉じた不足：催促・着手の提案で人を起こさない（集める仕事の起動待ちと同じ）
         if h and h["kind"] == "person" and h["blocks"]:
             # 仕事を止めている相手の不足：下書きが無い → 作る／送っていない → ボードと朝のブリーフに出す（提案はしない）／
             # 送ったあとフォロー日 → 催促の下書き（送る前に「催促」を出さない。独立レビュー R-037 の M4）

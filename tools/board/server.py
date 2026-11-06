@@ -246,12 +246,14 @@ def agent_runs(root: Path) -> list[dict]:
                 by_tuid[r["tuid"]] = r
         elif ev in ("end", "launched", "fail") and e.get("tuid") in by_tuid:
             r = by_tuid[e["tuid"]]
-            if ev in ("end", "fail"):
+            if ev in ("end", "fail") and r["state"] == "running":
+                # 前景の終了だけが自分の stop を取り除く。背景に回った実行（launched のあと）に遅れて届いた end は、
+                # 本物の SubagentStop を「重複」として捨てさせない（R-044 の独立レビュー）
                 _drop_own_stop(early_stops, closed_aids, r, e)
             if ev == "end" and r["state"] == "running":
                 r.update(state="done", end=e.get("ts"))
             elif ev == "launched" and r["state"] == "running":   # 重複した応答で、閉じた実行を「動いている」に戻さない
-                r.update(state="background", aid=e.get("aid", ""))
+                r.update(state="background", aid=e.get("aid", ""), bg=True)   # 前景で呼んで背景に回ったもの（moved）も背景として結ぶ
                 st = early_stops.pop((r["sid"], r["aid"]), None) if r["aid"] else None
                 if st:   # 終了のほうが先に届いていた
                     r.update(state="done", end=st.get("ts"))

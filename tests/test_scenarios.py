@@ -1847,6 +1847,104 @@ class PremiseReviewTest(Base):
         self.assertIn("C-002", used)
 
 
+class AgentHookTest(Base):
+    """エージェントの記録のフック側（R-030 の残り・R-044）：前景で呼んで背景に回ったもの・同時の追記。"""
+
+    def hook(self, **ev):
+        ev.setdefault("session_id", "s1")
+        r = self.run_py("tools/hooks/agent-activity.py", stdin=json.dumps(ev, ensure_ascii=False))
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def log_rows(self):
+        p = self.root / "memory" / "task-log" / "agent-runs.jsonl"
+        return [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
+
+    def runs(self):
+        return {r["tuid"]: r for r in self.srv.agent_runs(self.root)}
+
+    def test_foreground_call_moved_to_background_is_not_done(self):
+        inp = {"subagent_type": "generalist", "description": "C-001 調べる", "prompt": "…"}
+        self.hook(hook_event_name="PreToolUse", tool_name="Agent", tool_use_id="t1", tool_input=inp)
+        self.hook(hook_event_name="PostToolUse", tool_name="Agent", tool_use_id="t1", tool_input=inp,
+                  tool_response={"status": "async_launched", "agentId": "a1", "outputFile": "x"})
+        last = self.log_rows()[-1]
+        self.assertEqual((last["ev"], last.get("moved"), last["aid"], last["rstatus"]), ("launched", True, "a1", "async_launched"))
+        self.assertEqual(self.runs()["t1"]["state"], "background")              # 動いている（完了にしない）
+        self.hook(hook_event_name="SubagentStop", agent_type="generalist", agent_id="a1")
+        self.assertEqual(self.runs()["t1"]["state"], "done")
+
+    def test_foreground_completion_is_done_even_if_its_text_mentions_background(self):
+        inp = {"subagent_type": "generalist", "description": "C-001 調べる", "prompt": "…"}
+        self.hook(hook_event_name="PreToolUse", tool_name="Agent", tool_use_id="t2", tool_input=inp)
+        self.hook(hook_event_name="PostToolUse", tool_name="Agent", tool_use_id="t2", tool_input=inp,
+                  tool_response={"status": "completed", "agentId": "a2",
+                                 "content": [{"type": "text", "text": "Async agent launched in the background"}]})
+        self.assertEqual(self.log_rows()[-1]["ev"], "end")                       # 本文の言葉では誤らない
+        self.assertEqual(self.runs()["t2"]["state"], "done")
+
+    def test_concurrent_hooks_do_not_mix_lines(self):
+        import subprocess
+        import sys as _sys
+        procs = []
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        env.pop("AI_AGENCY_UNATTENDED", None)
+        for i in range(24):
+            ev = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_use_id": f"t{i}", "session_id": "s",
+                             "tool_input": {"subagent_type": "generalist", "description": f"C-{i:03d} " + "長い説明" * 40,
+                                            "prompt": "x" * 3000}}, ensure_ascii=False)
+            p = subprocess.Popen([_sys.executable, str(self.root / "tools/hooks/agent-activity.py")], cwd=self.root, env=env,
+                                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            procs.append((p, ev))
+        for p, ev in procs:
+            p.communicate(ev.encode("utf-8"))
+        rows = self.log_rows()                                                   # 全行が JSON として読める
+        self.assertEqual(sorted(r["tuid"] for r in rows), sorted(f"t{i}" for i in range(24)))
+        self.assertFalse((self.root / "memory" / "task-log" / "agent-runs.jsonl.lock").exists())
+
+    # ---- 独立レビュー R-044 の反例
+    def post(self, tuid, resp):
+        inp = {"subagent_type": "generalist", "description": "C-001 調べる", "prompt": "…"}
+        self.hook(hook_event_name="PreToolUse", tool_name="Agent", tool_use_id=tuid, tool_input=inp)
+        self.hook(hook_event_name="PostToolUse", tool_name="Agent", tool_use_id=tuid, tool_input=inp, tool_response=resp)
+        return self.log_rows()[-1]
+
+    def age(self, sec):
+        p = self.root / "memory" / "task-log" / "agent-runs.jsonl"
+        rows = self.log_rows()
+        for r in rows:
+            r["ts"] = r["ts"] - sec
+        p.write_text("".join(json.dumps(r, ensure_ascii=False) + chr(10) for r in rows), encoding="utf-8")
+
+    def test_moved_runs_are_closed_by_their_stop(self):
+        last = self.post("t1", "Agent moved to background. agentId: a1")         # 文字列の形：agentId を取る
+        self.assertEqual((last["ev"], last.get("moved"), last.get("aid")), ("launched", True, "a1"))
+        self.hook(hook_event_name="SubagentStop", agent_type="generalist", agent_id="a1")
+        self.assertEqual(self.runs()["t1"]["state"], "done")
+        self.post("t2", {"status": "backgrounded"})                                # aid が無い：近似（30秒待って）で閉じる
+        self.hook(hook_event_name="SubagentStop", agent_type="generalist", agent_id="zz")
+        self.age(60)
+        self.assertEqual(self.runs()["t2"]["state"], "done")
+
+    def test_late_end_after_moved_does_not_swallow_the_stop(self):
+        self.post("t3", {"status": "async_launched", "agentId": "a3"})
+        self.hook(hook_event_name="PostToolUse", tool_name="Agent", tool_use_id="t3",
+                  tool_input={"subagent_type": "generalist"}, tool_response={"status": "completed", "agentId": "a3"})
+        self.hook(hook_event_name="SubagentStop", agent_type="generalist", agent_id="a3")
+        self.assertEqual(self.runs()["t3"]["state"], "done")
+
+    def test_status_words_and_remote(self):
+        for status, want in (("async_launched", "launched"), ("backgrounded", "launched"), ("remote_launched", "end"),
+                             ("not_launched", "end"), ("completed_after_running", "end"), ("error: background task failed", "end"),
+                             ("stopped_running", "end")):
+            self.assertEqual(self.post("t-" + status[:6], {"status": status, "agentId": "x"})["ev"], want, status)
+        self.assertEqual(self.post("t4", "Agent is running in the background tasks audit: 結果は…")["ev"], "end")   # 報告の本文
+
+    def test_recorded_shape_is_bounded(self):
+        last = self.post("t5", {"status": "completed", "k" * 5000: 1, "content": "本文" * 1000})
+        self.assertLessEqual(max(len(k) for k in last["rkeys"]), 40)
+        self.assertNotIn("本文", json.dumps(last, ensure_ascii=False))
+
+
 class UnattendedSendGuardTest(TempRepo):
     """無人のとき、コネクタの相手に届く操作を断る（設計 §10 v2・独立レビュー R-037 の M5）。人の会話では断らない。"""
 

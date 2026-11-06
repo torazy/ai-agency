@@ -1522,6 +1522,42 @@ def sent(root: Path, nid: str, follow: str | None = None, version: int | None = 
     return f"{nid} 版{last['版']} を送った・フォロー日 {follow}"
 
 
+def needs_overview(root: Path) -> list[dict]:
+    """仕事を止めている人・相手の不足の一覧（読むだけ）：朝のブリーフ・返事の照合（/intake・commitment-track）・見直しが使う。
+    答えの記録が無いまま閉じたもの（以前の set-state）も、止めている仕事が開いていれば出す。"""
+    rows = {r.get("ID"): r for r in mem.commitment_rows(root)}
+    nmap = needs_map(root)
+    out = []
+    for nid in sorted(nmap):
+        h = human_need(root, nid, rows, nmap)
+        if not h or not h["blocks"]:
+            continue
+        r = rows[nid]
+        rec = read_need_rec(root, nid)
+        closed = r.get("状態") in mem.CLOSED
+        if closed and rec["answers"]:
+            continue
+        last = rec["drafts"][-1] if rec["drafts"] else None
+        sent_ = [x for x in rec["drafts"] if x.get("送った")]
+        if h["kind"] == "self":
+            waiting = "あなたが答える"
+        elif closed:
+            waiting = "答えを記録する（閉じたが答えの記録が無い）"
+        elif last is None:
+            waiting = "下書きを作る"
+        elif not last.get("送った"):
+            waiting = f"下書き 版{last['版']} を送る（人）"
+        else:
+            waiting = f"{h['who']} の返事を待つ（送った {sent_[-1]['送った'][:10]}）"
+        if h["kind"] == "self" and closed:
+            waiting = "答えを記録する（閉じたが答えの記録が無い）"
+        out.append({"id": nid, "kind": h["kind"], "who": h["who"], "content": _content(r), "due": r.get("期限", ""),
+                    "follow": r.get("フォロー日", ""), "state": r.get("状態", ""), "blocks": h["blocks"], "next": waiting,
+                    "draft": ({"version": last["版"], "sent": last.get("送った", ""), "via": last.get("手段", "")} if last else None),
+                    "sent": sent_[-1]["送った"][:10] if sent_ else ""})
+    return out
+
+
 def needs_view(root: Path, cid: str) -> list[dict]:
     """作業役・割り振り役が読む、その仕事の不足と答え（show が出す）。答えは不足の記録が正本で、作業記録には写さない。"""
     rows = {r.get("ID"): r for r in mem.commitment_rows(root)}
@@ -1700,7 +1736,7 @@ def pending(root: Path, dispatch_budget: float = 0.0) -> dict:
 
 # ---------------------------------------------------------------- CLI
 UNATTENDED_OK = {"order", "ref", "changes", "scan", "propose", "decide", "note", "handoff", "accept", "status", "tick", "show", "pending",
-                 "defer", "adopt", "need", "draft"}   # need・draft は割り振り役（確認役）が使う。作業役の allowed_tools には入れない
+                 "defer", "adopt", "need", "draft", "needs"}   # need・draft は割り振り役（確認役）が使う。作業役の allowed_tools には入れない
 # answer・sent は人だけ（無人が不足を閉じる・送ったことにする道を作らない。独立レビュー R-037 の H3）
 
 
@@ -1741,6 +1777,8 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("draft", help="相手に頼む不足の連絡の下書き（送るのは人）")
     s.add_argument("id"); s.add_argument("--via", default="未定"); s.add_argument("--address", default="")
     s.add_argument("--subject", default=""); s.add_argument("--body", required=True); s.add_argument("--by", default="")
+    s = sub.add_parser("needs", help="仕事を止めている人・相手の不足の一覧（答える・下書き・送る・返事待ち）")
+    s.add_argument("--json", action="store_true")
     s = sub.add_parser("sent", help="人が下書きを送った（人だけ）。フォロー日を決める")
     s.add_argument("id"); s.add_argument("--follow", default=None); s.add_argument("--version", type=int, default=None)
     s = sub.add_parser("note"); s.add_argument("id"); s.add_argument("text")
@@ -1793,6 +1831,14 @@ def main(argv: list[str] | None = None) -> None:
             print(answer(root, a.id, a.text, a.without, a.by))
         elif a.cmd == "draft":
             print(draft(root, a.id, a.via, a.subject, a.body, a.address, a.by))
+        elif a.cmd == "needs":
+            items = needs_overview(root)
+            if a.json:
+                print(json.dumps({"items": items}, ensure_ascii=False))
+            else:
+                for x in items:
+                    print(f"- {x['id']}「{x['content']}」{x['who']}・期限 {x['due']}：{x['next']}（{', '.join(x['blocks'])} を止めている）")
+                print(f"計 {len(items)} 件")
         elif a.cmd == "sent":
             print(sent(root, a.id, a.follow, a.version))
         elif a.cmd == "note":

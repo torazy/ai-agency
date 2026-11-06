@@ -1555,6 +1555,21 @@ class HumanNeedsTest(Base):
         self.need("C-001", link="C-002")
         self.assertIn("答えの記録が無い", "".join(self.w.unmet_conditions(self.root, "C-001")))
 
+    def test_needs_overview_follows_the_person_flow(self):
+        nid, _ = self.need()
+        pid, _ = self.need(who="佐藤", content="見積の再送")
+        nxt = lambda: {x["id"]: x["next"] for x in self.w.needs_overview(self.root)}
+        self.assertEqual(nxt(), {nid: "あなたが答える", pid: "下書きを作る"})
+        self.w.draft(self.root, pid, "メール", "見積", "本文")
+        self.assertIn("を送る", nxt()[pid])
+        self.w.sent(self.root, pid, version=1)
+        self.assertIn("返事を待つ", nxt()[pid])
+        self.w.answer(self.root, pid, "再送された")
+        self.w.answer(self.root, nid, "月 300万円まで")
+        self.assertEqual(nxt(), {})
+        r = self.run_py("tools/work.py", "needs", "--json", env={"AI_AGENCY_UNATTENDED": "1"})
+        self.assertEqual((r.returncode, json.loads(r.stdout)["items"]), (0, []))   # 無人の朝のブリーフ・見直しも読める
+
 
 class UnattendedSendGuardTest(TempRepo):
     """無人のとき、コネクタの相手に届く操作を断る（設計 §10 v2・独立レビュー R-037 の M5）。人の会話では断らない。"""
